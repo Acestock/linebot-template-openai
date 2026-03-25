@@ -99,47 +99,77 @@ git push -u origin main
 
 ## Step 5：Railway 部署
 
-### 5-1 連結 GitHub
+> ⚠️ **重要說明**：Railway 不會自動從設定檔建立服務，後端和前端需要**分別手動建立**，各自指定子資料夾。請按照以下步驟操作。
+
+### 5-1 建立 Railway Project
 
 1. 前往 [Railway](https://railway.app/)，使用 GitHub 帳號登入
 2. 點擊 **New Project** → **Deploy from GitHub Repo**
 3. 選擇你的 `line-ai-bot` Repository
-4. Railway 會自動讀取 `railway.toml`，建立 **backend** 和 **frontend** 兩個服務
+4. Railway 會建立**第一個服務**，先**不要**讓它開始部署
 
-### 5-2 新增 MongoDB 資料庫
+### 5-2 設定後端服務（backend）
 
-1. 在 Project 頁面，點擊 **New Service**
-2. 選擇 **Database → MongoDB**
+1. 點選剛建立的服務 → **Settings** 頁籤
+2. 找到 **Source** → **Root Directory**，填入：
+   ```
+   backend
+   ```
+3. 往下找到 **Deploy** → **Start Command**，確認或填入：
+   ```
+   node src/app.js
+   ```
+4. 點擊 **Save Changes** → Railway 會自動重新部署
+
+### 5-3 新增 MongoDB 資料庫
+
+1. 回到 Project 頁面，點擊 **New Service**
+2. 選擇 **Database → Add MongoDB**
 3. 完成後 Railway 會自動將 `MONGODB_URL` 注入所有服務，**不需要手動設定**
 
-### 5-3 取得前端網址
+### 5-4 新增前端服務（frontend）
 
-1. 點選 **frontend** 服務
-2. 點擊 **Settings** 頁籤 → **Networking** → **Generate Domain**
+1. 回到 Project 頁面，點擊 **New Service** → **GitHub Repo**
+2. 選擇**同一個** Repository
+3. 點選這個新服務 → **Settings** 頁籤
+4. **Root Directory** 填入：
+   ```
+   frontend
+   ```
+5. **Start Command** 填入：
+   ```
+   npx serve dist -p $PORT
+   ```
+6. 點擊 **Save Changes**
+
+### 5-5 取得前端網址
+
+1. 點選 **frontend** 服務 → **Settings** 頁籤
+2. 往下找到 **Networking** → **Generate Domain**
 3. Railway 產生類似 `frontend-xxx.up.railway.app` 的網址 → **複製起來備用**
 
-### 5-4 設定後端環境變數
+### 5-6 設定後端環境變數
 
-1. 點選 **backend** 服務
-2. 點擊 **Variables** 頁籤 → **New Variable**，依序填入以下所有變數：
+1. 點選 **backend** 服務 → **Variables** 頁籤
+2. 點擊 **New Variable**，依序填入以下所有變數：
 
 | 變數名稱 | 填入內容 |
 |----------|----------|
 | `LINE_CHANNEL_SECRET` | Step 1 取得的 Channel Secret |
 | `LINE_CHANNEL_ACCESS_TOKEN` | Step 1 取得的 Channel Access Token |
 | `OPENAI_API_KEY` | Step 2 取得的 OpenAI API Key |
-| `MONGODB_URL` | **不需填**（Railway 自動注入） |
+| `MONGODB_URL` | **不需填**（Railway MongoDB 外掛自動注入） |
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Step 3-3 的 `client_email` |
 | `GOOGLE_PRIVATE_KEY` | Step 3-3 的完整 `private_key` |
 | `GOOGLE_SHEET_ID` | Step 3-1 複製的 Sheet ID |
-| `FRONTEND_URL` | Step 5-3 複製的前端網址 |
+| `FRONTEND_URL` | Step 5-5 複製的前端網址 |
 
 3. 填完後 backend 服務會自動重新部署
 
-### 5-5 取得後端網址
+### 5-7 取得後端網址
 
-1. 點選 **backend** 服務
-2. 點擊 **Settings** 頁籤 → **Networking** → **Generate Domain**
+1. 點選 **backend** 服務 → **Settings** 頁籤
+2. **Networking** → **Generate Domain**
 3. 複製後端網址（例如：`backend-xxx.up.railway.app`）→ 下一步會用到
 
 ---
