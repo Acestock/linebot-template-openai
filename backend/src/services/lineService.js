@@ -6,12 +6,24 @@ function getClient() {
   });
 }
 
-async function sendReply(replyToken, text) {
+async function getUserProfile(userId) {
+  try {
+    const client = getClient();
+    return await client.getProfile(userId);
+  } catch (err) {
+    console.error('[LINE] Failed to get user profile:', err.message);
+    return { displayName: 'Unknown' };
+  }
+}
+
+// Push message to user (no replyToken needed - use this in admin send endpoint)
+// replyToken expires in 5 minutes; agents will almost always exceed that window
+async function pushMessage(lineUserId, text) {
   const client = getClient();
-  await client.replyMessage({
-    replyToken,
+  await client.pushMessage({
+    to: lineUserId,
     messages: [{ type: 'text', text }]
   });
 }
 
-module.exports = { sendReply };
+module.exports = { getUserProfile, pushMessage };

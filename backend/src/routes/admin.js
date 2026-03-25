@@ -1,6 +1,6 @@
 const express = require('express');
 const dbService = require('../services/dbService');
-const lineService = require('../services/lineService');
+const { pushMessage } = require('../services/lineService');
 const sheetService = require('../services/sheetService');
 
 const router = express.Router();
@@ -45,7 +45,9 @@ router.post('/messages/:id/send', async (req, res) => {
     await dbService.updateMessage(req.params.id, { status: 'processing', selectedReply });
 
     try {
-      await lineService.sendReply(msg.replyToken, selectedReply);
+      // Use pushMessage (not replyMessage) - replyToken expires after 5 minutes
+      // Agents will almost always exceed that window before selecting a reply
+      await pushMessage(msg.lineUserId, selectedReply);
 
       const updated = await dbService.updateMessage(req.params.id, {
         status: 'replied',

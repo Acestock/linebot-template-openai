@@ -2,6 +2,7 @@ const express = require('express');
 const line = require('@line/bot-sdk');
 const openaiService = require('../services/openaiService');
 const dbService = require('../services/dbService');
+const { getUserProfile } = require('../services/lineService');
 
 const router = express.Router();
 
@@ -14,6 +15,7 @@ const lineConfig = {
 router.use(line.middleware(lineConfig));
 
 router.post('/', async (req, res) => {
+  // Respond 200 immediately - LINE retries on non-200 responses
   res.status(200).send('OK');
 
   const events = req.body.events || [];
@@ -27,36 +29,38 @@ router.post('/', async (req, res) => {
     const lineUserId = source.userId || 'unknown';
     const userMessage = message.text;
 
-    let displayName = '';
     try {
-      const client = new line.messagingApi.MessagingApiClient({
-        channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN
-      });
-      const profile = await client.getProfile(lineUserId);
-      displayName = profile.displayName || '';
-    } catch (err) {
-      console.error('[Webhook] Failed to get user profile:', err.message);
-    }
+      // Run profile lookup and OpenAI concurrently to reduce latency
+      const [profile, aiReplies] = await Promise.all([
+        getUserProfile(lineUserId),
+        openaiService.generateReplies(userMessage)
+      ]);
 
-    let aiReplies = ['', '', ''];
-    try {
-      aiReplies = await openaiService.generateReplies(userMessage);
-    } catch (err) {
-      console.error('[Webhook] OpenAI failed, using fallback:', err.message);
-    }
-
-    try {
       await dbService.createMessage({
         lineUserId,
-        displayName,
+        displayName: profile.displayName || '',
         userMessage,
         replyToken,
         aiReplies,
         status: 'pending'
       });
-      console.log(`[Webhook] Message saved from ${displayName || lineUserId}`);
+      console.log(`[Webhook] Message saved from ${profile.displayName || lineUserId}`);
     } catch (err) {
-      console.error('[Webhook] Failed to save message:', err.message);
+      console.error('[Webhook] Error processing event:', err.message);
+      // Save failed record so agents can see it
+      try {
+        await dbService.createMessage({
+          lineUserId,
+          displayName: 'Unknown',
+          userMessage,
+          replyToken,
+          aiReplies: ['', '', ''],
+          status: 'failed',
+          errorMessage: err.message
+        });
+      } catch (dbErr) {
+        console.error('[Webhook] Failed to save error record:', dbErr.message);
+      }
     }
   }
 });
