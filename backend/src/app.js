@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const cron = require('node-cron');
+const path = require('path');
 
 const webhookRouter = require('./routes/webhook');
 const adminRouter = require('./routes/admin');
@@ -12,15 +13,18 @@ const sheetService = require('./services/sheetService');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// CORS - allow frontend origin
+// CORS - 本地開發時允許 Vite dev server（production 同 origin 不需要）
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
+  origin: [
+    process.env.FRONTEND_URL,
+    'http://localhost:5173',
+    'http://localhost:4000'
+  ].filter(Boolean),
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // LINE Webhook route requires raw body for signature validation
-// The line.middleware() in webhook.js handles body parsing internally
 app.use('/webhook', webhookRouter);
 
 // JSON body parser for all other routes
@@ -29,8 +33,14 @@ app.use(express.json());
 // Admin REST API routes
 app.use('/api', adminRouter);
 
-// Health check
-app.get('/', (req, res) => res.json({ status: 'ok', service: 'LINE AI Bot Backend' }));
+// Serve frontend static files (production build)
+const frontendDist = path.join(__dirname, '../../frontend/dist');
+app.use(express.static(frontendDist));
+
+// SPA fallback - all non-API routes serve index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(frontendDist, 'index.html'));
+});
 
 // MongoDB connection
 mongoose.connect(process.env.MONGODB_URL)

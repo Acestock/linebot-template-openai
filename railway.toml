@@ -1,7 +1,5 @@
-# Railway 部署說明
-# 本專案為 monorepo，後端和前端需分別在 Railway UI 手動建立服務
-# 各服務的設定檔分別位於：
-#   backend/railway.toml  — 後端服務設定（Root Directory: backend）
-#   frontend/railway.toml — 前端服務設定（Root Directory: frontend）
-#
-# 詳細部署步驟請參閱 DEPLOYMENT.md
+[build]
+buildCommand = "npm run build"
+
+[deploy]
+startCommand = "node backend/src/app.js"

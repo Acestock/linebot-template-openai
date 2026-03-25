@@ -99,58 +99,30 @@ git push -u origin main
 
 ## Step 5：Railway 部署
 
-> ⚠️ **重要說明**：Railway 不會自動從設定檔建立服務，後端和前端需要**分別手動建立**，各自指定子資料夾。請按照以下步驟操作。
+> 現在只需要部署 **一個服務**！後端會自動 build 前端並一起服務，不需要分開兩個服務。
 
 ### 5-1 建立 Railway Project
 
 1. 前往 [Railway](https://railway.app/)，使用 GitHub 帳號登入
 2. 點擊 **New Project** → **Deploy from GitHub Repo**
 3. 選擇你的 `line-ai-bot` Repository
-4. Railway 會建立**第一個服務**，先**不要**讓它開始部署
+4. Railway 自動偵測到根目錄的 `railway.toml`，開始部署
 
-### 5-2 設定後端服務（backend）
-
-1. 點選剛建立的服務 → **Settings** 頁籤
-2. 找到 **Source** → **Root Directory**，填入：
-   ```
-   backend
-   ```
-3. 往下找到 **Deploy** → **Start Command**，確認或填入：
-   ```
-   node src/app.js
-   ```
-4. 點擊 **Save Changes** → Railway 會自動重新部署
-
-### 5-3 新增 MongoDB 資料庫
+### 5-2 新增 MongoDB 資料庫
 
 1. 回到 Project 頁面，點擊 **New Service**
 2. 選擇 **Database → Add MongoDB**
-3. 完成後 Railway 會自動將 `MONGODB_URL` 注入所有服務，**不需要手動設定**
+3. 完成後 Railway 會自動將 `MONGODB_URL` 注入服務，**不需要手動設定**
 
-### 5-4 新增前端服務（frontend）
+### 5-3 取得服務網址
 
-1. 回到 Project 頁面，點擊 **New Service** → **GitHub Repo**
-2. 選擇**同一個** Repository
-3. 點選這個新服務 → **Settings** 頁籤
-4. **Root Directory** 填入：
-   ```
-   frontend
-   ```
-5. **Start Command** 填入：
-   ```
-   npx serve dist -p $PORT
-   ```
-6. 點擊 **Save Changes**
-
-### 5-5 取得前端網址
-
-1. 點選 **frontend** 服務 → **Settings** 頁籤
+1. 點選你的應用服務 → **Settings** 頁籤
 2. 往下找到 **Networking** → **Generate Domain**
-3. Railway 產生類似 `frontend-xxx.up.railway.app` 的網址 → **複製起來備用**
+3. Railway 產生類似 `line-ai-bot-xxx.up.railway.app` 的網址 → **複製起來**（後續兩個步驟都會用到）
 
-### 5-6 設定後端環境變數
+### 5-4 設定環境變數
 
-1. 點選 **backend** 服務 → **Variables** 頁籤
+1. 點選應用服務 → **Variables** 頁籤
 2. 點擊 **New Variable**，依序填入以下所有變數：
 
 | 變數名稱 | 填入內容 |
@@ -162,15 +134,8 @@ git push -u origin main
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Step 3-3 的 `client_email` |
 | `GOOGLE_PRIVATE_KEY` | Step 3-3 的完整 `private_key` |
 | `GOOGLE_SHEET_ID` | Step 3-1 複製的 Sheet ID |
-| `FRONTEND_URL` | Step 5-5 複製的前端網址 |
 
-3. 填完後 backend 服務會自動重新部署
-
-### 5-7 取得後端網址
-
-1. 點選 **backend** 服務 → **Settings** 頁籤
-2. **Networking** → **Generate Domain**
-3. 複製後端網址（例如：`backend-xxx.up.railway.app`）→ 下一步會用到
+3. 填完後服務會自動重新部署
 
 ---
 
@@ -180,9 +145,9 @@ git push -u origin main
 2. 進入你的 Channel → **Messaging API** 頁籤
 3. **Webhook URL** → 點擊編輯，填入：
    ```
-   https://【你的後端網址】/webhook
+   https://【Step 5-3 複製的網址】/webhook
    ```
-   例如：`https://backend-xxx.up.railway.app/webhook`
+   例如：`https://line-ai-bot-xxx.up.railway.app/webhook`
 4. 點擊 **Update** 儲存
 5. 點擊 **Verify** → 看到 **Success** 表示設定成功 ✓
 
@@ -193,7 +158,7 @@ git push -u origin main
 部署完成後，依序完成以下測試：
 
 - [ ] 用 LINE 加你的 Bot 為好友，並傳送一則測試訊息
-- [ ] 開啟前端後台（前端服務網址，例如：`https://frontend-xxx.up.railway.app`）
+- [ ] 開啟後台（Step 5-3 的網址，例如：`https://line-ai-bot-xxx.up.railway.app`）
 - [ ] 確認左側訊息列表出現剛才的訊息，狀態顯示「待回覆（藍色）」
 - [ ] 點選該訊息，右側出現 3 條 AI 回覆建議
 - [ ] 選擇其中一條，或自行輸入回覆，點擊「發送到 LINE」
