@@ -1,81 +1,116 @@
-# OpenAI Chatbot Integration with LINE Messaging API
+# LINE AI 聊天輔助系統
 
-This repository contains a Python-based FastAPI application that integrates OpenAI's ChatGPT with the LINE Messaging API.
+一套讓客服人員透過網頁後台接收 LINE 訊息、查看 AI 回覆建議、選擇後發送給用戶，並自動備份至 Google Sheet 的客服輔助系統。
 
-## Overview
+## 技術架構
 
-The application uses the OpenAI API to generate responses to user messages sent via LINE. The integration is done using FastAPI and the LINE Messaging API.
+| 層級 | 技術 |
+|------|------|
+| 後端 | Node.js + Express |
+| 前端 | React + Vite |
+| 資料庫 | MongoDB |
+| AI | OpenAI GPT-4o |
+| 訊息平台 | LINE Messaging API |
+| 備份 | Google Sheets API |
+| 部署 | Railway |
 
-## Prerequisites
+## 專案結構
 
-To run this application, you will need:
-
-- Python 3.6 or later
-- An OpenAI account with API key
-- LINE Messaging API Channel with a Channel Secret and Channel Access Token
-
-## Installation
-
-1. Clone this repository:
-
-```bash
-git clone https://github.com/your-repository.git
+```
+├── backend/
+│   ├── src/
+│   │   ├── app.js                 # Express 主程式
+│   │   ├── routes/
+│   │   │   ├── webhook.js         # LINE Webhook
+│   │   │   └── admin.js           # 後台 REST API
+│   │   ├── services/
+│   │   │   ├── openaiService.js   # OpenAI GPT-4o 整合
+│   │   │   ├── lineService.js     # LINE Reply API
+│   │   │   ├── dbService.js       # MongoDB 操作
+│   │   │   └── sheetService.js    # Google Sheets 同步
+│   │   └── models/
+│   │       └── Message.js         # 訊息 Schema
+│   ├── package.json
+│   └── .env.example
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── main.jsx
+│   │   └── components/
+│   │       ├── ChatList.jsx       # 對話列表
+│   │       ├── ChatDetail.jsx     # 訊息詳情
+│   │       ├── ReplyPicker.jsx    # AI 回覆選擇器
+│   │       └── SendPanel.jsx      # 發送面板
+│   ├── package.json
+│   └── vite.config.js
+└── railway.toml                   # Railway 部署設定
 ```
 
-2. Navigate to the project directory:
+## 本地開發
+
+### 環境需求
+
+- Node.js 18+
+- MongoDB（本地或 Atlas）
+
+### 後端啟動
 
 ```bash
-cd your-repository
+cd backend
+cp .env.example .env
+# 填入各項環境變數
+npm install
+npm run dev
 ```
 
-3. Install the required packages:
+### 前端啟動
 
 ```bash
-pip install -r requirements.txt
+cd frontend
+npm install
+npm run dev
 ```
 
-## Configuration
+前端開發伺服器會代理 `/api` 請求到後端 `localhost:3000`。
 
-Create a `.env` file in the project root directory with the following variables:
+## 環境變數說明（backend/.env）
 
 ```env
-OPENAI_API_KEY=your_openai_api_key
-ChannelSecret=your_line_channel_secret
-ChannelAccessToken=your_line_channel_access_token
+LINE_CHANNEL_SECRET=         # LINE Channel Secret
+LINE_CHANNEL_ACCESS_TOKEN=   # LINE Channel Access Token
+OPENAI_API_KEY=              # OpenAI API Key
+MONGODB_URL=                 # MongoDB 連線字串
+GOOGLE_SERVICE_ACCOUNT_EMAIL= # Google Service Account Email
+GOOGLE_PRIVATE_KEY=          # Google Service Account 私鑰（含換行）
+GOOGLE_SHEET_ID=             # Google Sheet ID
+FRONTEND_URL=                # 前端網址（CORS 用）
+PORT=3000
 ```
 
-Replace `your_openai_api_key`, `your_line_channel_secret`, and `your_line_channel_access_token` with your actual OpenAI API key, LINE Channel Secret, and LINE Channel Access Token respectively.
+## API 端點
 
-## Usage
+| 方法 | 路徑 | 說明 |
+|------|------|------|
+| POST | `/webhook` | LINE Webhook（含 Signature 驗證） |
+| GET | `/api/messages` | 取得所有訊息（倒序） |
+| GET | `/api/messages/:id` | 取得單筆訊息 |
+| POST | `/api/messages/:id/send` | 發送選定回覆至 LINE |
+| PATCH | `/api/messages/:id/skip` | 略過此訊息 |
+| GET | `/api/stats` | 今日統計 |
 
-Run the FastAPI application:
+## Railway 部署
 
-```bash
-uvicorn main:app --reload
-```
+1. 建立 Railway Project 並連結此 GitHub Repo
+2. 新增 MongoDB Database Plugin
+3. 分別為 `backend` 和 `frontend` 服務設定環境變數
+4. 部署完成後，將後端 URL 填入 LINE Developers Console Webhook URL
 
-The application will start on `http://localhost:8000/`.
+## 注意事項
 
-## API Endpoints
+- LINE `replyToken` 有 5 分鐘有效期，超時後 LINE 會回傳錯誤（狀態標記為「發送失敗」）
+- Google Sheets 私鑰中的換行符 `\n` 需正確填入
+- 所有 API 金鑰透過環境變數注入，請勿 hardcode 於程式碼中
 
-- POST `/callback`: Handles incoming requests from the LINE Messaging API.
+---
 
-## Deploy this on Web Platform
-
-You can choose [Heroku](https://www.heroku.com/) or [Render](http://render.com/)
-
-### Deploy this on Heroku
-
-[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy)
-
-- Input `Channel Secret` and `Channel Access Token`.
-- Input [OpenAI API Key](https://platform.openai.com/account/api-keys) in `OPENAI_API_KEY`.
-- Remember your heroku, ID
-
-### Deploy this on Render.com
-
-[![Deploy to Render](http://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
-
-## License
-
-This project is licensed under the Apache License, Version 2.0. For more information, see the [LICENSE](https://www.apache.org/licenses/LICENSE-2.0) file.
+> 舊版 Python/FastAPI 單機 Bot 已保留於 `main.py`，僅供參考。

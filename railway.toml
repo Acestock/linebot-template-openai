@@ -1,0 +1,16 @@
+[build]
+builder = "nixpacks"
+
+[[services]]
+name = "backend"
+source = "backend"
+startCommand = "node src/app.js"
+
+[services.variables]
+PORT = "3000"
+
+[[services]]
+name = "frontend"
+source = "frontend"
+buildCommand = "npm run build"
+startCommand = "npx serve dist -p 4000"

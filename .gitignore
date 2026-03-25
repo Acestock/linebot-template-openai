@@ -1,3 +1,23 @@
-# Crashlytics plugin (for Android Studio and IntelliJ)
-__pycache__/main.cpython-310.pyc
+# Python
+__pycache__/
+*.pyc
 .DS_Store
+
+# Node.js
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Environment variables
+.env
+backend/.env
+frontend/.env
+
+# Build output
+dist/
+frontend/dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
