@@ -3,6 +3,7 @@ import ChatList from './components/ChatList';
 import ChatDetail from './components/ChatDetail';
 import ReplyPicker from './components/ReplyPicker';
 import SendPanel from './components/SendPanel';
+import API_BASE from './config';
 
 const POLL_INTERVAL = 10000;
 
@@ -16,7 +17,7 @@ function App() {
 
   const fetchMessages = useCallback(async () => {
     try {
-      const res = await fetch('/api/messages');
+      const res = await fetch(`${API_BASE}/api/messages`);
       const data = await res.json();
       setMessages(data);
     } catch (err) {
@@ -26,7 +27,7 @@ function App() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/stats');
+      const res = await fetch(`${API_BASE}/api/stats`);
       const data = await res.json();
       setStats(data);
     } catch (err) {

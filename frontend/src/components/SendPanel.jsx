@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import API_BASE from '../config';
 
 function SendPanel({ message, draftReply, onDraftChange, onSent, onSkipped }) {
   const [sending, setSending] = useState(false);
@@ -15,7 +16,7 @@ function SendPanel({ message, draftReply, onDraftChange, onSent, onSkipped }) {
     }
     setSending(true);
     try {
-      const res = await fetch(`/api/messages/${message._id}/send`, {
+      const res = await fetch(`${API_BASE}/api/messages/${message._id}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ selectedReply: draftReply })
@@ -34,7 +35,7 @@ function SendPanel({ message, draftReply, onDraftChange, onSent, onSkipped }) {
     if (!confirm('確定略過此訊息？')) return;
     setSkipping(true);
     try {
-      const res = await fetch(`/api/messages/${message._id}/skip`, {
+      const res = await fetch(`${API_BASE}/api/messages/${message._id}/skip`, {
         method: 'PATCH'
       });
       const data = await res.json();
