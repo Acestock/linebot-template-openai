@@ -6,7 +6,7 @@ const URGENCY_CONFIG = {
   normal: null
 };
 
-function ChatList({ conversations, selectedUserId, onSelect, mobile }) {
+function ChatList({ conversations, selectedUserId, onSelect, customerLabels = {}, mobile }) {
   const pending = conversations.filter((c) => c.pendingCount > 0);
   const others  = conversations.filter((c) => c.pendingCount === 0);
 
@@ -41,14 +41,14 @@ function ChatList({ conversations, selectedUserId, onSelect, mobile }) {
       {pending.length > 0 && (
         <>
           <SectionLabel label="待回覆" />
-          {pending.map(conv => <ConvItem key={conv.lineUserId} conv={conv} selectedUserId={selectedUserId} onSelect={onSelect} />)}
+          {pending.map(conv => <ConvItem key={conv.lineUserId} conv={conv} selectedUserId={selectedUserId} onSelect={onSelect} labels={customerLabels[conv.lineUserId] || []} />)}
         </>
       )}
 
       {others.length > 0 && (
         <>
           <SectionLabel label="已處理" />
-          {others.map(conv => <ConvItem key={conv.lineUserId} conv={conv} selectedUserId={selectedUserId} onSelect={onSelect} />)}
+          {others.map(conv => <ConvItem key={conv.lineUserId} conv={conv} selectedUserId={selectedUserId} onSelect={onSelect} labels={customerLabels[conv.lineUserId] || []} />)}
         </>
       )}
     </div>
@@ -65,7 +65,7 @@ function SectionLabel({ label }) {
   );
 }
 
-function ConvItem({ conv, selectedUserId, onSelect }) {
+function ConvItem({ conv, selectedUserId, onSelect, labels = [] }) {
   const isSelected = conv.lineUserId === selectedUserId;
   const hasPending = conv.pendingCount > 0;
   const urgencyConf = URGENCY_CONFIG[conv.urgency];
@@ -110,6 +110,15 @@ function ConvItem({ conv, selectedUserId, onSelect }) {
           </span>
         )}
       </div>
+      {labels.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '3px', marginBottom: '2px' }}>
+          {labels.map(l => (
+            <span key={l._id} style={{ fontSize: '11px', padding: '1px 6px', borderRadius: '8px', backgroundColor: l.color + '20', color: l.color, border: `1px solid ${l.color}40` }}>
+              {l.name}
+            </span>
+          ))}
+        </div>
+      )}
       <div style={{ fontSize: '12px', color: '#777', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {latestMsg ? latestMsg.userMessage : (conv.lastRepliedMsg ? `↩ ${conv.lastRepliedMsg}` : '—')}
       </div>

@@ -4,6 +4,7 @@ import ChatDetail from './components/ChatDetail';
 import ReplyPicker from './components/ReplyPicker';
 import SendPanel from './components/SendPanel';
 import SettingsModal from './components/SettingsModal';
+import StickyNotes from './components/StickyNotes';
 import API_BASE from './config';
 
 const FALLBACK_POLL_INTERVAL = 30000;
@@ -28,6 +29,8 @@ function App() {
   const [loadingSuggest, setLoadingSuggest] = useState(false);
   const [stats, setStats] = useState({ pending: 0, replied: 0 });
   const [showSettings, setShowSettings] = useState(false);
+  const [labels, setLabels] = useState([]);
+  const [customerLabels, setCustomerLabels] = useState({});
 
   const selectedConv = conversations.find((c) => c.lineUserId === selectedUserId) || null;
 
@@ -51,6 +54,17 @@ function App() {
     }
   }, []);
 
+  const fetchLabels = useCallback(async () => {
+    try {
+      const [labelsRes, clRes] = await Promise.all([
+        fetch(`${API_BASE}/api/labels`),
+        fetch(`${API_BASE}/api/customers/labels`)
+      ]);
+      setLabels(await labelsRes.json());
+      setCustomerLabels(await clRes.json());
+    } catch {}
+  }, []);
+
   const fetchSuggest = useCallback(async (lineUserId) => {
     setAiReplies([]);
     setLoadingSuggest(true);
@@ -70,6 +84,7 @@ function App() {
   useEffect(() => {
     fetchConversations();
     fetchStats();
+    fetchLabels();
 
     const es = new EventSource(`${API_BASE}/api/sse`);
     es.addEventListener('new-message', () => {
@@ -86,7 +101,7 @@ function App() {
       es.close();
       clearInterval(interval);
     };
-  }, [fetchConversations, fetchStats]);
+  }, [fetchConversations, fetchStats, fetchLabels]);
 
   function handleSelect(lineUserId) {
     setSelectedUserId(lineUserId);
@@ -131,6 +146,10 @@ function App() {
     fetchStats();
   }
 
+  function handleLabelsChange(lineUserId, newLabels) {
+    setCustomerLabels(prev => ({ ...prev, [lineUserId]: newLabels }));
+  }
+
   // ─── Mobile layout ─────────────────────────────────────────────────────────
   if (isMobile) {
     return (
@@ -161,11 +180,11 @@ function App() {
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {mobileView === 'list' ? (
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              <ChatList conversations={conversations} selectedUserId={selectedUserId} onSelect={handleSelect} mobile />
+              <ChatList conversations={conversations} selectedUserId={selectedUserId} onSelect={handleSelect} customerLabels={customerLabels} mobile />
             </div>
           ) : (
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              <ChatDetail conversation={selectedConv} />
+              <ChatDetail conversation={selectedConv} labels={labels} customerLabels={customerLabels} onLabelsChange={handleLabelsChange} />
               {selectedConv && (
                 <>
                   <ReplyPicker aiReplies={aiReplies} loading={loadingSuggest} selectedReply={draftReply} onSelect={handleReplyPick} />
@@ -176,6 +195,7 @@ function App() {
           )}
         </div>
       </div>
+      <StickyNotes />
     );
   }
 
@@ -201,9 +221,9 @@ function App() {
 
       {/* Main layout */}
       <div style={{ display: 'flex', marginTop: '48px', width: '100%' }}>
-        <ChatList conversations={conversations} selectedUserId={selectedUserId} onSelect={handleSelect} />
+        <ChatList conversations={conversations} selectedUserId={selectedUserId} onSelect={handleSelect} customerLabels={customerLabels} />
         <div style={{ flex: 1, overflowY: 'auto', height: 'calc(100vh - 48px)' }}>
-          <ChatDetail conversation={selectedConv} />
+          <ChatDetail conversation={selectedConv} labels={labels} customerLabels={customerLabels} onLabelsChange={handleLabelsChange} />
           {selectedConv && (
             <>
               <ReplyPicker aiReplies={aiReplies} loading={loadingSuggest} selectedReply={draftReply} onSelect={handleReplyPick} />
@@ -217,6 +237,7 @@ function App() {
           )}
         </div>
       </div>
+      <StickyNotes />
     </div>
   );
 }

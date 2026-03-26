@@ -1,7 +1,80 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import CustomerHistory from './CustomerHistory';
+import API_BASE from '../config';
 
-function ChatDetail({ conversation }) {
+function LabelPicker({ lineUserId, labels, currentLabels, onLabelsChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handle(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [open]);
+
+  const currentIds = new Set(currentLabels.map(l => l._id));
+
+  async function toggle(label) {
+    const newIds = currentIds.has(label._id)
+      ? [...currentIds].filter(id => id !== label._id)
+      : [...currentIds, label._id];
+
+    try {
+      const res = await fetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/labels`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ labelIds: newIds })
+      });
+      const newLabels = await res.json();
+      onLabelsChange(lineUserId, newLabels);
+    } catch {}
+  }
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }} ref={ref}>
+      <button onClick={() => setOpen(p => !p)} style={{
+        padding: '2px 10px', borderRadius: '12px', border: '1px dashed #bbb',
+        background: '#fff', color: '#888', fontSize: '12px', cursor: 'pointer'
+      }}>
+        + 標籤
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, marginTop: '4px',
+          backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e0e0e0',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: '160px', zIndex: 50, overflow: 'hidden'
+        }}>
+          {labels.length === 0 ? (
+            <div style={{ padding: '12px 14px', fontSize: '12px', color: '#bbb' }}>
+              尚無標籤，請在設定中新增
+            </div>
+          ) : (
+            labels.map(label => {
+              const active = currentIds.has(label._id);
+              return (
+                <div key={label._id} onClick={() => toggle(label)} style={{
+                  padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
+                  backgroundColor: active ? label.color + '15' : 'transparent',
+                  borderBottom: '1px solid #f5f5f5'
+                }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = label.color + '20'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = active ? label.color + '15' : 'transparent'}
+                >
+                  <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: label.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: '13px', color: '#333', flex: 1 }}>{label.name}</span>
+                  {active && <span style={{ color: label.color, fontSize: '14px' }}>✓</span>}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsChange }) {
   const [showHistory, setShowHistory] = useState(false);
 
   if (!conversation) {
@@ -13,32 +86,44 @@ function ChatDetail({ conversation }) {
   }
 
   const { lineUserId, displayName, pendingMessages = [], pendingCount, status, lastRepliedMsg } = conversation;
+  const assignedLabels = customerLabels[lineUserId] || [];
 
   return (
     <div style={{ padding: '16px', borderBottom: '1px solid #e0e0e0' }}>
       {showHistory && (
-        <CustomerHistory
-          lineUserId={lineUserId}
-          displayName={displayName}
-          onClose={() => setShowHistory(false)}
-        />
+        <CustomerHistory lineUserId={lineUserId} displayName={displayName} onClose={() => setShowHistory(false)} />
       )}
 
       {/* User info row */}
-      <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-        <span style={{ fontWeight: 'bold', color: '#333', fontSize: '15px' }}>
-          {displayName || lineUserId}
-        </span>
-        <span style={{ fontSize: '12px', color: '#bbb' }}>
-          {lineUserId}
-        </span>
-        <button onClick={() => setShowHistory(true)} style={{
-          padding: '2px 10px', borderRadius: '12px',
-          border: '1px solid #2196F3', background: '#fff', color: '#2196F3',
-          fontSize: '12px', cursor: 'pointer'
-        }}>
-          歷史紀錄
-        </button>
+      <div style={{ marginBottom: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '6px' }}>
+          <span style={{ fontWeight: 'bold', color: '#333', fontSize: '15px' }}>
+            {displayName || lineUserId}
+          </span>
+          <span style={{ fontSize: '12px', color: '#bbb' }}>{lineUserId}</span>
+          <button onClick={() => setShowHistory(true)} style={{
+            padding: '2px 10px', borderRadius: '12px',
+            border: '1px solid #2196F3', background: '#fff', color: '#2196F3',
+            fontSize: '12px', cursor: 'pointer'
+          }}>歷史紀錄</button>
+        </div>
+
+        {/* Labels row */}
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+          {assignedLabels.map(label => (
+            <span key={label._id} style={{
+              fontSize: '12px', padding: '2px 9px', borderRadius: '10px',
+              backgroundColor: label.color + '20', color: label.color,
+              border: `1px solid ${label.color}50`, fontWeight: '500'
+            }}>{label.name}</span>
+          ))}
+          <LabelPicker
+            lineUserId={lineUserId}
+            labels={labels}
+            currentLabels={assignedLabels}
+            onLabelsChange={onLabelsChange}
+          />
+        </div>
       </div>
 
       {/* Pending messages */}
@@ -51,15 +136,7 @@ function ChatDetail({ conversation }) {
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {pendingMessages.map((msg, i) => (
-              <div key={msg._id || i} style={{
-                backgroundColor: '#f0f7ff',
-                borderRadius: '8px',
-                padding: '10px 14px',
-                borderLeft: '3px solid #2196F3',
-                fontSize: '14px',
-                color: '#222',
-                lineHeight: '1.6'
-              }}>
+              <div key={msg._id || i} style={{ backgroundColor: '#f0f7ff', borderRadius: '8px', padding: '10px 14px', borderLeft: '3px solid #2196F3', fontSize: '14px', color: '#222', lineHeight: '1.6' }}>
                 <div style={{ fontSize: '11px', color: '#90a4ae', marginBottom: '3px' }}>
                   {pendingCount > 1 ? `訊息 ${i + 1}　` : ''}
                   {new Date(msg.createdAt).toLocaleString('zh-TW')}
@@ -71,30 +148,15 @@ function ChatDetail({ conversation }) {
         </div>
       )}
 
-      {/* Replied state */}
       {pendingCount === 0 && status === 'replied' && lastRepliedMsg && (
-        <div style={{
-          backgroundColor: '#e8f5e9',
-          borderRadius: '8px',
-          padding: '12px 14px',
-          fontSize: '14px',
-          color: '#2e7d32',
-          lineHeight: '1.6'
-        }}>
+        <div style={{ backgroundColor: '#e8f5e9', borderRadius: '8px', padding: '12px 14px', fontSize: '14px', color: '#2e7d32', lineHeight: '1.6' }}>
           <div style={{ fontSize: '12px', color: '#66bb6a', marginBottom: '4px' }}>最後一則回覆</div>
           {lastRepliedMsg}
         </div>
       )}
 
-      {/* Skipped state */}
       {pendingCount === 0 && status === 'failed' && (
-        <div style={{
-          backgroundColor: '#fafafa',
-          borderRadius: '8px',
-          padding: '10px 14px',
-          fontSize: '13px',
-          color: '#bbb'
-        }}>
+        <div style={{ backgroundColor: '#fafafa', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#bbb' }}>
           此客戶的訊息已略過
         </div>
       )}

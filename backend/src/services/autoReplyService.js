@@ -37,9 +37,8 @@ async function execute(lineUserId) {
       .lean();
     if (pendingMsgs.length === 0) return;
 
-    const combinedText = pendingMsgs.length === 1
-      ? pendingMsgs[0].userMessage
-      : pendingMsgs.map((m, i) => `[訊息${i + 1}] ${m.userMessage}`).join('\n');
+    // Join messages with a neutral separator — no [訊息N] tags that AI might echo back
+    const combinedText = pendingMsgs.map(m => m.userMessage).join('\n---\n');
 
     const replies = await generateReplies(combinedText, bp);
     // Use the 親切 (friendly) version as auto-reply

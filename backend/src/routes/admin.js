@@ -5,6 +5,8 @@ const sheetService = require('../services/sheetService');
 const BusinessProfile = require('../models/BusinessProfile');
 const Template = require('../models/Template');
 const Keyword = require('../models/Keyword');
+const Label = require('../models/Label');
+const CustomerLabel = require('../models/CustomerLabel');
 const Message = require('../models/Message');
 const openaiService = require('../services/openaiService');
 const sseService = require('../services/sseService');
@@ -153,9 +155,7 @@ router.post('/conversations/:lineUserId/suggest', async (req, res) => {
       return res.json({ aiReplies: ['', '', ''] });
     }
 
-    const combinedText = pendingMsgs.length === 1
-      ? pendingMsgs[0].userMessage
-      : pendingMsgs.map((m, i) => `[訊息${i + 1}] ${m.userMessage}`).join('\n');
+    const combinedText = pendingMsgs.map(m => m.userMessage).join('\n---\n');
 
     const bp = await BusinessProfile.findOne().lean();
     const aiReplies = await openaiService.generateReplies(combinedText, bp);
@@ -316,6 +316,71 @@ router.get('/stats', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── Labels ──────────────────────────────────────────────────────────────────
+
+// GET /api/labels
+router.get('/labels', async (req, res) => {
+  try {
+    res.json(await Label.find().sort({ createdAt: 1 }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/labels
+router.post('/labels', async (req, res) => {
+  try {
+    const { name, color } = req.body;
+    if (!name) return res.status(400).json({ error: 'name is required' });
+    res.status(201).json(await Label.create({ name, color: color || '#2196F3' }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/labels/:id
+router.put('/labels/:id', async (req, res) => {
+  try {
+    const { name, color } = req.body;
+    const label = await Label.findByIdAndUpdate(req.params.id, { name, color }, { new: true });
+    if (!label) return res.status(404).json({ error: 'Label not found' });
+    res.json(label);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/labels/:id  — also remove from all customer assignments
+router.delete('/labels/:id', async (req, res) => {
+  try {
+    await Label.findByIdAndDelete(req.params.id);
+    await CustomerLabel.updateMany({}, { $pull: { labelIds: req.params.id } });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Customer Labels ──────────────────────────────────────────────────────────
+
+// GET /api/customers/labels  — bulk map: { [lineUserId]: [labelObj, ...] }
+// MUST be before /customers/:lineUserId/* routes
+router.get('/customers/labels', async (req, res) => {
+  try {
+    const assignments = await CustomerLabel.find().populate('labelIds').lean();
+    const map = {};
+    for (const a of assignments) {
+      map[a.lineUserId] = a.labelIds.filter(Boolean);
+    }
+    res.json(map);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/customers/:lineUserId/labels  — set label list for one customer
+router.patch('/customers/:lineUserId/labels', async (req, res) => {
+  try {
+    const { labelIds } = req.body;
+    const doc = await CustomerLabel.findOneAndUpdate(
+      { lineUserId: req.params.lineUserId },
+      { labelIds: labelIds || [] },
+      { upsert: true, new: true }
+    ).populate('labelIds');
+    res.json(doc.labelIds.filter(Boolean));
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── Customer History ─────────────────────────────────────────────────────────

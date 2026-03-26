@@ -22,6 +22,7 @@ async function generateReplies(userMessage, businessProfile) {
   const systemPrompt = buildBasePrompt(businessProfile) + `
 
 根據以上店家資訊與用戶訊息，生成 3 條適合的回覆建議，每條風格略有不同（正式、親切、簡潔）。
+注意：用戶訊息中若有「[訊息1]」「[訊息2]」等系統標記，代表客人分段傳送的多則訊息，請根據整體語意回覆，回覆中不要出現這些標記。
 只回傳 JSON 格式，不要其他說明。
 格式：{ "replies": ["回覆1", "回覆2", "回覆3"] }`;
 

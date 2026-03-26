@@ -193,6 +193,101 @@ function AutoReplyTab({ profile, onChange, onSave, saving, saved }) {
   );
 }
 
+// ─── Tab 4: 標籤管理 ─────────────────────────────────────────────────────────
+const PRESET_COLORS = ['#f44336','#e91e63','#9c27b0','#3f51b5','#2196F3','#009688','#4CAF50','#FF9800','#FF5722','#607d8b'];
+
+function LabelTab() {
+  const [labels, setLabels] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ name: '', color: '#2196F3' });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    const res = await fetch(`${API_BASE}/api/labels`);
+    setLabels(await res.json());
+  }
+
+  function openNew() { setEditing(null); setForm({ name: '', color: '#2196F3' }); setShowForm(true); }
+  function openEdit(l) { setEditing(l); setForm({ name: l.name, color: l.color }); setShowForm(true); }
+
+  async function handleSave() {
+    if (!form.name.trim()) { alert('標籤名稱為必填'); return; }
+    setSaving(true);
+    try {
+      const url = editing ? `${API_BASE}/api/labels/${editing._id}` : `${API_BASE}/api/labels`;
+      const res = await fetch(url, { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      if (!res.ok) throw new Error('操作失敗');
+      await load(); setShowForm(false);
+    } catch (err) { alert(err.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('確定刪除？此標籤將從所有客戶移除。')) return;
+    await fetch(`${API_BASE}/api/labels/${id}`, { method: 'DELETE' });
+    await load();
+  }
+
+  if (showForm) return (
+    <div>
+      <div style={GROUP}>
+        <label style={LABEL}>標籤名稱 *</label>
+        <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+          placeholder="例：VIP、需跟進、已下單..." style={FIELD} />
+      </div>
+      <div style={GROUP}>
+        <label style={LABEL}>顏色</label>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' }}>
+          {PRESET_COLORS.map(c => (
+            <div key={c} onClick={() => setForm(p => ({ ...p, color: c }))} style={{
+              width: '28px', height: '28px', borderRadius: '50%', backgroundColor: c, cursor: 'pointer',
+              border: form.color === c ? '3px solid #333' : '2px solid transparent', flexShrink: 0
+            }} />
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+          <input type="color" value={form.color} onChange={e => setForm(p => ({ ...p, color: e.target.value }))}
+            style={{ width: '36px', height: '36px', padding: '2px', border: '1px solid #e0e0e0', borderRadius: '4px', cursor: 'pointer' }} />
+          <span style={{ fontSize: '13px', color: '#888' }}>或自訂顏色</span>
+          <span style={{ fontSize: '13px', padding: '3px 12px', borderRadius: '12px', backgroundColor: form.color + '20', color: form.color, border: `1px solid ${form.color}50`, fontWeight: '500' }}>
+            {form.name || '預覽'}
+          </span>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }}>
+        <button onClick={() => setShowForm(false)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', color: '#666', cursor: 'pointer' }}>返回</button>
+        <button onClick={handleSave} disabled={saving} style={{ padding: '8px 18px', borderRadius: '6px', border: 'none', background: saving ? '#b0bec5' : '#2196F3', color: '#fff', fontWeight: 'bold', cursor: saving ? 'not-allowed' : 'pointer' }}>
+          {saving ? '儲存中...' : '儲存'}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <p style={{ fontSize: '13px', color: '#888', marginTop: 0, marginBottom: '12px' }}>
+        建立標籤後，可在客戶對話頁面為每位客戶手動貼標。
+      </p>
+      {labels.length === 0 && <div style={{ textAlign: 'center', color: '#bbb', padding: '24px', fontSize: '14px' }}>尚無標籤，點擊下方新增</div>}
+      {labels.map(l => (
+        <div key={l._id} style={{ padding: '10px 14px', marginBottom: '8px', borderRadius: '8px', border: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: l.color, flexShrink: 0 }} />
+          <span style={{ fontSize: '14px', color: '#333', flex: 1, fontWeight: '500' }}>{l.name}</span>
+          <span style={{ fontSize: '12px', padding: '2px 10px', borderRadius: '10px', backgroundColor: l.color + '20', color: l.color, border: `1px solid ${l.color}40` }}>{l.name}</span>
+          <button onClick={() => openEdit(l)} style={{ padding: '4px 10px', borderRadius: '5px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#555' }}>編輯</button>
+          <button onClick={() => handleDelete(l._id)} style={{ padding: '4px 10px', borderRadius: '5px', border: '1px solid #ffcdd2', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#e53935' }}>刪除</button>
+        </div>
+      ))}
+      <button onClick={openNew} style={{ width: '100%', marginTop: '4px', padding: '10px', borderRadius: '8px', border: '2px dashed #e0e0e0', background: '#fff', color: '#2196F3', fontSize: '14px', cursor: 'pointer', fontWeight: '600' }}>
+        + 新增標籤
+      </button>
+    </div>
+  );
+}
+
 // ─── Main Modal ───────────────────────────────────────────────────────────────
 function SettingsModal({ onClose }) {
   const [tab, setTab] = useState('profile');
@@ -235,7 +330,8 @@ function SettingsModal({ onClose }) {
   const TABS = [
     { key: 'profile', label: '商家知識庫' },
     { key: 'keywords', label: '關鍵字觸發' },
-    { key: 'autoReply', label: '自動回覆' }
+    { key: 'autoReply', label: '自動回覆' },
+    { key: 'labels', label: '標籤管理' }
   ];
 
   return (
@@ -265,6 +361,7 @@ function SettingsModal({ onClose }) {
           {tab === 'profile' && <ProfileTab profile={profile} onChange={handleChange} onSave={handleSave} saving={saving} saved={saved} />}
           {tab === 'keywords' && <KeywordTab />}
           {tab === 'autoReply' && <AutoReplyTab profile={profile} onChange={handleChange} onSave={handleSave} saving={saving} saved={saved} />}
+          {tab === 'labels' && <LabelTab />}
         </div>
       </div>
     </div>
