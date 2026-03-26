@@ -21,7 +21,6 @@ async function generateReplies(userMessage) {
         { role: 'user', content: userMessage }
       ],
       response_format: { type: 'json_object' },
-      timeout: 15000
     });
 
     const content = response.choices[0].message.content;
