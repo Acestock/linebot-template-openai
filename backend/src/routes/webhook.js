@@ -4,6 +4,7 @@ const openaiService = require('../services/openaiService');
 const dbService = require('../services/dbService');
 const { getUserProfile } = require('../services/lineService');
 const BusinessProfile = require('../models/BusinessProfile');
+const sseService = require('../services/sseService');
 
 const router = express.Router();
 
@@ -45,6 +46,7 @@ router.post('/', async (req, res) => {
         status: 'pending'
       });
       console.log(`[Webhook] Message saved from ${lineProfile.displayName || lineUserId}`);
+      sseService.broadcast('new-message', { lineUserId });
     } catch (err) {
       console.error('[Webhook] Error processing event:', err.message);
       try {

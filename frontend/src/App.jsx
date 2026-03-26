@@ -6,7 +6,7 @@ import SendPanel from './components/SendPanel';
 import SettingsModal from './components/SettingsModal';
 import API_BASE from './config';
 
-const POLL_INTERVAL = 10000;
+const FALLBACK_POLL_INTERVAL = 30000;
 
 function App() {
   const [conversations, setConversations] = useState([]);
@@ -58,11 +58,24 @@ function App() {
   useEffect(() => {
     fetchConversations();
     fetchStats();
+
+    // SSE: server pushes 'new-message' when LINE webhook fires
+    const es = new EventSource(`${API_BASE}/api/sse`);
+    es.addEventListener('new-message', () => {
+      fetchConversations();
+      fetchStats();
+    });
+
+    // Fallback polling every 30s (handles SSE reconnect gaps / missed events)
     const interval = setInterval(() => {
       fetchConversations();
       fetchStats();
-    }, POLL_INTERVAL);
-    return () => clearInterval(interval);
+    }, FALLBACK_POLL_INTERVAL);
+
+    return () => {
+      es.close();
+      clearInterval(interval);
+    };
   }, [fetchConversations, fetchStats]);
 
   function handleSelect(lineUserId) {

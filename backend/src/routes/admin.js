@@ -6,8 +6,33 @@ const BusinessProfile = require('../models/BusinessProfile');
 const Template = require('../models/Template');
 const Message = require('../models/Message');
 const openaiService = require('../services/openaiService');
+const sseService = require('../services/sseService');
 
 const router = express.Router();
+
+// ─── SSE (real-time push) ─────────────────────────────────────────────────────
+
+// GET /api/sse
+router.get('/sse', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // prevent Nginx/Railway buffering
+  res.flushHeaders();
+
+  res.write('data: {"type":"connected"}\n\n');
+  sseService.addClient(res);
+
+  // heartbeat every 25s to keep the connection alive through proxies
+  const heartbeat = setInterval(() => {
+    res.write(':heartbeat\n\n');
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sseService.removeClient(res);
+  });
+});
 
 // ─── Conversations (user-grouped view) ───────────────────────────────────────
 
