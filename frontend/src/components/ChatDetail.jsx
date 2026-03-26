@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
+import CustomerHistory from './CustomerHistory';
 
 function ChatDetail({ message }) {
+  const [showHistory, setShowHistory] = useState(false);
+
   if (!message) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
@@ -11,12 +14,26 @@ function ChatDetail({ message }) {
 
   return (
     <div style={{ padding: '16px', borderBottom: '1px solid #e0e0e0' }}>
-      <div style={{ marginBottom: '8px' }}>
+      {showHistory && (
+        <CustomerHistory
+          lineUserId={message.lineUserId}
+          displayName={message.displayName}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
+      <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
         <span style={{ fontWeight: 'bold', color: '#333' }}>用戶：</span>
         <span style={{ color: '#555' }}>{message.displayName || message.lineUserId}</span>
-        <span style={{ marginLeft: '12px', fontSize: '12px', color: '#aaa' }}>
+        <span style={{ fontSize: '12px', color: '#aaa' }}>
           ID: {message.lineUserId}
         </span>
+        <button onClick={() => setShowHistory(true)} style={{
+          marginLeft: '4px', padding: '2px 10px', borderRadius: '12px',
+          border: '1px solid #2196F3', background: '#fff', color: '#2196F3',
+          fontSize: '12px', cursor: 'pointer'
+        }}>
+          歷史紀錄
+        </button>
       </div>
       <div style={{ marginBottom: '8px' }}>
         <span style={{ fontWeight: 'bold', color: '#333' }}>時間：</span>

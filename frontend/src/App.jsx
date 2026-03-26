@@ -3,6 +3,7 @@ import ChatList from './components/ChatList';
 import ChatDetail from './components/ChatDetail';
 import ReplyPicker from './components/ReplyPicker';
 import SendPanel from './components/SendPanel';
+import SettingsModal from './components/SettingsModal';
 import API_BASE from './config';
 
 const POLL_INTERVAL = 10000;
@@ -12,6 +13,7 @@ function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [draftReply, setDraftReply] = useState('');
   const [stats, setStats] = useState({ pending: 0, replied: 0 });
+  const [showSettings, setShowSettings] = useState(false);
 
   const selectedMessage = messages.find((m) => m._id === selectedId) || null;
 
@@ -86,10 +88,19 @@ function App() {
         boxShadow: '0 2px 4px rgba(0,0,0,0.15)'
       }}>
         <span style={{ fontWeight: 'bold', fontSize: '16px' }}>LINE AI 聊天輔助系統</span>
-        <span style={{ marginLeft: 'auto', fontSize: '13px', opacity: 0.9 }}>
-          今日待回覆：{stats.pending} | 已回覆：{stats.replied}
+        <span style={{ marginLeft: 'auto', fontSize: '13px', opacity: 0.9, display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <span>今日待回覆：{stats.pending} | 已回覆：{stats.replied}</span>
+          <button
+            onClick={() => setShowSettings(true)}
+            title="商家知識庫設定"
+            style={{
+              background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px',
+              color: '#fff', fontSize: '16px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1
+            }}
+          >⚙</button>
         </span>
       </div>
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
 
       {/* Main layout below header */}
       <div style={{ display: 'flex', marginTop: '48px', width: '100%' }}>

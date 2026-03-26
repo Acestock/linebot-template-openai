@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import API_BASE from '../config';
+import TemplatePanel from './TemplatePanel';
 
 function SendPanel({ message, draftReply, onDraftChange, onSent, onSkipped }) {
   const [sending, setSending] = useState(false);
@@ -52,8 +53,9 @@ function SendPanel({ message, draftReply, onDraftChange, onSent, onSkipped }) {
 
   return (
     <div style={{ padding: '16px' }}>
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#333', fontSize: '14px' }}>
-        回覆內容
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+        <div style={{ fontWeight: 'bold', color: '#333', fontSize: '14px' }}>回覆內容</div>
+        <TemplatePanel disabled={disabled} onInsert={onDraftChange} />
       </div>
       <textarea
         value={draftReply}
