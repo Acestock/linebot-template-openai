@@ -8,7 +8,19 @@ import API_BASE from './config';
 
 const FALLBACK_POLL_INTERVAL = 30000;
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return isMobile;
+}
+
 function App() {
+  const isMobile = useIsMobile();
+  const [mobileView, setMobileView] = useState('list'); // 'list' | 'chat'
   const [conversations, setConversations] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [draftReply, setDraftReply] = useState('');
@@ -59,14 +71,12 @@ function App() {
     fetchConversations();
     fetchStats();
 
-    // SSE: server pushes 'new-message' when LINE webhook fires
     const es = new EventSource(`${API_BASE}/api/sse`);
     es.addEventListener('new-message', () => {
       fetchConversations();
       fetchStats();
     });
 
-    // Fallback polling every 30s (handles SSE reconnect gaps / missed events)
     const interval = setInterval(() => {
       fetchConversations();
       fetchStats();
@@ -82,10 +92,13 @@ function App() {
     setSelectedUserId(lineUserId);
     setDraftReply('');
     setAiReplies([]);
+    if (isMobile) setMobileView('chat');
     const conv = conversations.find((c) => c.lineUserId === lineUserId);
-    if (conv && conv.pendingCount > 0) {
-      fetchSuggest(lineUserId);
-    }
+    if (conv && conv.pendingCount > 0) fetchSuggest(lineUserId);
+  }
+
+  function handleBackToList() {
+    setMobileView('list');
   }
 
   function handleReplyPick(reply) {
@@ -93,15 +106,15 @@ function App() {
   }
 
   function handleSent() {
-    // Mark conversation as replied locally while waiting for next poll
     setConversations((prev) =>
       prev.map((c) =>
         c.lineUserId === selectedUserId
-          ? { ...c, pendingCount: 0, status: 'replied', pendingMessages: [] }
+          ? { ...c, pendingCount: 0, status: 'replied', pendingMessages: [], urgency: 'normal' }
           : c
       )
     );
     setAiReplies([]);
+    if (isMobile) setMobileView('list');
     fetchStats();
   }
 
@@ -109,74 +122,92 @@ function App() {
     setConversations((prev) =>
       prev.map((c) =>
         c.lineUserId === selectedUserId
-          ? { ...c, pendingCount: 0, status: 'failed', pendingMessages: [] }
+          ? { ...c, pendingCount: 0, status: 'failed', pendingMessages: [], urgency: 'normal' }
           : c
       )
     );
     setAiReplies([]);
+    if (isMobile) setMobileView('list');
     fetchStats();
   }
 
+  // ─── Mobile layout ─────────────────────────────────────────────────────────
+  if (isMobile) {
+    return (
+      <div style={{ height: '100vh', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#333', display: 'flex', flexDirection: 'column' }}>
+        {/* Mobile Header */}
+        <div style={{ height: '48px', backgroundColor: '#00B900', color: '#fff', display: 'flex', alignItems: 'center', padding: '0 12px', flexShrink: 0, boxShadow: '0 2px 4px rgba(0,0,0,0.15)' }}>
+          {mobileView === 'chat' ? (
+            <>
+              <button onClick={handleBackToList} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '20px', cursor: 'pointer', padding: '4px 8px 4px 0', lineHeight: 1 }}>←</button>
+              <span style={{ fontWeight: 'bold', fontSize: '15px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {selectedConv?.displayName || selectedConv?.lineUserId || '對話'}
+              </span>
+            </>
+          ) : (
+            <>
+              <span style={{ fontWeight: 'bold', fontSize: '15px', flex: 1 }}>LINE AI 後台</span>
+              <span style={{ fontSize: '12px', opacity: 0.9, marginRight: '10px' }}>
+                待{stats.pending} 已{stats.replied}
+              </span>
+            </>
+          )}
+          <button onClick={() => setShowSettings(true)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '16px', cursor: 'pointer', padding: '4px 8px' }}>⚙</button>
+        </div>
+
+        {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+
+        {/* Mobile Content */}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {mobileView === 'list' ? (
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              <ChatList conversations={conversations} selectedUserId={selectedUserId} onSelect={handleSelect} mobile />
+            </div>
+          ) : (
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              <ChatDetail conversation={selectedConv} />
+              {selectedConv && (
+                <>
+                  <ReplyPicker aiReplies={aiReplies} loading={loadingSuggest} selectedReply={draftReply} onSelect={handleReplyPick} />
+                  <SendPanel conversation={selectedConv} draftReply={draftReply} onDraftChange={setDraftReply} onSent={handleSent} onSkipped={handleSkipped} />
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Desktop layout ─────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', height: '100vh', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#333' }}>
       {/* Header */}
       <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: '48px',
-        backgroundColor: '#00B900',
-        color: '#fff',
-        display: 'flex',
-        alignItems: 'center',
-        padding: '0 20px',
-        zIndex: 100,
-        boxShadow: '0 2px 4px rgba(0,0,0,0.15)'
+        position: 'fixed', top: 0, left: 0, right: 0, height: '48px',
+        backgroundColor: '#00B900', color: '#fff',
+        display: 'flex', alignItems: 'center', padding: '0 20px',
+        zIndex: 100, boxShadow: '0 2px 4px rgba(0,0,0,0.15)'
       }}>
         <span style={{ fontWeight: 'bold', fontSize: '16px' }}>LINE AI 聊天輔助系統</span>
         <span style={{ marginLeft: 'auto', fontSize: '13px', opacity: 0.9, display: 'flex', alignItems: 'center', gap: '16px' }}>
           <span>今日待回覆：{stats.pending} | 已回覆：{stats.replied}</span>
-          <button
-            onClick={() => setShowSettings(true)}
-            title="商家知識庫設定"
-            style={{
-              background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px',
-              color: '#fff', fontSize: '16px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1
-            }}
-          >⚙</button>
+          <button onClick={() => setShowSettings(true)} title="系統設定"
+            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '16px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>⚙</button>
         </span>
       </div>
 
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
 
-      {/* Main layout below header */}
+      {/* Main layout */}
       <div style={{ display: 'flex', marginTop: '48px', width: '100%' }}>
-        {/* Left panel */}
-        <ChatList
-          conversations={conversations}
-          selectedUserId={selectedUserId}
-          onSelect={handleSelect}
-        />
-
-        {/* Right panel */}
+        <ChatList conversations={conversations} selectedUserId={selectedUserId} onSelect={handleSelect} />
         <div style={{ flex: 1, overflowY: 'auto', height: 'calc(100vh - 48px)' }}>
           <ChatDetail conversation={selectedConv} />
           {selectedConv && (
             <>
-              <ReplyPicker
-                aiReplies={aiReplies}
-                loading={loadingSuggest}
-                selectedReply={draftReply}
-                onSelect={handleReplyPick}
-              />
-              <SendPanel
-                conversation={selectedConv}
-                draftReply={draftReply}
-                onDraftChange={setDraftReply}
-                onSent={handleSent}
-                onSkipped={handleSkipped}
-              />
+              <ReplyPicker aiReplies={aiReplies} loading={loadingSuggest} selectedReply={draftReply} onSelect={handleReplyPick} />
+              <SendPanel conversation={selectedConv} draftReply={draftReply} onDraftChange={setDraftReply} onSent={handleSent} onSkipped={handleSkipped} />
             </>
           )}
           {!selectedConv && (

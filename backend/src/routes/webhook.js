@@ -2,9 +2,11 @@ const express = require('express');
 const line = require('@line/bot-sdk');
 const openaiService = require('../services/openaiService');
 const dbService = require('../services/dbService');
-const { getUserProfile } = require('../services/lineService');
+const { getUserProfile, pushMessage } = require('../services/lineService');
 const BusinessProfile = require('../models/BusinessProfile');
+const Keyword = require('../models/Keyword');
 const sseService = require('../services/sseService');
+const autoReplyService = require('../services/autoReplyService');
 
 const router = express.Router();
 
@@ -28,24 +30,51 @@ router.post('/', async (req, res) => {
     const userMessage = message.text;
 
     try {
-      // Fetch LINE profile and business profile concurrently
-      const [lineProfile, businessProfile] = await Promise.all([
+      const [lineProfile, businessProfile, keywords] = await Promise.all([
         getUserProfile(lineUserId),
-        BusinessProfile.findOne().lean()
+        BusinessProfile.findOne().lean(),
+        Keyword.find({ isActive: true }).sort({ order: 1 }).lean()
       ]);
 
-      // Generate AI replies with business context
-      const aiReplies = await openaiService.generateReplies(userMessage, businessProfile);
+      const { replies, urgency, keywordMatch } = await openaiService.analyzeMessage(
+        userMessage, businessProfile, keywords
+      );
+
+      // Keyword matched — auto-reply immediately, no admin review needed
+      if (keywordMatch && keywordMatch.reply) {
+        await pushMessage(lineUserId, keywordMatch.reply);
+        await dbService.createMessage({
+          lineUserId,
+          displayName: lineProfile.displayName || '',
+          userMessage,
+          replyToken,
+          aiReplies: replies,
+          urgency,
+          status: 'replied',
+          selectedReply: `[關鍵字自動回覆] ${keywordMatch.reply}`,
+          repliedAt: new Date()
+        });
+        console.log(`[Webhook] Keyword matched "${keywordMatch.trigger}" for ${lineProfile.displayName || lineUserId}`);
+        sseService.broadcast('new-message', { lineUserId });
+        continue;
+      }
 
       await dbService.createMessage({
         lineUserId,
         displayName: lineProfile.displayName || '',
         userMessage,
         replyToken,
-        aiReplies,
+        aiReplies: replies,
+        urgency,
         status: 'pending'
       });
-      console.log(`[Webhook] Message saved from ${lineProfile.displayName || lineUserId}`);
+      console.log(`[Webhook] Saved [${urgency}] message from ${lineProfile.displayName || lineUserId}`);
+
+      // Schedule auto-reply if enabled (resets timer for segmented messages)
+      if (businessProfile?.autoReply) {
+        autoReplyService.schedule(lineUserId, businessProfile.autoReplyDelay || 60);
+      }
+
       sseService.broadcast('new-message', { lineUserId });
     } catch (err) {
       console.error('[Webhook] Error processing event:', err.message);
@@ -56,6 +85,7 @@ router.post('/', async (req, res) => {
           userMessage,
           replyToken,
           aiReplies: ['', '', ''],
+          urgency: 'normal',
           status: 'failed',
           errorMessage: err.message
         });

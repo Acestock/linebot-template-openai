@@ -8,6 +8,8 @@ const BusinessProfileSchema = new mongoose.Schema({
   address: { type: String, default: '' },
   faq: { type: String, default: '' },
   toneNote: { type: String, default: '' },
+  autoReply: { type: Boolean, default: false },
+  autoReplyDelay: { type: Number, default: 60 },
   updatedAt: { type: Date, default: Date.now }
 });
 

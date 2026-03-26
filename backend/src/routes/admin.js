@@ -4,6 +4,7 @@ const { pushMessage } = require('../services/lineService');
 const sheetService = require('../services/sheetService');
 const BusinessProfile = require('../models/BusinessProfile');
 const Template = require('../models/Template');
+const Keyword = require('../models/Keyword');
 const Message = require('../models/Message');
 const openaiService = require('../services/openaiService');
 const sseService = require('../services/sseService');
@@ -48,7 +49,7 @@ router.get('/conversations', async (req, res) => {
           latestAt: { $last: '$createdAt' },
           statuses: { $push: '$status' },
           allMessages: {
-            $push: { _id: '$_id', userMessage: '$userMessage', createdAt: '$createdAt', status: '$status' }
+            $push: { _id: '$_id', userMessage: '$userMessage', createdAt: '$createdAt', status: '$status', urgency: '$urgency' }
           },
           lastRepliedMsg: {
             $last: {
@@ -72,6 +73,17 @@ router.get('/conversations', async (req, res) => {
       {
         $addFields: {
           pendingCount: { $size: '$pendingMessages' },
+          urgency: {
+            $cond: [
+              { $in: ['angry', { $map: { input: '$pendingMessages', as: 'pm', in: '$$pm.urgency' } }] },
+              'angry',
+              { $cond: [
+                { $in: ['urgent', { $map: { input: '$pendingMessages', as: 'pm', in: '$$pm.urgency' } }] },
+                'urgent',
+                'normal'
+              ]}
+            ]
+          },
           status: {
             $cond: [
               {
@@ -335,10 +347,10 @@ router.get('/settings', async (req, res) => {
 // PUT /api/settings
 router.put('/settings', async (req, res) => {
   try {
-    const { shopName, industry, products, businessHours, address, faq, toneNote } = req.body;
+    const { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay } = req.body;
     const profile = await BusinessProfile.findOneAndUpdate(
       {},
-      { shopName, industry, products, businessHours, address, faq, toneNote, updatedAt: new Date() },
+      { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, updatedAt: new Date() },
       { upsert: true, new: true }
     );
     res.json(profile);
@@ -392,6 +404,57 @@ router.delete('/templates/:id', async (req, res) => {
   try {
     const template = await Template.findByIdAndDelete(req.params.id);
     if (!template) return res.status(404).json({ error: 'Template not found' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Keywords ────────────────────────────────────────────────────────────────
+
+// GET /api/keywords
+router.get('/keywords', async (req, res) => {
+  try {
+    const keywords = await Keyword.find().sort({ order: 1, createdAt: 1 });
+    res.json(keywords);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/keywords
+router.post('/keywords', async (req, res) => {
+  try {
+    const { trigger, reply, isActive, order } = req.body;
+    if (!trigger || !reply) return res.status(400).json({ error: 'trigger and reply are required' });
+    const kw = await Keyword.create({ trigger, reply, isActive: isActive !== false, order: order || 0 });
+    res.status(201).json(kw);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/keywords/:id
+router.put('/keywords/:id', async (req, res) => {
+  try {
+    const { trigger, reply, isActive, order } = req.body;
+    const kw = await Keyword.findByIdAndUpdate(
+      req.params.id,
+      { trigger, reply, isActive, order },
+      { new: true }
+    );
+    if (!kw) return res.status(404).json({ error: 'Keyword not found' });
+    res.json(kw);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/keywords/:id
+router.delete('/keywords/:id', async (req, res) => {
+  try {
+    const kw = await Keyword.findByIdAndDelete(req.params.id);
+    if (!kw) return res.status(404).json({ error: 'Keyword not found' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
