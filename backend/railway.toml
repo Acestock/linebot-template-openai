@@ -1,3 +1,0 @@
-# 後端服務 Railway 設定
-[deploy]
-startCommand = "node src/app.js"
