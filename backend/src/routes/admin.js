@@ -5,8 +5,190 @@ const sheetService = require('../services/sheetService');
 const BusinessProfile = require('../models/BusinessProfile');
 const Template = require('../models/Template');
 const Message = require('../models/Message');
+const openaiService = require('../services/openaiService');
 
 const router = express.Router();
+
+// ─── Conversations (user-grouped view) ───────────────────────────────────────
+
+// GET /api/conversations
+router.get('/conversations', async (req, res) => {
+  try {
+    const groups = await Message.aggregate([
+      { $sort: { createdAt: 1 } },
+      {
+        $group: {
+          _id: '$lineUserId',
+          displayName: { $last: '$displayName' },
+          latestAt: { $last: '$createdAt' },
+          statuses: { $push: '$status' },
+          allMessages: {
+            $push: { _id: '$_id', userMessage: '$userMessage', createdAt: '$createdAt', status: '$status' }
+          },
+          lastRepliedMsg: {
+            $last: {
+              $cond: [{ $eq: ['$status', 'replied'] }, '$selectedReply', null]
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          lineUserId: '$_id',
+          pendingMessages: {
+            $filter: {
+              input: '$allMessages',
+              as: 'm',
+              cond: { $eq: ['$$m.status', 'pending'] }
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          pendingCount: { $size: '$pendingMessages' },
+          status: {
+            $cond: [
+              {
+                $gt: [
+                  {
+                    $size: {
+                      $filter: { input: '$statuses', as: 's', cond: { $eq: ['$$s', 'pending'] } }
+                    }
+                  },
+                  0
+                ]
+              },
+              'pending',
+              {
+                $cond: [
+                  {
+                    $gt: [
+                      {
+                        $size: {
+                          $filter: { input: '$statuses', as: 's', cond: { $eq: ['$$s', 'processing'] } }
+                        }
+                      },
+                      0
+                    ]
+                  },
+                  'processing',
+                  { $arrayElemAt: ['$statuses', -1] }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        $addFields: {
+          sortOrder: {
+            $switch: {
+              branches: [
+                { case: { $eq: ['$status', 'pending'] }, then: 0 },
+                { case: { $eq: ['$status', 'processing'] }, then: 1 },
+                { case: { $eq: ['$status', 'failed'] }, then: 2 }
+              ],
+              default: 3
+            }
+          }
+        }
+      },
+      { $project: { statuses: 0, allMessages: 0 } },
+      // pending first, then by latest message time desc
+      { $sort: { sortOrder: 1, latestAt: -1 } }
+    ]);
+    res.json(groups);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/conversations/:lineUserId/suggest
+router.post('/conversations/:lineUserId/suggest', async (req, res) => {
+  try {
+    const { lineUserId } = req.params;
+    const pendingMsgs = await Message.find({ lineUserId, status: 'pending' })
+      .sort({ createdAt: 1 })
+      .lean();
+
+    if (pendingMsgs.length === 0) {
+      return res.json({ aiReplies: ['', '', ''] });
+    }
+
+    const combinedText = pendingMsgs.length === 1
+      ? pendingMsgs[0].userMessage
+      : pendingMsgs.map((m, i) => `[訊息${i + 1}] ${m.userMessage}`).join('\n');
+
+    const bp = await BusinessProfile.findOne().lean();
+    const aiReplies = await openaiService.generateReplies(combinedText, bp);
+    res.json({ aiReplies });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/conversations/:lineUserId/reply
+router.post('/conversations/:lineUserId/reply', async (req, res) => {
+  try {
+    const { lineUserId } = req.params;
+    const { selectedReply } = req.body;
+    if (!selectedReply) return res.status(400).json({ error: 'selectedReply is required' });
+
+    const pendingMsgs = await Message.find({ lineUserId, status: { $in: ['pending', 'processing'] } });
+    if (pendingMsgs.length === 0) return res.status(400).json({ error: 'No pending messages' });
+
+    await Message.updateMany(
+      { lineUserId, status: { $in: ['pending', 'processing'] } },
+      { $set: { status: 'processing' } }
+    );
+
+    try {
+      await pushMessage(lineUserId, selectedReply);
+
+      const repliedAt = new Date();
+      await Message.updateMany(
+        { lineUserId, status: 'processing' },
+        { $set: { status: 'replied', selectedReply, repliedAt, errorMessage: '' } }
+      );
+
+      // Google Sheet sync: one row per message
+      const updatedMsgs = await Message.find({ lineUserId, status: 'replied', repliedAt }).lean();
+      for (const msg of updatedMsgs) {
+        sheetService.appendRow(msg).then(() => {
+          Message.findByIdAndUpdate(msg._id, { syncedToSheet: true }).catch(() => {});
+        }).catch((err) => {
+          console.error('[Admin] Sheet sync failed:', err.message);
+        });
+      }
+
+      res.json({ success: true });
+    } catch (lineErr) {
+      const errMsg = lineErr.message || 'LINE API error';
+      await Message.updateMany(
+        { lineUserId, status: 'processing' },
+        { $set: { status: 'failed', errorMessage: errMsg } }
+      );
+      res.status(502).json({ error: errMsg });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/conversations/:lineUserId/skip
+router.patch('/conversations/:lineUserId/skip', async (req, res) => {
+  try {
+    const { lineUserId } = req.params;
+    await Message.updateMany(
+      { lineUserId, status: { $in: ['pending', 'processing'] } },
+      { $set: { status: 'failed', errorMessage: 'Skipped by admin' } }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ─── Messages ────────────────────────────────────────────────────────────────
 

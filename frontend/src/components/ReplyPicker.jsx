@@ -2,7 +2,20 @@ import React from 'react';
 
 const STYLE_LABELS = ['正式', '親切', '簡潔'];
 
-function ReplyPicker({ aiReplies, selectedReply, onSelect }) {
+function ReplyPicker({ aiReplies, loading, selectedReply, onSelect }) {
+  if (loading) {
+    return (
+      <div style={{ padding: '16px', borderBottom: '1px solid #e0e0e0' }}>
+        <div style={{ fontWeight: 'bold', marginBottom: '10px', color: '#333', fontSize: '14px' }}>AI 回覆建議</div>
+        <div style={{ color: '#90a4ae', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '2px solid #b0bec5', borderTopColor: '#2196F3', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          AI 正在分析訊息中...
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </div>
+    );
+  }
+
   if (!aiReplies || aiReplies.length === 0) {
     return null;
   }

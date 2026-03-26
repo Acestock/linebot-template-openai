@@ -9,21 +9,23 @@ import API_BASE from './config';
 const POLL_INTERVAL = 10000;
 
 function App() {
-  const [messages, setMessages] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
+  const [conversations, setConversations] = useState([]);
+  const [selectedUserId, setSelectedUserId] = useState(null);
   const [draftReply, setDraftReply] = useState('');
+  const [aiReplies, setAiReplies] = useState([]);
+  const [loadingSuggest, setLoadingSuggest] = useState(false);
   const [stats, setStats] = useState({ pending: 0, replied: 0 });
   const [showSettings, setShowSettings] = useState(false);
 
-  const selectedMessage = messages.find((m) => m._id === selectedId) || null;
+  const selectedConv = conversations.find((c) => c.lineUserId === selectedUserId) || null;
 
-  const fetchMessages = useCallback(async () => {
+  const fetchConversations = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/messages`);
+      const res = await fetch(`${API_BASE}/api/conversations`);
       const data = await res.json();
-      setMessages(data);
+      setConversations(data);
     } catch (err) {
-      console.error('Failed to fetch messages:', err);
+      console.error('Failed to fetch conversations:', err);
     }
   }, []);
 
@@ -37,37 +39,69 @@ function App() {
     }
   }, []);
 
+  const fetchSuggest = useCallback(async (lineUserId) => {
+    setAiReplies([]);
+    setLoadingSuggest(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(lineUserId)}/suggest`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      setAiReplies(data.aiReplies || []);
+    } catch (err) {
+      console.error('Failed to fetch AI suggestions:', err);
+    } finally {
+      setLoadingSuggest(false);
+    }
+  }, []);
+
   useEffect(() => {
-    fetchMessages();
+    fetchConversations();
     fetchStats();
     const interval = setInterval(() => {
-      fetchMessages();
+      fetchConversations();
       fetchStats();
     }, POLL_INTERVAL);
     return () => clearInterval(interval);
-  }, [fetchMessages, fetchStats]);
+  }, [fetchConversations, fetchStats]);
 
-  function handleSelect(id) {
-    setSelectedId(id);
-    const msg = messages.find((m) => m._id === id);
-    setDraftReply(msg?.selectedReply || '');
+  function handleSelect(lineUserId) {
+    setSelectedUserId(lineUserId);
+    setDraftReply('');
+    setAiReplies([]);
+    const conv = conversations.find((c) => c.lineUserId === lineUserId);
+    if (conv && conv.pendingCount > 0) {
+      fetchSuggest(lineUserId);
+    }
   }
 
   function handleReplyPick(reply) {
     setDraftReply(reply);
   }
 
-  function updateMessageInList(updated) {
-    setMessages((prev) => prev.map((m) => (m._id === updated._id ? updated : m)));
+  function handleSent() {
+    // Mark conversation as replied locally while waiting for next poll
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.lineUserId === selectedUserId
+          ? { ...c, pendingCount: 0, status: 'replied', pendingMessages: [] }
+          : c
+      )
+    );
+    setAiReplies([]);
     fetchStats();
   }
 
-  function handleSent(updated) {
-    updateMessageInList(updated);
-  }
-
-  function handleSkipped(updated) {
-    updateMessageInList(updated);
+  function handleSkipped() {
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.lineUserId === selectedUserId
+          ? { ...c, pendingCount: 0, status: 'failed', pendingMessages: [] }
+          : c
+      )
+    );
+    setAiReplies([]);
+    fetchStats();
   }
 
   return (
@@ -100,29 +134,31 @@ function App() {
           >⚙</button>
         </span>
       </div>
+
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
 
       {/* Main layout below header */}
       <div style={{ display: 'flex', marginTop: '48px', width: '100%' }}>
         {/* Left panel */}
         <ChatList
-          messages={messages}
-          selectedId={selectedId}
+          conversations={conversations}
+          selectedUserId={selectedUserId}
           onSelect={handleSelect}
         />
 
         {/* Right panel */}
         <div style={{ flex: 1, overflowY: 'auto', height: 'calc(100vh - 48px)' }}>
-          <ChatDetail message={selectedMessage} />
-          {selectedMessage && (
+          <ChatDetail conversation={selectedConv} />
+          {selectedConv && (
             <>
               <ReplyPicker
-                aiReplies={selectedMessage.aiReplies}
+                aiReplies={aiReplies}
+                loading={loadingSuggest}
                 selectedReply={draftReply}
                 onSelect={handleReplyPick}
               />
               <SendPanel
-                message={selectedMessage}
+                conversation={selectedConv}
                 draftReply={draftReply}
                 onDraftChange={setDraftReply}
                 onSent={handleSent}
@@ -130,9 +166,9 @@ function App() {
               />
             </>
           )}
-          {!selectedMessage && (
+          {!selectedConv && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '80%', color: '#bbb', fontSize: '16px' }}>
-              ← 請從左側選擇一則訊息
+              ← 請從左側選擇一位客戶
             </div>
           )}
         </div>
