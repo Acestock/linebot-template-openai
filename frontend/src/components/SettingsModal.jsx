@@ -266,39 +266,49 @@ function KeywordTab() {
 function LineCardPreview({ card }) {
   const hasPrices = card.priceItems && card.priceItems.length > 0;
   const hasButton = card.buttonText && card.buttonUrl;
+  const headerBg  = card.headerBgColor || '#ffffff';
+  const titleCol  = card.titleColor    || '#111111';
+  const subCol    = card.subtitleColor || '#888888';
+  const btnCol    = card.buttonColor   || '#00B900';
+
   return (
     <div style={{ width: '220px', borderRadius: '14px', overflow: 'hidden',
       boxShadow: '0 4px 18px rgba(0,0,0,0.18)', background: '#fff', flexShrink: 0 }}>
+      {/* Hero image */}
       {card.imageUrl && (
         <div style={{ width: '100%', paddingTop: '65%', position: 'relative', background: '#e8ecf0' }}>
           <img src={card.imageUrl} alt="" onError={e => { e.target.style.display='none'; }}
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
       )}
-      <div style={{ padding: '14px 14px 10px' }}>
-        <div style={{ fontWeight: '700', fontSize: '16px', color: '#111', lineHeight: '1.3', wordBreak: 'break-word' }}>
-          {card.title || <span style={{ color: '#ccc' }}>卡片標題</span>}
+      {/* Header: title + subtitle with custom background */}
+      <div style={{ padding: '14px 14px 12px', background: headerBg }}>
+        <div style={{ fontWeight: '700', fontSize: '16px', color: titleCol, lineHeight: '1.3', wordBreak: 'break-word' }}>
+          {card.title || <span style={{ opacity: 0.3 }}>卡片標題</span>}
         </div>
         {card.subtitle && (
-          <div style={{ fontSize: '12px', color: '#888', marginTop: '4px', lineHeight: '1.4', wordBreak: 'break-word' }}>{card.subtitle}</div>
-        )}
-        {hasPrices && (
-          <>
-            <div style={{ borderTop: '1px solid #f0f0f0', margin: '10px 0 8px' }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              {card.priceItems.map((item, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
-                  <span style={{ fontSize: '12px', color: '#555', flex: 1, wordBreak: 'break-word' }}>{item.name}</span>
-                  <span style={{ fontSize: '12px', fontWeight: '700', color: '#111', flexShrink: 0 }}>{item.price}</span>
-                </div>
-              ))}
-            </div>
-          </>
+          <div style={{ fontSize: '12px', color: subCol, marginTop: '5px', lineHeight: '1.4', wordBreak: 'break-word' }}>{card.subtitle}</div>
         )}
       </div>
+      {/* Body: price items */}
+      {hasPrices && (
+        <div style={{ padding: '10px 14px', background: '#fff' }}>
+          <div style={{ borderTop: '1px solid #f0f0f0', marginBottom: '8px' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            {card.priceItems.map((item, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
+                <span style={{ fontSize: '12px', color: '#555', flex: 1, wordBreak: 'break-word' }}>{item.name}</span>
+                <span style={{ fontSize: '12px', fontWeight: '700', color: '#111', flexShrink: 0 }}>{item.price}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Footer: button */}
       {hasButton && (
-        <div style={{ padding: '0 10px 10px' }}>
-          <div style={{ background: '#00B900', color: '#fff', textAlign: 'center',
+        <div style={{ padding: hasPrices ? '0 10px 10px' : '0 10px 10px', background: '#fff' }}>
+          {!hasPrices && <div style={{ height: '4px' }} />}
+          <div style={{ background: btnCol, color: '#fff', textAlign: 'center',
             padding: '9px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', letterSpacing: '0.3px' }}>
             {card.buttonText}
           </div>
@@ -313,7 +323,9 @@ function CardTab() {
   const [cards, setCards] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ title: '', subtitle: '', imageUrl: '', priceItems: [], buttonText: '', buttonUrl: '', isActive: true });
+  const EMPTY_FORM = { title: '', subtitle: '', imageUrl: '', priceItems: [], buttonText: '', buttonUrl: '',
+    headerBgColor: '#ffffff', titleColor: '#111111', subtitleColor: '#888888', buttonColor: '#00B900', isActive: true };
+  const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [priceInput, setPriceInput] = useState({ name: '', price: '' });
 
@@ -325,13 +337,19 @@ function CardTab() {
 
   function openNew() {
     setEditing(null);
-    setForm({ title: '', subtitle: '', imageUrl: '', priceItems: [], buttonText: '了解更多', buttonUrl: '', isActive: true });
+    setForm({ ...EMPTY_FORM, buttonText: '了解更多' });
     setPriceInput({ name: '', price: '' });
     setShowForm(true);
   }
   function openEdit(card) {
     setEditing(card);
-    setForm({ title: card.title, subtitle: card.subtitle || '', imageUrl: card.imageUrl || '', priceItems: card.priceItems || [], buttonText: card.buttonText || '', buttonUrl: card.buttonUrl || '', isActive: card.isActive });
+    setForm({
+      title: card.title, subtitle: card.subtitle || '', imageUrl: card.imageUrl || '',
+      priceItems: card.priceItems || [], buttonText: card.buttonText || '', buttonUrl: card.buttonUrl || '',
+      headerBgColor: card.headerBgColor || '#ffffff', titleColor: card.titleColor || '#111111',
+      subtitleColor: card.subtitleColor || '#888888', buttonColor: card.buttonColor || '#00B900',
+      isActive: card.isActive
+    });
     setPriceInput({ name: '', price: '' });
     setShowForm(true);
   }
@@ -423,6 +441,26 @@ function CardTab() {
               <input value={form.buttonUrl} onChange={e => setForm(p => ({ ...p, buttonUrl: e.target.value }))}
                 placeholder="https://..." style={FIELD} />
             </div>
+          </div>
+
+          {/* Color customization */}
+          <div style={{ background: '#f7f9fc', borderRadius: '10px', padding: '12px 14px', marginBottom: '4px' }}>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#555', marginBottom: '10px', letterSpacing: '0.3px' }}>🎨 配色設定</div>
+            {[
+              { key: 'headerBgColor', label: '標題區背景色' },
+              { key: 'titleColor',    label: '標題文字色' },
+              { key: 'subtitleColor', label: '副標題文字色' },
+              { key: 'buttonColor',   label: '按鈕顏色' },
+            ].map(({ key, label }) => (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '12px', color: '#666', width: '90px', flexShrink: 0 }}>{label}</span>
+                <input type="color" value={form[key]}
+                  onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
+                  style={{ width: '32px', height: '32px', padding: '2px', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }} />
+                <span style={{ fontSize: '12px', color: '#999', fontFamily: 'monospace' }}>{form[key]}</span>
+                <div style={{ flex: 1, height: '24px', borderRadius: '6px', background: form[key], border: '1px solid #e0e0e0' }} />
+              </div>
+            ))}
           </div>
         </div>
 

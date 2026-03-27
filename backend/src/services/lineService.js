@@ -27,21 +27,27 @@ async function pushMessage(lineUserId, text) {
 
 // Build LINE Flex Message bubble from a ProductCard document
 function buildFlexBubble(card) {
-  const bodyContents = [
-    { type: 'text', text: card.title, weight: 'bold', size: 'xl', wrap: true }
-  ];
+  const headerBgColor = card.headerBgColor || '#ffffff';
+  const titleColor    = card.titleColor    || '#111111';
+  const subtitleColor = card.subtitleColor || '#888888';
+  const buttonColor   = card.buttonColor   || '#00B900';
 
+  // Header section: title + subtitle with custom background
+  const headerContents = [
+    { type: 'text', text: card.title, weight: 'bold', size: 'xl', wrap: true, color: titleColor }
+  ];
   if (card.subtitle) {
-    bodyContents.push({
+    headerContents.push({
       type: 'text', text: card.subtitle,
-      color: '#666666', size: 'sm', wrap: true, margin: 'sm'
+      size: 'sm', wrap: true, margin: 'sm', color: subtitleColor
     });
   }
 
+  // Body section: price items only
+  const bodyContents = [];
   if (card.priceItems && card.priceItems.length > 0) {
-    bodyContents.push({ type: 'separator', margin: 'lg', color: '#f0f0f0' });
     bodyContents.push({
-      type: 'box', layout: 'vertical', margin: 'md', spacing: 'sm',
+      type: 'box', layout: 'vertical', spacing: 'sm',
       contents: card.priceItems.map(item => ({
         type: 'box', layout: 'horizontal',
         contents: [
@@ -54,7 +60,15 @@ function buildFlexBubble(card) {
 
   const bubble = {
     type: 'bubble',
-    body: { type: 'box', layout: 'vertical', contents: bodyContents }
+    styles: {
+      header: { backgroundColor: headerBgColor },
+      body:   { backgroundColor: '#ffffff' }
+    },
+    header: {
+      type: 'box', layout: 'vertical',
+      paddingAll: '16px',
+      contents: headerContents
+    }
   };
 
   if (card.imageUrl) {
@@ -64,11 +78,15 @@ function buildFlexBubble(card) {
     };
   }
 
+  if (bodyContents.length > 0) {
+    bubble.body = { type: 'box', layout: 'vertical', contents: bodyContents };
+  }
+
   if (card.buttonUrl && card.buttonText) {
     bubble.footer = {
       type: 'box', layout: 'vertical', spacing: 'sm',
       contents: [{
-        type: 'button', style: 'primary', color: '#00B900',
+        type: 'button', style: 'primary', color: buttonColor,
         action: { type: 'uri', label: card.buttonText, uri: card.buttonUrl }
       }]
     };

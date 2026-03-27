@@ -544,12 +544,15 @@ router.get('/cards', async (req, res) => {
 // POST /api/cards
 router.post('/cards', async (req, res) => {
   try {
-    const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl, isActive } = req.body;
+    const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
+            headerBgColor, titleColor, subtitleColor, buttonColor, isActive } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required' });
     const card = await ProductCard.create({
       title, subtitle: subtitle || '', imageUrl: imageUrl || '',
-      priceItems: priceItems || [], buttonText: buttonText || '',
-      buttonUrl: buttonUrl || '', isActive: isActive !== false
+      priceItems: priceItems || [], buttonText: buttonText || '', buttonUrl: buttonUrl || '',
+      headerBgColor: headerBgColor || '#ffffff', titleColor: titleColor || '#111111',
+      subtitleColor: subtitleColor || '#888888', buttonColor: buttonColor || '#00B900',
+      isActive: isActive !== false
     });
     res.status(201).json(card);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -558,11 +561,13 @@ router.post('/cards', async (req, res) => {
 // PUT /api/cards/:id
 router.put('/cards/:id', async (req, res) => {
   try {
-    const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl, isActive } = req.body;
+    const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
+            headerBgColor, titleColor, subtitleColor, buttonColor, isActive } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required' });
     const card = await ProductCard.findByIdAndUpdate(
       req.params.id,
-      { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl, isActive },
+      { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
+        headerBgColor, titleColor, subtitleColor, buttonColor, isActive },
       { new: true }
     );
     if (!card) return res.status(404).json({ error: 'Card not found' });
