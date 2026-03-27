@@ -16,8 +16,7 @@ async function getUserProfile(userId) {
   }
 }
 
-// Push message to user (no replyToken needed - use this in admin send endpoint)
-// replyToken expires in 5 minutes; agents will almost always exceed that window
+// Push plain text message to user
 async function pushMessage(lineUserId, text) {
   const client = getClient();
   await client.pushMessage({
@@ -26,4 +25,69 @@ async function pushMessage(lineUserId, text) {
   });
 }
 
-module.exports = { getUserProfile, pushMessage };
+// Build LINE Flex Message bubble from a ProductCard document
+function buildFlexBubble(card) {
+  const bodyContents = [
+    { type: 'text', text: card.title, weight: 'bold', size: 'xl', wrap: true }
+  ];
+
+  if (card.subtitle) {
+    bodyContents.push({
+      type: 'text', text: card.subtitle,
+      color: '#666666', size: 'sm', wrap: true, margin: 'sm'
+    });
+  }
+
+  if (card.priceItems && card.priceItems.length > 0) {
+    bodyContents.push({ type: 'separator', margin: 'lg', color: '#f0f0f0' });
+    bodyContents.push({
+      type: 'box', layout: 'vertical', margin: 'md', spacing: 'sm',
+      contents: card.priceItems.map(item => ({
+        type: 'box', layout: 'horizontal',
+        contents: [
+          { type: 'text', text: item.name,  color: '#555555', size: 'sm', flex: 3, wrap: true },
+          { type: 'text', text: item.price, color: '#111111', size: 'sm', flex: 2, align: 'end' }
+        ]
+      }))
+    });
+  }
+
+  const bubble = {
+    type: 'bubble',
+    body: { type: 'box', layout: 'vertical', contents: bodyContents }
+  };
+
+  if (card.imageUrl) {
+    bubble.hero = {
+      type: 'image', url: card.imageUrl,
+      size: 'full', aspectRatio: '20:13', aspectMode: 'cover'
+    };
+  }
+
+  if (card.buttonUrl && card.buttonText) {
+    bubble.footer = {
+      type: 'box', layout: 'vertical', spacing: 'sm',
+      contents: [{
+        type: 'button', style: 'primary', color: '#00B900',
+        action: { type: 'uri', label: card.buttonText, uri: card.buttonUrl }
+      }]
+    };
+  }
+
+  return bubble;
+}
+
+// Push Flex Message card to user
+async function pushFlexCard(lineUserId, card) {
+  const client = getClient();
+  await client.pushMessage({
+    to: lineUserId,
+    messages: [{
+      type: 'flex',
+      altText: card.title,
+      contents: buildFlexBubble(card)
+    }]
+  });
+}
+
+module.exports = { getUserProfile, pushMessage, pushFlexCard };

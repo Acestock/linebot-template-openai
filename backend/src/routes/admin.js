@@ -5,6 +5,7 @@ const sheetService = require('../services/sheetService');
 const BusinessProfile = require('../models/BusinessProfile');
 const Template = require('../models/Template');
 const Keyword = require('../models/Keyword');
+const ProductCard = require('../models/ProductCard');
 const Label = require('../models/Label');
 const CustomerLabel = require('../models/CustomerLabel');
 const Message = require('../models/Message');
@@ -490,9 +491,14 @@ router.get('/keywords', async (req, res) => {
 // POST /api/keywords
 router.post('/keywords', async (req, res) => {
   try {
-    const { trigger, reply, isActive, order } = req.body;
-    if (!trigger || !reply) return res.status(400).json({ error: 'trigger and reply are required' });
-    const kw = await Keyword.create({ trigger, reply, isActive: isActive !== false, order: order || 0 });
+    const { trigger, replyType, reply, cardId, isActive, order } = req.body;
+    if (!trigger) return res.status(400).json({ error: 'trigger is required' });
+    if (replyType === 'card' && !cardId) return res.status(400).json({ error: 'cardId is required for card type' });
+    if (replyType !== 'card' && !reply) return res.status(400).json({ error: 'reply is required for text type' });
+    const kw = await Keyword.create({
+      trigger, replyType: replyType || 'text', reply: reply || '',
+      cardId: cardId || null, isActive: isActive !== false, order: order || 0
+    });
     res.status(201).json(kw);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -502,10 +508,10 @@ router.post('/keywords', async (req, res) => {
 // PUT /api/keywords/:id
 router.put('/keywords/:id', async (req, res) => {
   try {
-    const { trigger, reply, isActive, order } = req.body;
+    const { trigger, replyType, reply, cardId, isActive, order } = req.body;
     const kw = await Keyword.findByIdAndUpdate(
       req.params.id,
-      { trigger, reply, isActive, order },
+      { trigger, replyType: replyType || 'text', reply: reply || '', cardId: cardId || null, isActive, order },
       { new: true }
     );
     if (!kw) return res.status(404).json({ error: 'Keyword not found' });
@@ -524,6 +530,56 @@ router.delete('/keywords/:id', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── Product Cards ────────────────────────────────────────────────────────────
+
+// GET /api/cards
+router.get('/cards', async (req, res) => {
+  try {
+    res.json(await ProductCard.find().sort({ createdAt: 1 }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/cards
+router.post('/cards', async (req, res) => {
+  try {
+    const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl, isActive } = req.body;
+    if (!title) return res.status(400).json({ error: 'title is required' });
+    const card = await ProductCard.create({
+      title, subtitle: subtitle || '', imageUrl: imageUrl || '',
+      priceItems: priceItems || [], buttonText: buttonText || '',
+      buttonUrl: buttonUrl || '', isActive: isActive !== false
+    });
+    res.status(201).json(card);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/cards/:id
+router.put('/cards/:id', async (req, res) => {
+  try {
+    const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl, isActive } = req.body;
+    if (!title) return res.status(400).json({ error: 'title is required' });
+    const card = await ProductCard.findByIdAndUpdate(
+      req.params.id,
+      { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl, isActive },
+      { new: true }
+    );
+    if (!card) return res.status(404).json({ error: 'Card not found' });
+    res.json(card);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/cards/:id  — also clear cardId from any keywords using it
+router.delete('/cards/:id', async (req, res) => {
+  try {
+    await ProductCard.findByIdAndDelete(req.params.id);
+    await Keyword.updateMany(
+      { cardId: req.params.id },
+      { $set: { cardId: null, replyType: 'text' } }
+    );
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

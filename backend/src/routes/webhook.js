@@ -2,9 +2,10 @@ const express = require('express');
 const line = require('@line/bot-sdk');
 const openaiService = require('../services/openaiService');
 const dbService = require('../services/dbService');
-const { getUserProfile, pushMessage } = require('../services/lineService');
+const { getUserProfile, pushMessage, pushFlexCard } = require('../services/lineService');
 const BusinessProfile = require('../models/BusinessProfile');
 const Keyword = require('../models/Keyword');
+const ProductCard = require('../models/ProductCard');
 const sseService = require('../services/sseService');
 const autoReplyService = require('../services/autoReplyService');
 
@@ -41,22 +42,45 @@ router.post('/', async (req, res) => {
       );
 
       // Keyword matched — auto-reply immediately, no admin review needed
-      if (keywordMatch && keywordMatch.reply) {
-        await pushMessage(lineUserId, keywordMatch.reply);
-        await dbService.createMessage({
-          lineUserId,
-          displayName: lineProfile.displayName || '',
-          userMessage,
-          replyToken,
-          aiReplies: replies,
-          urgency,
-          status: 'replied',
-          selectedReply: `[關鍵字自動回覆] ${keywordMatch.reply}`,
-          repliedAt: new Date()
-        });
-        console.log(`[Webhook] Keyword matched "${keywordMatch.trigger}" for ${lineProfile.displayName || lineUserId}`);
-        sseService.broadcast('new-message', { lineUserId });
-        continue;
+      if (keywordMatch && keywordMatch.trigger) {
+        const matchedKw = keywords.find(k => k.trigger === keywordMatch.trigger);
+
+        let autoReplySummary = '';
+        let sendOk = false;
+
+        if (matchedKw?.replyType === 'card' && matchedKw?.cardId) {
+          // Send Flex Message card
+          const card = await ProductCard.findById(matchedKw.cardId).lean();
+          if (card) {
+            await pushFlexCard(lineUserId, card);
+            autoReplySummary = `[卡片自動回覆] ${card.title}`;
+            sendOk = true;
+          }
+        }
+
+        if (!sendOk && keywordMatch.reply) {
+          // Fall back to text reply
+          await pushMessage(lineUserId, keywordMatch.reply);
+          autoReplySummary = `[關鍵字自動回覆] ${keywordMatch.reply}`;
+          sendOk = true;
+        }
+
+        if (sendOk) {
+          await dbService.createMessage({
+            lineUserId,
+            displayName: lineProfile.displayName || '',
+            userMessage,
+            replyToken,
+            aiReplies: replies,
+            urgency,
+            status: 'replied',
+            selectedReply: autoReplySummary,
+            repliedAt: new Date()
+          });
+          console.log(`[Webhook] Keyword matched "${keywordMatch.trigger}" for ${lineProfile.displayName || lineUserId}`);
+          sseService.broadcast('new-message', { lineUserId });
+          continue;
+        }
       }
 
       await dbService.createMessage({

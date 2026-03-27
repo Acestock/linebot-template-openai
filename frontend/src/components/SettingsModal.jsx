@@ -49,23 +49,38 @@ function ProfileTab({ profile, onChange, onSave, saving, saved }) {
 // ─── Tab 2: 關鍵字觸發 ───────────────────────────────────────────────────────
 function KeywordTab() {
   const [keywords, setKeywords] = useState([]);
+  const [cards, setCards] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ trigger: '', reply: '', isActive: true, order: 0 });
+  const [form, setForm] = useState({ trigger: '', replyType: 'text', reply: '', cardId: '', isActive: true, order: 0 });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { loadKeywords(); }, []);
+  useEffect(() => { loadKeywords(); loadCards(); }, []);
 
   async function loadKeywords() {
     const res = await fetch(`${API_BASE}/api/keywords`);
     setKeywords(await res.json());
   }
+  async function loadCards() {
+    const res = await fetch(`${API_BASE}/api/cards`);
+    setCards(await res.json());
+  }
 
-  function openNew() { setEditing(null); setForm({ trigger: '', reply: '', isActive: true, order: keywords.length }); setShowForm(true); }
-  function openEdit(kw) { setEditing(kw); setForm({ trigger: kw.trigger, reply: kw.reply, isActive: kw.isActive, order: kw.order }); setShowForm(true); }
+  function openNew() {
+    setEditing(null);
+    setForm({ trigger: '', replyType: 'text', reply: '', cardId: '', isActive: true, order: keywords.length });
+    setShowForm(true);
+  }
+  function openEdit(kw) {
+    setEditing(kw);
+    setForm({ trigger: kw.trigger, replyType: kw.replyType || 'text', reply: kw.reply || '', cardId: kw.cardId || '', isActive: kw.isActive, order: kw.order });
+    setShowForm(true);
+  }
 
   async function handleSave() {
-    if (!form.trigger.trim() || !form.reply.trim()) { alert('觸發詞和回覆內容為必填'); return; }
+    if (!form.trigger.trim()) { alert('觸發詞為必填'); return; }
+    if (form.replyType === 'card' && !form.cardId) { alert('請選擇要發送的卡片'); return; }
+    if (form.replyType === 'text' && !form.reply.trim()) { alert('回覆內容為必填'); return; }
     setSaving(true);
     try {
       const url = editing ? `${API_BASE}/api/keywords/${editing._id}` : `${API_BASE}/api/keywords`;
@@ -91,19 +106,62 @@ function KeywordTab() {
     await loadKeywords();
   }
 
+  const cardMap = Object.fromEntries(cards.map(c => [c._id, c]));
+
   if (showForm) return (
     <div>
       <p style={{ fontSize: '13px', color: '#888', marginTop: 0, marginBottom: '16px' }}>
-        設定語意觸發詞，當客人訊息語意上符合觸發主題時，AI 將自動發送預設回覆。
+        設定語意觸發詞，當客人訊息符合觸發主題時，AI 自動發送文字回覆或商品卡片。
       </p>
       <div style={GROUP}><label style={LABEL}>觸發主題 *</label>
         <input value={form.trigger} onChange={e => setForm(p => ({ ...p, trigger: e.target.value }))}
-          placeholder="例：營業時間、停車、退換貨..." style={FIELD} />
-        <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>不需完全相同，GPT 會做語意匹配（如「幾點開」→「營業時間」）</div>
+          placeholder="例：菜單、報價、營業時間..." style={FIELD} />
+        <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>語意匹配，不需完全相同（如「幾點開」→「營業時間」）</div>
       </div>
-      <div style={GROUP}><label style={LABEL}>自動回覆內容 *</label>
-        <textarea value={form.reply} onChange={e => setForm(p => ({ ...p, reply: e.target.value }))}
-          rows={4} placeholder="例：我們的營業時間是週一到週六 10:00–20:00，國定假日公休。" style={FIELD} /></div>
+
+      {/* Reply type toggle */}
+      <div style={GROUP}>
+        <label style={LABEL}>回覆方式</label>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+          {[{ value: 'text', label: '文字回覆' }, { value: 'card', label: '商品卡片' }].map(opt => (
+            <button key={opt.value} onClick={() => setForm(p => ({ ...p, replyType: opt.value }))}
+              style={{ padding: '6px 16px', borderRadius: '6px', border: '2px solid', cursor: 'pointer', fontSize: '13px', fontWeight: form.replyType === opt.value ? '700' : '400',
+                borderColor: form.replyType === opt.value ? '#2196F3' : '#e0e0e0',
+                background: form.replyType === opt.value ? '#e3f2fd' : '#fff',
+                color: form.replyType === opt.value ? '#2196F3' : '#666' }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {form.replyType === 'text' ? (
+        <div style={GROUP}><label style={LABEL}>自動回覆內容 *</label>
+          <textarea value={form.reply} onChange={e => setForm(p => ({ ...p, reply: e.target.value }))}
+            rows={4} placeholder="例：我們的營業時間是週一到週六 10:00–20:00，國定假日公休。" style={FIELD} />
+        </div>
+      ) : (
+        <div style={GROUP}>
+          <label style={LABEL}>選擇要發送的卡片 *</label>
+          {cards.length === 0 ? (
+            <div style={{ fontSize: '13px', color: '#e53935', marginTop: '8px' }}>尚未建立任何商品卡片，請先至「商品卡片」分頁新增。</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+              {cards.map(card => (
+                <div key={card._id} onClick={() => setForm(p => ({ ...p, cardId: card._id }))}
+                  style={{ padding: '10px 14px', borderRadius: '8px', border: '2px solid', cursor: 'pointer',
+                    borderColor: form.cardId === card._id ? '#2196F3' : '#e0e0e0',
+                    background: form.cardId === card._id ? '#e3f2fd' : '#fff' }}>
+                  <div style={{ fontWeight: '600', fontSize: '14px', color: '#333' }}>{card.title}</div>
+                  {card.subtitle && <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{card.subtitle}</div>}
+                  <div style={{ fontSize: '12px', color: '#aaa', marginTop: '2px' }}>{card.priceItems?.length || 0} 個價目項目</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }}>
         <button onClick={() => setShowForm(false)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', color: '#666', cursor: 'pointer' }}>返回</button>
         <button onClick={handleSave} disabled={saving} style={{ padding: '8px 18px', borderRadius: '6px', border: 'none', background: saving ? '#b0bec5' : '#2196F3', color: '#fff', fontWeight: 'bold', cursor: saving ? 'not-allowed' : 'pointer' }}>
@@ -116,7 +174,7 @@ function KeywordTab() {
   return (
     <div>
       <p style={{ fontSize: '13px', color: '#888', marginTop: 0, marginBottom: '12px' }}>
-        當客人訊息語意上符合觸發主題時，系統自動發送預設回覆，無需人工介入。
+        當客人訊息語意上符合觸發主題時，系統自動發送文字回覆或商品卡片，無需人工介入。
       </p>
       {keywords.length === 0 && <div style={{ textAlign: 'center', color: '#bbb', padding: '24px', fontSize: '14px' }}>尚無關鍵字，點擊下方新增</div>}
       {keywords.map(kw => (
@@ -125,11 +183,19 @@ function KeywordTab() {
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                 <span style={{ fontWeight: '700', fontSize: '14px', color: '#333' }}>{kw.trigger}</span>
+                <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '10px',
+                  backgroundColor: kw.replyType === 'card' ? '#e3f2fd' : '#f3e5f5',
+                  color: kw.replyType === 'card' ? '#1565c0' : '#7b1fa2' }}>
+                  {kw.replyType === 'card' ? '卡片' : '文字'}
+                </span>
                 <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '10px', backgroundColor: kw.isActive ? '#e8f5e9' : '#f5f5f5', color: kw.isActive ? '#388e3c' : '#aaa' }}>
                   {kw.isActive ? '啟用' : '停用'}
                 </span>
               </div>
-              <div style={{ fontSize: '13px', color: '#777', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{kw.reply}</div>
+              {kw.replyType === 'card'
+                ? <div style={{ fontSize: '13px', color: '#1565c0' }}>{cardMap[kw.cardId]?.title || '（卡片已刪除）'}</div>
+                : <div style={{ fontSize: '13px', color: '#777', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{kw.reply}</div>
+              }
             </div>
             <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
               <button onClick={() => toggleActive(kw)} style={{ padding: '4px 8px', borderRadius: '5px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#555' }}>{kw.isActive ? '停用' : '啟用'}</button>
@@ -146,7 +212,170 @@ function KeywordTab() {
   );
 }
 
-// ─── Tab 3: 自動回覆設定 ─────────────────────────────────────────────────────
+// ─── Tab 3: 商品卡片管理 ─────────────────────────────────────────────────────
+function CardTab() {
+  const [cards, setCards] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ title: '', subtitle: '', imageUrl: '', priceItems: [], buttonText: '', buttonUrl: '', isActive: true });
+  const [saving, setSaving] = useState(false);
+  const [priceInput, setPriceInput] = useState({ name: '', price: '' });
+
+  useEffect(() => { load(); }, []);
+  async function load() {
+    const res = await fetch(`${API_BASE}/api/cards`);
+    setCards(await res.json());
+  }
+
+  function openNew() {
+    setEditing(null);
+    setForm({ title: '', subtitle: '', imageUrl: '', priceItems: [], buttonText: '了解更多', buttonUrl: '', isActive: true });
+    setPriceInput({ name: '', price: '' });
+    setShowForm(true);
+  }
+  function openEdit(card) {
+    setEditing(card);
+    setForm({ title: card.title, subtitle: card.subtitle || '', imageUrl: card.imageUrl || '', priceItems: card.priceItems || [], buttonText: card.buttonText || '', buttonUrl: card.buttonUrl || '', isActive: card.isActive });
+    setPriceInput({ name: '', price: '' });
+    setShowForm(true);
+  }
+
+  function addPriceItem() {
+    if (!priceInput.name.trim() || !priceInput.price.trim()) return;
+    setForm(p => ({ ...p, priceItems: [...p.priceItems, { name: priceInput.name.trim(), price: priceInput.price.trim() }] }));
+    setPriceInput({ name: '', price: '' });
+  }
+  function removePriceItem(idx) {
+    setForm(p => ({ ...p, priceItems: p.priceItems.filter((_, i) => i !== idx) }));
+  }
+
+  async function handleSave() {
+    if (!form.title.trim()) { alert('卡片標題為必填'); return; }
+    setSaving(true);
+    try {
+      const url = editing ? `${API_BASE}/api/cards/${editing._id}` : `${API_BASE}/api/cards`;
+      const res = await fetch(url, { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      if (!res.ok) throw new Error('操作失敗');
+      await load(); setShowForm(false);
+    } catch (err) { alert(err.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('確定刪除？使用此卡片的關鍵字觸發將自動改為文字模式。')) return;
+    await fetch(`${API_BASE}/api/cards/${id}`, { method: 'DELETE' });
+    await load();
+  }
+
+  const FIELD_SM = { ...FIELD, padding: '6px 10px' };
+
+  if (showForm) return (
+    <div>
+      <p style={{ fontSize: '13px', color: '#888', marginTop: 0, marginBottom: '16px' }}>
+        建立可在 LINE 發送的商品介紹卡片，包含圖片、說明、價目表與按鈕連結。
+      </p>
+
+      <div style={GROUP}><label style={LABEL}>卡片標題 *</label>
+        <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
+          placeholder="例：精選蛋糕組合、服務方案一覽" style={FIELD} />
+      </div>
+      <div style={GROUP}><label style={LABEL}>副標題／說明</label>
+        <input value={form.subtitle} onChange={e => setForm(p => ({ ...p, subtitle: e.target.value }))}
+          placeholder="例：新鮮食材每日現做，可客製口味" style={FIELD} />
+      </div>
+      <div style={GROUP}><label style={LABEL}>圖片網址</label>
+        <input value={form.imageUrl} onChange={e => setForm(p => ({ ...p, imageUrl: e.target.value }))}
+          placeholder="https://example.com/image.jpg（建議比例 20:13）" style={FIELD} />
+        {form.imageUrl && (
+          <img src={form.imageUrl} alt="預覽" onError={e => e.target.style.display='none'}
+            style={{ marginTop: '8px', maxWidth: '100%', maxHeight: '120px', borderRadius: '6px', objectFit: 'cover' }} />
+        )}
+      </div>
+
+      <div style={GROUP}>
+        <label style={LABEL}>價目表</label>
+        <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', overflow: 'hidden', marginTop: '6px' }}>
+          {form.priceItems.length > 0 && (
+            <div style={{ borderBottom: '1px solid #f0f0f0' }}>
+              {form.priceItems.map((item, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', gap: '8px', borderBottom: i < form.priceItems.length - 1 ? '1px solid #f0f0f0' : 'none', backgroundColor: '#fafafa' }}>
+                  <span style={{ flex: 3, fontSize: '14px', color: '#333' }}>{item.name}</span>
+                  <span style={{ flex: 2, fontSize: '14px', color: '#333', textAlign: 'right' }}>{item.price}</span>
+                  <button onClick={() => removePriceItem(i)} style={{ background: 'none', border: 'none', color: '#e53935', cursor: 'pointer', fontSize: '16px', padding: '0 4px', flexShrink: 0 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: '8px', padding: '8px 12px', backgroundColor: '#fff' }}>
+            <input value={priceInput.name} onChange={e => setPriceInput(p => ({ ...p, name: e.target.value }))}
+              placeholder="項目名稱" style={{ ...FIELD_SM, flex: 3, marginTop: 0 }}
+              onKeyDown={e => e.key === 'Enter' && addPriceItem()} />
+            <input value={priceInput.price} onChange={e => setPriceInput(p => ({ ...p, price: e.target.value }))}
+              placeholder="價格 (例：$200)" style={{ ...FIELD_SM, flex: 2, marginTop: 0 }}
+              onKeyDown={e => e.key === 'Enter' && addPriceItem()} />
+            <button onClick={addPriceItem} style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: '#2196F3', color: '#fff', fontWeight: 'bold', cursor: 'pointer', flexShrink: 0, fontSize: '13px' }}>新增</button>
+          </div>
+        </div>
+        <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>填入名稱與價格後按「新增」或 Enter</div>
+      </div>
+
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '14px' }}>
+        <div style={{ flex: 1 }}><label style={LABEL}>按鈕文字</label>
+          <input value={form.buttonText} onChange={e => setForm(p => ({ ...p, buttonText: e.target.value }))}
+            placeholder="例：了解更多、立即訂購" style={FIELD} />
+        </div>
+        <div style={{ flex: 2 }}><label style={LABEL}>按鈕連結</label>
+          <input value={form.buttonUrl} onChange={e => setForm(p => ({ ...p, buttonUrl: e.target.value }))}
+            placeholder="https://..." style={FIELD} />
+        </div>
+      </div>
+      <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '16px' }}>按鈕文字與連結皆填寫時才會顯示按鈕</div>
+
+      <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+        <button onClick={() => setShowForm(false)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', color: '#666', cursor: 'pointer' }}>返回</button>
+        <button onClick={handleSave} disabled={saving} style={{ padding: '8px 18px', borderRadius: '6px', border: 'none', background: saving ? '#b0bec5' : '#2196F3', color: '#fff', fontWeight: 'bold', cursor: saving ? 'not-allowed' : 'pointer' }}>
+          {saving ? '儲存中...' : '儲存'}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <p style={{ fontSize: '13px', color: '#888', marginTop: 0, marginBottom: '12px' }}>
+        建立商品介紹卡片，可在關鍵字觸發時自動以 LINE Flex Message 發送給客人。
+      </p>
+      {cards.length === 0 && <div style={{ textAlign: 'center', color: '#bbb', padding: '24px', fontSize: '14px' }}>尚無卡片，點擊下方新增</div>}
+      {cards.map(card => (
+        <div key={card._id} style={{ padding: '12px 14px', marginBottom: '10px', borderRadius: '8px', border: '1px solid #e0e0e0', backgroundColor: '#fafafa' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+            {card.imageUrl && (
+              <img src={card.imageUrl} alt="" onError={e => e.target.style.display='none'}
+                style={{ width: '60px', height: '45px', borderRadius: '6px', objectFit: 'cover', flexShrink: 0 }} />
+            )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: '700', fontSize: '14px', color: '#333', marginBottom: '2px' }}>{card.title}</div>
+              {card.subtitle && <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>{card.subtitle}</div>}
+              <div style={{ fontSize: '12px', color: '#aaa' }}>
+                {card.priceItems?.length > 0 ? `${card.priceItems.length} 個項目` : '無價目表'}
+                {card.buttonUrl ? ' · 含按鈕' : ''}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+              <button onClick={() => openEdit(card)} style={{ padding: '4px 10px', borderRadius: '5px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#555' }}>編輯</button>
+              <button onClick={() => handleDelete(card._id)} style={{ padding: '4px 10px', borderRadius: '5px', border: '1px solid #ffcdd2', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#e53935' }}>刪除</button>
+            </div>
+          </div>
+        </div>
+      ))}
+      <button onClick={openNew} style={{ width: '100%', marginTop: '4px', padding: '10px', borderRadius: '8px', border: '2px dashed #e0e0e0', background: '#fff', color: '#2196F3', fontSize: '14px', cursor: 'pointer', fontWeight: '600' }}>
+        + 新增商品卡片
+      </button>
+    </div>
+  );
+}
+
+// ─── Tab 4: 自動回覆設定 ─────────────────────────────────────────────────────
 function AutoReplyTab({ profile, onChange, onSave, saving, saved }) {
   return (
     <div>
@@ -328,10 +557,11 @@ function SettingsModal({ onClose }) {
   }
 
   const TABS = [
-    { key: 'profile', label: '商家知識庫' },
+    { key: 'profile',  label: '商家知識庫' },
+    { key: 'cards',    label: '商品卡片' },
     { key: 'keywords', label: '關鍵字觸發' },
-    { key: 'autoReply', label: '自動回覆' },
-    { key: 'labels', label: '標籤管理' }
+    { key: 'autoReply',label: '自動回覆' },
+    { key: 'labels',   label: '標籤管理' }
   ];
 
   return (
@@ -358,10 +588,11 @@ function SettingsModal({ onClose }) {
 
         {/* Body */}
         <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
-          {tab === 'profile' && <ProfileTab profile={profile} onChange={handleChange} onSave={handleSave} saving={saving} saved={saved} />}
-          {tab === 'keywords' && <KeywordTab />}
+          {tab === 'profile'   && <ProfileTab profile={profile} onChange={handleChange} onSave={handleSave} saving={saving} saved={saved} />}
+          {tab === 'cards'     && <CardTab />}
+          {tab === 'keywords'  && <KeywordTab />}
           {tab === 'autoReply' && <AutoReplyTab profile={profile} onChange={handleChange} onSave={handleSave} saving={saving} saved={saved} />}
-          {tab === 'labels' && <LabelTab />}
+          {tab === 'labels'    && <LabelTab />}
         </div>
       </div>
     </div>

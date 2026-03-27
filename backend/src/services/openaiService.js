@@ -52,12 +52,17 @@ async function analyzeMessage(userMessage, businessProfile, keywords = []) {
 
   let keywordSection = '';
   if (keywords.length > 0) {
-    const list = keywords.map((k, i) => `${i + 1}. 觸發主題：「${k.trigger}」→ 預設回覆：「${k.reply}」`).join('\n');
+    const list = keywords.map((k, i) => {
+      const replyPart = k.replyType === 'card'
+        ? '（回覆方式：卡片訊息）'
+        : `→ 預設回覆：「${k.reply}」`;
+      return `${i + 1}. 觸發主題：「${k.trigger}」${replyPart}`;
+    }).join('\n');
     keywordSection = `
 【語意關鍵字匹配】
 以下是預設的關鍵字觸發回覆。請判斷用戶訊息是否在語意上符合任何一個觸發主題（不需要文字完全一樣）：
 ${list}
-若有匹配，在 keywordMatch 回傳 { "trigger": "...", "reply": "..." }；否則填 null。`;
+若有匹配，在 keywordMatch 回傳 { "trigger": "...", "reply": "預設回覆文字，卡片類型填空字串" }；否則填 null。`;
   }
 
   const systemPrompt = `${basePrompt}
