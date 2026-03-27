@@ -194,8 +194,8 @@ function App() {
             </div>
           )}
         </div>
+        <StickyNotes />
       </div>
-      <StickyNotes />
     );
   }
 
