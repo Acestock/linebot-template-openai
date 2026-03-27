@@ -262,6 +262,52 @@ function KeywordTab() {
   );
 }
 
+// ─── LINE Flex Message 預覽元件 ───────────────────────────────────────────────
+function LineCardPreview({ card }) {
+  const hasPrices = card.priceItems && card.priceItems.length > 0;
+  const hasButton = card.buttonText && card.buttonUrl;
+  return (
+    <div style={{ width: '220px', borderRadius: '14px', overflow: 'hidden',
+      boxShadow: '0 4px 18px rgba(0,0,0,0.18)', background: '#fff', flexShrink: 0 }}>
+      {card.imageUrl && (
+        <div style={{ width: '100%', paddingTop: '65%', position: 'relative', background: '#e8ecf0' }}>
+          <img src={card.imageUrl} alt="" onError={e => { e.target.style.display='none'; }}
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+        </div>
+      )}
+      <div style={{ padding: '14px 14px 10px' }}>
+        <div style={{ fontWeight: '700', fontSize: '16px', color: '#111', lineHeight: '1.3', wordBreak: 'break-word' }}>
+          {card.title || <span style={{ color: '#ccc' }}>卡片標題</span>}
+        </div>
+        {card.subtitle && (
+          <div style={{ fontSize: '12px', color: '#888', marginTop: '4px', lineHeight: '1.4', wordBreak: 'break-word' }}>{card.subtitle}</div>
+        )}
+        {hasPrices && (
+          <>
+            <div style={{ borderTop: '1px solid #f0f0f0', margin: '10px 0 8px' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              {card.priceItems.map((item, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#555', flex: 1, wordBreak: 'break-word' }}>{item.name}</span>
+                  <span style={{ fontSize: '12px', fontWeight: '700', color: '#111', flexShrink: 0 }}>{item.price}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      {hasButton && (
+        <div style={{ padding: '0 10px 10px' }}>
+          <div style={{ background: '#00B900', color: '#fff', textAlign: 'center',
+            padding: '9px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', letterSpacing: '0.3px' }}>
+            {card.buttonText}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Tab 3: 商品卡片管理 ─────────────────────────────────────────────────────
 function CardTab() {
   const [cards, setCards] = useState([]);
@@ -322,66 +368,72 @@ function CardTab() {
   if (showForm) return (
     <div>
       <p style={{ fontSize: '13px', color: '#888', marginTop: 0, marginBottom: '16px' }}>
-        建立可在 LINE 發送的商品介紹卡片，包含圖片、說明、價目表與按鈕連結。
+        填寫後右側預覽即時更新，呈現客人在 LINE 上看到的樣子。
       </p>
 
-      <div style={GROUP}><label style={LABEL}>卡片標題 *</label>
-        <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
-          placeholder="例：精選蛋糕組合、服務方案一覽" style={FIELD} />
-      </div>
-      <div style={GROUP}><label style={LABEL}>副標題／說明</label>
-        <input value={form.subtitle} onChange={e => setForm(p => ({ ...p, subtitle: e.target.value }))}
-          placeholder="例：新鮮食材每日現做，可客製口味" style={FIELD} />
-      </div>
-      <div style={GROUP}><label style={LABEL}>圖片網址</label>
-        <input value={form.imageUrl} onChange={e => setForm(p => ({ ...p, imageUrl: e.target.value }))}
-          placeholder="https://example.com/image.jpg（建議比例 20:13）" style={FIELD} />
-        {form.imageUrl && (
-          <img src={form.imageUrl} alt="預覽" onError={e => e.target.style.display='none'}
-            style={{ marginTop: '8px', maxWidth: '100%', maxHeight: '120px', borderRadius: '6px', objectFit: 'cover' }} />
-        )}
-      </div>
+      {/* Two-column: form left, LINE preview right */}
+      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+        {/* Form fields */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={GROUP}><label style={LABEL}>卡片標題 *</label>
+            <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
+              placeholder="例：精選蛋糕組合" style={FIELD} />
+          </div>
+          <div style={GROUP}><label style={LABEL}>副標題／說明</label>
+            <input value={form.subtitle} onChange={e => setForm(p => ({ ...p, subtitle: e.target.value }))}
+              placeholder="例：新鮮食材每日現做" style={FIELD} />
+          </div>
+          <div style={GROUP}><label style={LABEL}>圖片網址</label>
+            <input value={form.imageUrl} onChange={e => setForm(p => ({ ...p, imageUrl: e.target.value }))}
+              placeholder="https://...（建議 20:13）" style={FIELD} />
+          </div>
 
-      <div style={GROUP}>
-        <label style={LABEL}>價目表</label>
-        <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', overflow: 'hidden', marginTop: '6px' }}>
-          {form.priceItems.length > 0 && (
-            <div style={{ borderBottom: '1px solid #f0f0f0' }}>
-              {form.priceItems.map((item, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', gap: '8px', borderBottom: i < form.priceItems.length - 1 ? '1px solid #f0f0f0' : 'none', backgroundColor: '#fafafa' }}>
-                  <span style={{ flex: 3, fontSize: '14px', color: '#333' }}>{item.name}</span>
-                  <span style={{ flex: 2, fontSize: '14px', color: '#333', textAlign: 'right' }}>{item.price}</span>
-                  <button onClick={() => removePriceItem(i)} style={{ background: 'none', border: 'none', color: '#e53935', cursor: 'pointer', fontSize: '16px', padding: '0 4px', flexShrink: 0 }}>✕</button>
+          <div style={GROUP}>
+            <label style={LABEL}>價目表</label>
+            <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', overflow: 'hidden', marginTop: '6px' }}>
+              {form.priceItems.length > 0 && (
+                <div>
+                  {form.priceItems.map((item, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', gap: '8px', borderBottom: '1px solid #f0f0f0', backgroundColor: '#fafafa' }}>
+                      <span style={{ flex: 3, fontSize: '13px', color: '#333' }}>{item.name}</span>
+                      <span style={{ flex: 2, fontSize: '13px', color: '#333', textAlign: 'right' }}>{item.price}</span>
+                      <button onClick={() => removePriceItem(i)} style={{ background: 'none', border: 'none', color: '#e53935', cursor: 'pointer', fontSize: '15px', padding: '0 2px', flexShrink: 0 }}>✕</button>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
+              <div style={{ display: 'flex', gap: '6px', padding: '7px 10px', backgroundColor: '#fff' }}>
+                <input value={priceInput.name} onChange={e => setPriceInput(p => ({ ...p, name: e.target.value }))}
+                  placeholder="項目名稱" style={{ ...FIELD_SM, flex: 3, marginTop: 0 }}
+                  onKeyDown={e => e.key === 'Enter' && addPriceItem()} />
+                <input value={priceInput.price} onChange={e => setPriceInput(p => ({ ...p, price: e.target.value }))}
+                  placeholder="$200" style={{ ...FIELD_SM, flex: 2, marginTop: 0 }}
+                  onKeyDown={e => e.key === 'Enter' && addPriceItem()} />
+                <button onClick={addPriceItem} style={{ padding: '5px 10px', borderRadius: '6px', border: 'none', background: '#2196F3', color: '#fff', fontWeight: 'bold', cursor: 'pointer', flexShrink: 0, fontSize: '12px' }}>＋</button>
+              </div>
             </div>
-          )}
-          <div style={{ display: 'flex', gap: '8px', padding: '8px 12px', backgroundColor: '#fff' }}>
-            <input value={priceInput.name} onChange={e => setPriceInput(p => ({ ...p, name: e.target.value }))}
-              placeholder="項目名稱" style={{ ...FIELD_SM, flex: 3, marginTop: 0 }}
-              onKeyDown={e => e.key === 'Enter' && addPriceItem()} />
-            <input value={priceInput.price} onChange={e => setPriceInput(p => ({ ...p, price: e.target.value }))}
-              placeholder="價格 (例：$200)" style={{ ...FIELD_SM, flex: 2, marginTop: 0 }}
-              onKeyDown={e => e.key === 'Enter' && addPriceItem()} />
-            <button onClick={addPriceItem} style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: '#2196F3', color: '#fff', fontWeight: 'bold', cursor: 'pointer', flexShrink: 0, fontSize: '13px' }}>新增</button>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+            <div style={{ flex: 1 }}><label style={LABEL}>按鈕文字</label>
+              <input value={form.buttonText} onChange={e => setForm(p => ({ ...p, buttonText: e.target.value }))}
+                placeholder="了解更多" style={FIELD} />
+            </div>
+            <div style={{ flex: 2 }}><label style={LABEL}>按鈕連結</label>
+              <input value={form.buttonUrl} onChange={e => setForm(p => ({ ...p, buttonUrl: e.target.value }))}
+                placeholder="https://..." style={FIELD} />
+            </div>
           </div>
         </div>
-        <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>填入名稱與價格後按「新增」或 Enter</div>
-      </div>
 
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '14px' }}>
-        <div style={{ flex: 1 }}><label style={LABEL}>按鈕文字</label>
-          <input value={form.buttonText} onChange={e => setForm(p => ({ ...p, buttonText: e.target.value }))}
-            placeholder="例：了解更多、立即訂購" style={FIELD} />
-        </div>
-        <div style={{ flex: 2 }}><label style={LABEL}>按鈕連結</label>
-          <input value={form.buttonUrl} onChange={e => setForm(p => ({ ...p, buttonUrl: e.target.value }))}
-            placeholder="https://..." style={FIELD} />
+        {/* LINE-style live preview */}
+        <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+          <div style={{ fontSize: '11px', color: '#aaa', fontWeight: '600', letterSpacing: '0.5px' }}>LINE 預覽</div>
+          <LineCardPreview card={form} />
         </div>
       </div>
-      <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '16px' }}>按鈕文字與連結皆填寫時才會顯示按鈕</div>
 
-      <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
         <button onClick={() => setShowForm(false)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', color: '#666', cursor: 'pointer' }}>返回</button>
         <button onClick={handleSave} disabled={saving} style={{ padding: '8px 18px', borderRadius: '6px', border: 'none', background: saving ? '#b0bec5' : '#2196F3', color: '#fff', fontWeight: 'bold', cursor: saving ? 'not-allowed' : 'pointer' }}>
           {saving ? '儲存中...' : '儲存'}
@@ -390,77 +442,34 @@ function CardTab() {
     </div>
   );
 
-  const CARD_ACCENTS = ['#4f8ef7','#43c59e','#f7844f','#a06cf7','#f74f7e','#f7c84f'];
-
   return (
     <div>
       <p style={{ fontSize: '13px', color: '#888', marginTop: 0, marginBottom: '14px' }}>
-        建立商品介紹卡片，可在關鍵字觸發時自動以 LINE Flex Message 發送給客人。
+        以下為客人在 LINE 上看到的實際樣貌。可在關鍵字觸發時自動發送。
       </p>
       {cards.length === 0 && (
         <div style={{ textAlign: 'center', color: '#bbb', padding: '32px 16px', fontSize: '14px',
-          background: 'linear-gradient(135deg,#f8f9fa,#f0f4ff)', borderRadius: '12px', border: '2px dashed #dce3f0' }}>
+          background: '#f7f9fc', borderRadius: '12px', border: '2px dashed #dce3f0' }}>
           <div style={{ fontSize: '32px', marginBottom: '8px' }}>🃏</div>
           <div>尚無卡片，點擊下方新增第一張</div>
         </div>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px', marginBottom: cards.length > 0 ? '14px' : 0 }}>
-        {cards.map((card, idx) => {
-          const accent = CARD_ACCENTS[idx % CARD_ACCENTS.length];
-          return (
-            <div key={card._id} style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid #e8edf5',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.07)', background: '#fff', display: 'flex', flexDirection: 'column' }}>
-              {/* Card image or gradient header */}
-              {card.imageUrl ? (
-                <img src={card.imageUrl} alt="" onError={e => e.target.style.display='none'}
-                  style={{ width: '100%', height: '90px', objectFit: 'cover', display: 'block' }} />
-              ) : (
-                <div style={{ height: '8px', background: `linear-gradient(90deg, ${accent}, ${accent}cc)` }} />
-              )}
-
-              <div style={{ padding: '12px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                  <div style={{ width: '4px', height: '36px', borderRadius: '2px', background: accent, flexShrink: 0, marginTop: '2px' }} />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: '700', fontSize: '14px', color: '#1a1a2e', lineHeight: '1.3' }}>{card.title}</div>
-                    {card.subtitle && <div style={{ fontSize: '12px', color: '#7a8499', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.subtitle}</div>}
-                  </div>
-                </div>
-
-                {card.priceItems?.length > 0 && (
-                  <div style={{ background: '#f7f9fc', borderRadius: '8px', padding: '8px 10px', marginTop: '2px' }}>
-                    {card.priceItems.slice(0, 3).map((item, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#444', padding: '2px 0', borderBottom: i < Math.min(card.priceItems.length, 3) - 1 ? '1px solid #eef1f6' : 'none' }}>
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>{item.name}</span>
-                        <span style={{ fontWeight: '600', color: accent, flexShrink: 0 }}>{item.price}</span>
-                      </div>
-                    ))}
-                    {card.priceItems.length > 3 && (
-                      <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px', textAlign: 'center' }}>
-                        +{card.priceItems.length - 3} 個項目
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: '6px', marginTop: 'auto', paddingTop: '8px' }}>
-                  {card.buttonUrl && (
-                    <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '6px',
-                      background: accent + '18', color: accent, fontWeight: '600', border: `1px solid ${accent}40` }}>
-                      🔗 {card.buttonText || '按鈕'}
-                    </span>
-                  )}
-                  <div style={{ marginLeft: 'auto', display: 'flex', gap: '5px' }}>
-                    <button onClick={() => openEdit(card)} style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#555', fontWeight: '500' }}>編輯</button>
-                    <button onClick={() => handleDelete(card._id)} style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #ffd0d0', background: '#fff9f9', fontSize: '12px', cursor: 'pointer', color: '#d32f2f', fontWeight: '500' }}>刪除</button>
-                  </div>
-                </div>
+      {/* Horizontal scrollable LINE-preview row */}
+      {cards.length > 0 && (
+        <div style={{ display: 'flex', gap: '14px', overflowX: 'auto', paddingBottom: '12px',
+          scrollbarWidth: 'thin', scrollbarColor: '#d0d9e6 transparent' }}>
+          {cards.map(card => (
+            <div key={card._id} style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <LineCardPreview card={card} />
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button onClick={() => openEdit(card)} style={{ padding: '5px 14px', borderRadius: '6px', border: '1px solid #d0d9e6', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#444', fontWeight: '500' }}>編輯</button>
+                <button onClick={() => handleDelete(card._id)} style={{ padding: '5px 14px', borderRadius: '6px', border: '1px solid #ffd0d0', background: '#fff9f9', fontSize: '12px', cursor: 'pointer', color: '#d32f2f', fontWeight: '500' }}>刪除</button>
               </div>
             </div>
-          );
-        })}
-      </div>
-      <button onClick={openNew} style={{ width: '100%', padding: '11px', borderRadius: '10px', border: '2px dashed #cdd8ee', background: 'linear-gradient(135deg,#f8f9fb,#eef3ff)', color: '#2563eb', fontSize: '14px', cursor: 'pointer', fontWeight: '600', transition: 'all 0.15s' }}>
+          ))}
+        </div>
+      )}
+      <button onClick={openNew} style={{ width: '100%', marginTop: '4px', padding: '11px', borderRadius: '10px', border: '2px dashed #cdd8ee', background: 'linear-gradient(135deg,#f8f9fb,#eef3ff)', color: '#2563eb', fontSize: '14px', cursor: 'pointer', fontWeight: '600' }}>
         + 新增商品卡片
       </button>
     </div>
