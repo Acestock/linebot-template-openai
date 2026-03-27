@@ -48,12 +48,12 @@ router.post('/', async (req, res) => {
         let autoReplySummary = '';
         let sendOk = false;
 
-        if (matchedKw?.replyType === 'card' && matchedKw?.cardId) {
-          // Send Flex Message card
-          const card = await ProductCard.findById(matchedKw.cardId).lean();
-          if (card) {
-            await pushFlexCard(lineUserId, card);
-            autoReplySummary = `[卡片自動回覆] ${card.title}`;
+        if (matchedKw?.replyType === 'card' && matchedKw?.cardIds?.length > 0) {
+          // Send Flex Message card(s) as bubble or carousel
+          const cards = await ProductCard.find({ _id: { $in: matchedKw.cardIds } }).lean();
+          if (cards.length > 0) {
+            await pushFlexCard(lineUserId, cards);
+            autoReplySummary = `[卡片自動回覆] ${cards.map(c => c.title).join('、')}`;
             sendOk = true;
           }
         }

@@ -52,7 +52,7 @@ function KeywordTab() {
   const [cards, setCards] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ trigger: '', replyType: 'text', reply: '', cardId: '', isActive: true, order: 0 });
+  const [form, setForm] = useState({ trigger: '', replyType: 'text', reply: '', cardIds: [], isActive: true, order: 0 });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { loadKeywords(); loadCards(); }, []);
@@ -68,18 +68,27 @@ function KeywordTab() {
 
   function openNew() {
     setEditing(null);
-    setForm({ trigger: '', replyType: 'text', reply: '', cardId: '', isActive: true, order: keywords.length });
+    setForm({ trigger: '', replyType: 'text', reply: '', cardIds: [], isActive: true, order: keywords.length });
     setShowForm(true);
   }
   function openEdit(kw) {
     setEditing(kw);
-    setForm({ trigger: kw.trigger, replyType: kw.replyType || 'text', reply: kw.reply || '', cardId: kw.cardId || '', isActive: kw.isActive, order: kw.order });
+    setForm({ trigger: kw.trigger, replyType: kw.replyType || 'text', reply: kw.reply || '', cardIds: kw.cardIds || [], isActive: kw.isActive, order: kw.order });
     setShowForm(true);
+  }
+
+  function toggleCardSelection(cardId) {
+    setForm(p => {
+      const ids = p.cardIds.includes(cardId)
+        ? p.cardIds.filter(id => id !== cardId)
+        : [...p.cardIds, cardId];
+      return { ...p, cardIds: ids };
+    });
   }
 
   async function handleSave() {
     if (!form.trigger.trim()) { alert('觸發詞為必填'); return; }
-    if (form.replyType === 'card' && !form.cardId) { alert('請選擇要發送的卡片'); return; }
+    if (form.replyType === 'card' && form.cardIds.length === 0) { alert('請至少選擇一張卡片'); return; }
     if (form.replyType === 'text' && !form.reply.trim()) { alert('回覆內容為必填'); return; }
     setSaving(true);
     try {
@@ -119,16 +128,16 @@ function KeywordTab() {
         <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>語意匹配，不需完全相同（如「幾點開」→「營業時間」）</div>
       </div>
 
-      {/* Reply type toggle */}
       <div style={GROUP}>
         <label style={LABEL}>回覆方式</label>
         <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-          {[{ value: 'text', label: '文字回覆' }, { value: 'card', label: '商品卡片' }].map(opt => (
+          {[{ value: 'text', label: '✏️ 文字回覆' }, { value: 'card', label: '🃏 商品卡片' }].map(opt => (
             <button key={opt.value} onClick={() => setForm(p => ({ ...p, replyType: opt.value }))}
-              style={{ padding: '6px 16px', borderRadius: '6px', border: '2px solid', cursor: 'pointer', fontSize: '13px', fontWeight: form.replyType === opt.value ? '700' : '400',
+              style={{ padding: '7px 18px', borderRadius: '8px', border: '2px solid', cursor: 'pointer', fontSize: '13px',
+                fontWeight: form.replyType === opt.value ? '700' : '400',
                 borderColor: form.replyType === opt.value ? '#2196F3' : '#e0e0e0',
                 background: form.replyType === opt.value ? '#e3f2fd' : '#fff',
-                color: form.replyType === opt.value ? '#2196F3' : '#666' }}>
+                color: form.replyType === opt.value ? '#1565c0' : '#666' }}>
               {opt.label}
             </button>
           ))}
@@ -142,21 +151,46 @@ function KeywordTab() {
         </div>
       ) : (
         <div style={GROUP}>
-          <label style={LABEL}>選擇要發送的卡片 *</label>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <label style={LABEL}>選擇要發送的卡片（可複選）*</label>
+            {form.cardIds.length > 0 && (
+              <span style={{ fontSize: '12px', padding: '2px 10px', borderRadius: '10px', background: '#1565c0', color: '#fff', fontWeight: '600' }}>
+                已選 {form.cardIds.length} 張
+              </span>
+            )}
+          </div>
           {cards.length === 0 ? (
-            <div style={{ fontSize: '13px', color: '#e53935', marginTop: '8px' }}>尚未建立任何商品卡片，請先至「商品卡片」分頁新增。</div>
+            <div style={{ fontSize: '13px', color: '#e53935', padding: '12px', background: '#fff3f3', borderRadius: '8px' }}>
+              尚未建立任何商品卡片，請先至「商品卡片」分頁新增。
+            </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-              {cards.map(card => (
-                <div key={card._id} onClick={() => setForm(p => ({ ...p, cardId: card._id }))}
-                  style={{ padding: '10px 14px', borderRadius: '8px', border: '2px solid', cursor: 'pointer',
-                    borderColor: form.cardId === card._id ? '#2196F3' : '#e0e0e0',
-                    background: form.cardId === card._id ? '#e3f2fd' : '#fff' }}>
-                  <div style={{ fontWeight: '600', fontSize: '14px', color: '#333' }}>{card.title}</div>
-                  {card.subtitle && <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{card.subtitle}</div>}
-                  <div style={{ fontSize: '12px', color: '#aaa', marginTop: '2px' }}>{card.priceItems?.length || 0} 個價目項目</div>
-                </div>
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {cards.map(card => {
+                const selected = form.cardIds.includes(card._id);
+                return (
+                  <div key={card._id} onClick={() => toggleCardSelection(card._id)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px',
+                      borderRadius: '10px', border: `2px solid ${selected ? '#2196F3' : '#e8edf2'}`,
+                      background: selected ? '#e3f2fd' : '#fafbfc', cursor: 'pointer', transition: 'all 0.15s' }}>
+                    <div style={{ width: '20px', height: '20px', borderRadius: '6px', flexShrink: 0, border: `2px solid ${selected ? '#2196F3' : '#cdd5de'}`,
+                      background: selected ? '#2196F3' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {selected && <span style={{ color: '#fff', fontSize: '13px', lineHeight: 1 }}>✓</span>}
+                    </div>
+                    {card.imageUrl && (
+                      <img src={card.imageUrl} alt="" onError={e => e.target.style.display='none'}
+                        style={{ width: '40px', height: '30px', borderRadius: '5px', objectFit: 'cover', flexShrink: 0 }} />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: '600', fontSize: '14px', color: selected ? '#1565c0' : '#333' }}>{card.title}</div>
+                      {card.subtitle && <div style={{ fontSize: '12px', color: '#888', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.subtitle}</div>}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#aaa', flexShrink: 0 }}>{card.priceItems?.length || 0} 項</div>
+                  </div>
+                );
+              })}
+              <div style={{ fontSize: '12px', color: '#aaa', marginTop: '2px' }}>
+                選擇多張卡片時，LINE 將以左右滑動的輪播（Carousel）方式呈現。
+              </div>
             </div>
           )}
         </div>
@@ -177,35 +211,51 @@ function KeywordTab() {
         當客人訊息語意上符合觸發主題時，系統自動發送文字回覆或商品卡片，無需人工介入。
       </p>
       {keywords.length === 0 && <div style={{ textAlign: 'center', color: '#bbb', padding: '24px', fontSize: '14px' }}>尚無關鍵字，點擊下方新增</div>}
-      {keywords.map(kw => (
-        <div key={kw._id} style={{ padding: '12px 14px', marginBottom: '10px', borderRadius: '8px', border: '1px solid #f0f0f0', backgroundColor: kw.isActive ? '#fafafa' : '#f5f5f5', opacity: kw.isActive ? 1 : 0.6 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                <span style={{ fontWeight: '700', fontSize: '14px', color: '#333' }}>{kw.trigger}</span>
-                <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '10px',
-                  backgroundColor: kw.replyType === 'card' ? '#e3f2fd' : '#f3e5f5',
-                  color: kw.replyType === 'card' ? '#1565c0' : '#7b1fa2' }}>
-                  {kw.replyType === 'card' ? '卡片' : '文字'}
-                </span>
-                <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '10px', backgroundColor: kw.isActive ? '#e8f5e9' : '#f5f5f5', color: kw.isActive ? '#388e3c' : '#aaa' }}>
-                  {kw.isActive ? '啟用' : '停用'}
-                </span>
+      {keywords.map(kw => {
+        const kwCardIds = kw.cardIds || [];
+        return (
+          <div key={kw._id} style={{ padding: '12px 14px', marginBottom: '10px', borderRadius: '8px', border: '1px solid #eef2f7', backgroundColor: kw.isActive ? '#fafbfc' : '#f5f5f5', opacity: kw.isActive ? 1 : 0.6 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' }}>
+                  <span style={{ fontWeight: '700', fontSize: '14px', color: '#222' }}>{kw.trigger}</span>
+                  <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '10px',
+                    backgroundColor: kw.replyType === 'card' ? '#e3f2fd' : '#f3e5f5',
+                    color: kw.replyType === 'card' ? '#1565c0' : '#7b1fa2', fontWeight: '600' }}>
+                    {kw.replyType === 'card' ? '🃏 卡片' : '✏️ 文字'}
+                  </span>
+                  <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '10px',
+                    backgroundColor: kw.isActive ? '#e8f5e9' : '#f5f5f5',
+                    color: kw.isActive ? '#2e7d32' : '#aaa', fontWeight: '600' }}>
+                    {kw.isActive ? '啟用' : '停用'}
+                  </span>
+                </div>
+                {kw.replyType === 'card' ? (
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
+                    {kwCardIds.length === 0
+                      ? <span style={{ fontSize: '12px', color: '#e53935' }}>（卡片已刪除）</span>
+                      : kwCardIds.map(id => (
+                          <span key={id} style={{ fontSize: '12px', padding: '2px 9px', borderRadius: '8px',
+                            background: '#dbeafe', color: '#1e40af', fontWeight: '500' }}>
+                            {cardMap[id]?.title || '（已刪除）'}
+                          </span>
+                        ))
+                    }
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '13px', color: '#666', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{kw.reply}</div>
+                )}
               </div>
-              {kw.replyType === 'card'
-                ? <div style={{ fontSize: '13px', color: '#1565c0' }}>{cardMap[kw.cardId]?.title || '（卡片已刪除）'}</div>
-                : <div style={{ fontSize: '13px', color: '#777', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{kw.reply}</div>
-              }
-            </div>
-            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-              <button onClick={() => toggleActive(kw)} style={{ padding: '4px 8px', borderRadius: '5px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#555' }}>{kw.isActive ? '停用' : '啟用'}</button>
-              <button onClick={() => openEdit(kw)} style={{ padding: '4px 8px', borderRadius: '5px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#555' }}>編輯</button>
-              <button onClick={() => handleDelete(kw._id)} style={{ padding: '4px 8px', borderRadius: '5px', border: '1px solid #ffcdd2', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#e53935' }}>刪除</button>
+              <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                <button onClick={() => toggleActive(kw)} style={{ padding: '4px 8px', borderRadius: '5px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#555' }}>{kw.isActive ? '停用' : '啟用'}</button>
+                <button onClick={() => openEdit(kw)} style={{ padding: '4px 8px', borderRadius: '5px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#555' }}>編輯</button>
+                <button onClick={() => handleDelete(kw._id)} style={{ padding: '4px 8px', borderRadius: '5px', border: '1px solid #ffcdd2', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#e53935' }}>刪除</button>
+              </div>
             </div>
           </div>
-        </div>
-      ))}
-      <button onClick={openNew} style={{ width: '100%', marginTop: '4px', padding: '10px', borderRadius: '8px', border: '2px dashed #e0e0e0', background: '#fff', color: '#2196F3', fontSize: '14px', cursor: 'pointer', fontWeight: '600' }}>
+        );
+      })}
+      <button onClick={openNew} style={{ width: '100%', marginTop: '4px', padding: '10px', borderRadius: '8px', border: '2px dashed #d0d9e6', background: '#fff', color: '#2196F3', fontSize: '14px', cursor: 'pointer', fontWeight: '600' }}>
         + 新增關鍵字觸發
       </button>
     </div>
@@ -340,35 +390,77 @@ function CardTab() {
     </div>
   );
 
+  const CARD_ACCENTS = ['#4f8ef7','#43c59e','#f7844f','#a06cf7','#f74f7e','#f7c84f'];
+
   return (
     <div>
-      <p style={{ fontSize: '13px', color: '#888', marginTop: 0, marginBottom: '12px' }}>
+      <p style={{ fontSize: '13px', color: '#888', marginTop: 0, marginBottom: '14px' }}>
         建立商品介紹卡片，可在關鍵字觸發時自動以 LINE Flex Message 發送給客人。
       </p>
-      {cards.length === 0 && <div style={{ textAlign: 'center', color: '#bbb', padding: '24px', fontSize: '14px' }}>尚無卡片，點擊下方新增</div>}
-      {cards.map(card => (
-        <div key={card._id} style={{ padding: '12px 14px', marginBottom: '10px', borderRadius: '8px', border: '1px solid #e0e0e0', backgroundColor: '#fafafa' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-            {card.imageUrl && (
-              <img src={card.imageUrl} alt="" onError={e => e.target.style.display='none'}
-                style={{ width: '60px', height: '45px', borderRadius: '6px', objectFit: 'cover', flexShrink: 0 }} />
-            )}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: '700', fontSize: '14px', color: '#333', marginBottom: '2px' }}>{card.title}</div>
-              {card.subtitle && <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>{card.subtitle}</div>}
-              <div style={{ fontSize: '12px', color: '#aaa' }}>
-                {card.priceItems?.length > 0 ? `${card.priceItems.length} 個項目` : '無價目表'}
-                {card.buttonUrl ? ' · 含按鈕' : ''}
+      {cards.length === 0 && (
+        <div style={{ textAlign: 'center', color: '#bbb', padding: '32px 16px', fontSize: '14px',
+          background: 'linear-gradient(135deg,#f8f9fa,#f0f4ff)', borderRadius: '12px', border: '2px dashed #dce3f0' }}>
+          <div style={{ fontSize: '32px', marginBottom: '8px' }}>🃏</div>
+          <div>尚無卡片，點擊下方新增第一張</div>
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px', marginBottom: cards.length > 0 ? '14px' : 0 }}>
+        {cards.map((card, idx) => {
+          const accent = CARD_ACCENTS[idx % CARD_ACCENTS.length];
+          return (
+            <div key={card._id} style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid #e8edf5',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.07)', background: '#fff', display: 'flex', flexDirection: 'column' }}>
+              {/* Card image or gradient header */}
+              {card.imageUrl ? (
+                <img src={card.imageUrl} alt="" onError={e => e.target.style.display='none'}
+                  style={{ width: '100%', height: '90px', objectFit: 'cover', display: 'block' }} />
+              ) : (
+                <div style={{ height: '8px', background: `linear-gradient(90deg, ${accent}, ${accent}cc)` }} />
+              )}
+
+              <div style={{ padding: '12px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <div style={{ width: '4px', height: '36px', borderRadius: '2px', background: accent, flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: '700', fontSize: '14px', color: '#1a1a2e', lineHeight: '1.3' }}>{card.title}</div>
+                    {card.subtitle && <div style={{ fontSize: '12px', color: '#7a8499', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.subtitle}</div>}
+                  </div>
+                </div>
+
+                {card.priceItems?.length > 0 && (
+                  <div style={{ background: '#f7f9fc', borderRadius: '8px', padding: '8px 10px', marginTop: '2px' }}>
+                    {card.priceItems.slice(0, 3).map((item, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#444', padding: '2px 0', borderBottom: i < Math.min(card.priceItems.length, 3) - 1 ? '1px solid #eef1f6' : 'none' }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>{item.name}</span>
+                        <span style={{ fontWeight: '600', color: accent, flexShrink: 0 }}>{item.price}</span>
+                      </div>
+                    ))}
+                    {card.priceItems.length > 3 && (
+                      <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px', textAlign: 'center' }}>
+                        +{card.priceItems.length - 3} 個項目
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '6px', marginTop: 'auto', paddingTop: '8px' }}>
+                  {card.buttonUrl && (
+                    <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '6px',
+                      background: accent + '18', color: accent, fontWeight: '600', border: `1px solid ${accent}40` }}>
+                      🔗 {card.buttonText || '按鈕'}
+                    </span>
+                  )}
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: '5px' }}>
+                    <button onClick={() => openEdit(card)} style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#555', fontWeight: '500' }}>編輯</button>
+                    <button onClick={() => handleDelete(card._id)} style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #ffd0d0', background: '#fff9f9', fontSize: '12px', cursor: 'pointer', color: '#d32f2f', fontWeight: '500' }}>刪除</button>
+                  </div>
+                </div>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-              <button onClick={() => openEdit(card)} style={{ padding: '4px 10px', borderRadius: '5px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#555' }}>編輯</button>
-              <button onClick={() => handleDelete(card._id)} style={{ padding: '4px 10px', borderRadius: '5px', border: '1px solid #ffcdd2', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#e53935' }}>刪除</button>
-            </div>
-          </div>
-        </div>
-      ))}
-      <button onClick={openNew} style={{ width: '100%', marginTop: '4px', padding: '10px', borderRadius: '8px', border: '2px dashed #e0e0e0', background: '#fff', color: '#2196F3', fontSize: '14px', cursor: 'pointer', fontWeight: '600' }}>
+          );
+        })}
+      </div>
+      <button onClick={openNew} style={{ width: '100%', padding: '11px', borderRadius: '10px', border: '2px dashed #cdd8ee', background: 'linear-gradient(135deg,#f8f9fb,#eef3ff)', color: '#2563eb', fontSize: '14px', cursor: 'pointer', fontWeight: '600', transition: 'all 0.15s' }}>
         + 新增商品卡片
       </button>
     </div>

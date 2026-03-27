@@ -77,15 +77,20 @@ function buildFlexBubble(card) {
   return bubble;
 }
 
-// Push Flex Message card to user
-async function pushFlexCard(lineUserId, card) {
+// Push Flex Message card(s) to user — single bubble or carousel for multiple
+async function pushFlexCard(lineUserId, cards) {
   const client = getClient();
+  const cardArray = Array.isArray(cards) ? cards : [cards];
+  const contents = cardArray.length === 1
+    ? buildFlexBubble(cardArray[0])
+    : { type: 'carousel', contents: cardArray.map(buildFlexBubble) };
+
   await client.pushMessage({
     to: lineUserId,
     messages: [{
       type: 'flex',
-      altText: card.title,
-      contents: buildFlexBubble(card)
+      altText: cardArray.map(c => c.title).join('、'),
+      contents
     }]
   });
 }

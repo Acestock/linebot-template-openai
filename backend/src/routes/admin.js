@@ -491,13 +491,13 @@ router.get('/keywords', async (req, res) => {
 // POST /api/keywords
 router.post('/keywords', async (req, res) => {
   try {
-    const { trigger, replyType, reply, cardId, isActive, order } = req.body;
+    const { trigger, replyType, reply, cardIds, isActive, order } = req.body;
     if (!trigger) return res.status(400).json({ error: 'trigger is required' });
-    if (replyType === 'card' && !cardId) return res.status(400).json({ error: 'cardId is required for card type' });
+    if (replyType === 'card' && (!cardIds || cardIds.length === 0)) return res.status(400).json({ error: 'at least one cardId is required for card type' });
     if (replyType !== 'card' && !reply) return res.status(400).json({ error: 'reply is required for text type' });
     const kw = await Keyword.create({
       trigger, replyType: replyType || 'text', reply: reply || '',
-      cardId: cardId || null, isActive: isActive !== false, order: order || 0
+      cardIds: cardIds || [], isActive: isActive !== false, order: order || 0
     });
     res.status(201).json(kw);
   } catch (err) {
@@ -508,10 +508,10 @@ router.post('/keywords', async (req, res) => {
 // PUT /api/keywords/:id
 router.put('/keywords/:id', async (req, res) => {
   try {
-    const { trigger, replyType, reply, cardId, isActive, order } = req.body;
+    const { trigger, replyType, reply, cardIds, isActive, order } = req.body;
     const kw = await Keyword.findByIdAndUpdate(
       req.params.id,
-      { trigger, replyType: replyType || 'text', reply: reply || '', cardId: cardId || null, isActive, order },
+      { trigger, replyType: replyType || 'text', reply: reply || '', cardIds: cardIds || [], isActive, order },
       { new: true }
     );
     if (!kw) return res.status(404).json({ error: 'Keyword not found' });
@@ -570,14 +570,13 @@ router.put('/cards/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// DELETE /api/cards/:id  — also clear cardId from any keywords using it
+// DELETE /api/cards/:id  — also remove from all keyword cardIds arrays
 router.delete('/cards/:id', async (req, res) => {
   try {
     await ProductCard.findByIdAndDelete(req.params.id);
-    await Keyword.updateMany(
-      { cardId: req.params.id },
-      { $set: { cardId: null, replyType: 'text' } }
-    );
+    // Remove from cardIds arrays; if array becomes empty, reset to text type
+    await Keyword.updateMany({ cardIds: req.params.id }, { $pull: { cardIds: req.params.id } });
+    await Keyword.updateMany({ cardIds: { $size: 0 }, replyType: 'card' }, { $set: { replyType: 'text' } });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
