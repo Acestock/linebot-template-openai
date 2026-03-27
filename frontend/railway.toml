@@ -1,0 +1,6 @@
+# 前端服務 Railway 設定
+[build]
+buildCommand = "npm run build"
+
+[deploy]
+startCommand = "npx serve dist -p $PORT"

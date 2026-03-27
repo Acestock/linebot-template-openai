@@ -1,0 +1,9 @@
+{
+  "name": "line-ai-bot",
+  "private": true,
+  "workspaces": ["backend", "frontend"],
+  "scripts": {
+    "build": "npm run build --workspace=frontend",
+    "start": "node backend/src/app.js"
+  }
+}
