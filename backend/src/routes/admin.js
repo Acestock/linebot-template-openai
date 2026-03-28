@@ -52,7 +52,7 @@ router.get('/conversations', async (req, res) => {
           latestAt: { $last: '$createdAt' },
           statuses: { $push: '$status' },
           allMessages: {
-            $push: { _id: '$_id', userMessage: '$userMessage', createdAt: '$createdAt', status: '$status', urgency: '$urgency' }
+            $push: { _id: '$_id', userMessage: '$userMessage', createdAt: '$createdAt', status: '$status', urgency: '$urgency', intent: '$intent' }
           },
           lastRepliedMsg: {
             $last: {
@@ -85,6 +85,13 @@ router.get('/conversations', async (req, res) => {
                 'urgent',
                 'normal'
               ]}
+            ]
+          },
+          intent: {
+            $cond: [
+              { $in: ['purchase', { $map: { input: '$pendingMessages', as: 'pm', in: '$$pm.intent' } }] },
+              'purchase',
+              'none'
             ]
           },
           status: {
@@ -157,10 +164,13 @@ router.post('/conversations/:lineUserId/suggest', async (req, res) => {
     }
 
     const combinedText = pendingMsgs.map(m => m.userMessage).join('\n---\n');
+    const hasPurchaseIntent = pendingMsgs.some(m => m.intent === 'purchase');
 
     const bp = await BusinessProfile.findOne().lean();
-    const aiReplies = await openaiService.generateReplies(combinedText, bp);
-    res.json({ aiReplies });
+    const aiReplies = await openaiService.generateReplies(
+      combinedText, bp, hasPurchaseIntent ? 'purchase' : 'none'
+    );
+    res.json({ aiReplies, intent: hasPurchaseIntent ? 'purchase' : 'none' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

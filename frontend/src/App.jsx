@@ -26,6 +26,7 @@ function App() {
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [draftReply, setDraftReply] = useState('');
   const [aiReplies, setAiReplies] = useState([]);
+  const [suggestIntent, setSuggestIntent] = useState('none');
   const [loadingSuggest, setLoadingSuggest] = useState(false);
   const [stats, setStats] = useState({ pending: 0, replied: 0 });
   const [showSettings, setShowSettings] = useState(false);
@@ -67,6 +68,7 @@ function App() {
 
   const fetchSuggest = useCallback(async (lineUserId) => {
     setAiReplies([]);
+    setSuggestIntent('none');
     setLoadingSuggest(true);
     try {
       const res = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(lineUserId)}/suggest`, {
@@ -74,6 +76,7 @@ function App() {
       });
       const data = await res.json();
       setAiReplies(data.aiReplies || []);
+      setSuggestIntent(data.intent || 'none');
     } catch (err) {
       console.error('Failed to fetch AI suggestions:', err);
     } finally {
@@ -187,7 +190,7 @@ function App() {
               <ChatDetail conversation={selectedConv} labels={labels} customerLabels={customerLabels} onLabelsChange={handleLabelsChange} />
               {selectedConv && (
                 <>
-                  <ReplyPicker aiReplies={aiReplies} loading={loadingSuggest} selectedReply={draftReply} onSelect={handleReplyPick} />
+                  <ReplyPicker aiReplies={aiReplies} loading={loadingSuggest} selectedReply={draftReply} onSelect={handleReplyPick} intent={suggestIntent} />
                   <SendPanel conversation={selectedConv} draftReply={draftReply} onDraftChange={setDraftReply} onSent={handleSent} onSkipped={handleSkipped} />
                 </>
               )}
@@ -226,7 +229,7 @@ function App() {
           <ChatDetail conversation={selectedConv} labels={labels} customerLabels={customerLabels} onLabelsChange={handleLabelsChange} />
           {selectedConv && (
             <>
-              <ReplyPicker aiReplies={aiReplies} loading={loadingSuggest} selectedReply={draftReply} onSelect={handleReplyPick} />
+              <ReplyPicker aiReplies={aiReplies} loading={loadingSuggest} selectedReply={draftReply} onSelect={handleReplyPick} intent={suggestIntent} />
               <SendPanel conversation={selectedConv} draftReply={draftReply} onDraftChange={setDraftReply} onSent={handleSent} onSkipped={handleSkipped} />
             </>
           )}

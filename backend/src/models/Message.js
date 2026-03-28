@@ -13,6 +13,7 @@ const MessageSchema = new mongoose.Schema({
     default: 'pending'
   },
   urgency: { type: String, enum: ['normal', 'urgent', 'angry'], default: 'normal' },
+  intent:  { type: String, enum: ['none', 'purchase'], default: 'none' },
   errorMessage: { type: String, default: '' },
   syncedToSheet: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },

@@ -5,6 +5,8 @@ const URGENCY_CONFIG = {
   urgent: { icon: '🟡', label: '急迫需求', bg: '#fffde7', border: '#fff9c4' },
   normal: null
 };
+const PURCHASE_BG     = '#f0fdf4';
+const PURCHASE_BORDER = '#22c55e';
 
 function ChatList({ conversations, selectedUserId, onSelect, customerLabels = {}, mobile }) {
   const pending = conversations.filter((c) => c.pendingCount > 0);
@@ -66,19 +68,23 @@ function SectionLabel({ label }) {
 }
 
 function ConvItem({ conv, selectedUserId, onSelect, labels = [] }) {
-  const isSelected = conv.lineUserId === selectedUserId;
-  const hasPending = conv.pendingCount > 0;
-  const urgencyConf = URGENCY_CONFIG[conv.urgency];
-  const latestMsg = conv.pendingMessages && conv.pendingMessages.length > 0
+  const isSelected    = conv.lineUserId === selectedUserId;
+  const hasPending    = conv.pendingCount > 0;
+  const urgencyConf   = URGENCY_CONFIG[conv.urgency];
+  const hasPurchase   = hasPending && conv.intent === 'purchase';
+  const latestMsg     = conv.pendingMessages && conv.pendingMessages.length > 0
     ? conv.pendingMessages[conv.pendingMessages.length - 1]
     : null;
 
-  const bgColor = isSelected ? '#e3f2fd'
-    : (hasPending && urgencyConf) ? urgencyConf.bg
+  const bgColor = isSelected       ? '#e3f2fd'
+    : hasPurchase                  ? PURCHASE_BG
+    : (hasPending && urgencyConf)  ? urgencyConf.bg
     : '#fff';
+
   const borderLeft = isSelected ? '3px solid #2196F3'
-    : (hasPending && conv.urgency === 'angry') ? '3px solid #f44336'
-    : (hasPending && conv.urgency === 'urgent') ? '3px solid #FFC107'
+    : (hasPending && conv.urgency === 'angry')   ? '3px solid #f44336'
+    : (hasPending && conv.urgency === 'urgent')  ? '3px solid #FFC107'
+    : hasPurchase                                ? `3px solid ${PURCHASE_BORDER}`
     : '3px solid transparent';
 
   return (
@@ -92,18 +98,28 @@ function ConvItem({ conv, selectedUserId, onSelect, labels = [] }) {
           {hasPending && urgencyConf && (
             <span title={urgencyConf.label} style={{ fontSize: '13px', flexShrink: 0 }}>{urgencyConf.icon}</span>
           )}
+          {hasPurchase && (
+            <span title="有購買意圖" style={{ fontSize: '13px', flexShrink: 0 }}>🛒</span>
+          )}
           <span style={{ fontWeight: hasPending ? 'bold' : 'normal', fontSize: '14px', color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {conv.displayName || conv.lineUserId}
           </span>
         </div>
         {hasPending ? (
-          <span style={{
-            backgroundColor: conv.urgency === 'angry' ? '#f44336' : conv.urgency === 'urgent' ? '#FF9800' : '#2196F3',
-            color: '#fff', padding: '1px 8px', borderRadius: '12px',
-            fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap', flexShrink: 0
-          }}>
-            {conv.urgency === 'angry' ? '⚠ ' : conv.urgency === 'urgent' ? '⏰ ' : ''}{conv.pendingCount}則
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+            {hasPurchase && (
+              <span style={{ backgroundColor: '#16a34a', color: '#fff', padding: '1px 7px', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold' }}>
+                想買
+              </span>
+            )}
+            <span style={{
+              backgroundColor: conv.urgency === 'angry' ? '#f44336' : conv.urgency === 'urgent' ? '#FF9800' : '#2196F3',
+              color: '#fff', padding: '1px 8px', borderRadius: '12px',
+              fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap'
+            }}>
+              {conv.urgency === 'angry' ? '⚠ ' : conv.urgency === 'urgent' ? '⏰ ' : ''}{conv.pendingCount}則
+            </span>
+          </div>
         ) : (
           <span style={{ color: conv.status === 'replied' ? '#4CAF50' : '#bbb', fontSize: '11px' }}>
             {conv.status === 'replied' ? '已回覆' : conv.status === 'failed' ? '略過' : conv.status}

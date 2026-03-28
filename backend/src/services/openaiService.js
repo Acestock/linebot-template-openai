@@ -17,11 +17,15 @@ function buildBasePrompt(bp) {
 }
 
 // Used by /api/conversations/:lineUserId/suggest  (returns string[])
-async function generateReplies(userMessage, businessProfile) {
+// intent = 'purchase' → generate sales-closing focused replies
+async function generateReplies(userMessage, businessProfile, intent = 'none') {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const systemPrompt = buildBasePrompt(businessProfile) + `
 
-根據以上店家資訊與用戶訊息，生成 3 條適合的回覆建議，每條風格略有不同（正式、親切、簡潔）。
+  const intentNote = intent === 'purchase'
+    ? '\n⚠️ 此客戶已表現出明確的購買意圖。請生成 3 條偏向促成交易的回覆建議，內容應包含引導下單步驟、確認規格數量、付款方式說明，或讓客戶安心購買的保證話術。'
+    : '\n根據以上店家資訊與用戶訊息，生成 3 條適合的回覆建議，每條風格略有不同（正式、親切、簡潔）。';
+
+  const systemPrompt = buildBasePrompt(businessProfile) + intentNote + `
 注意：用戶訊息中若有「[訊息1]」「[訊息2]」等系統標記，代表客人分段傳送的多則訊息，請根據整體語意回覆，回覆中不要出現這些標記。
 只回傳 JSON 格式，不要其他說明。
 格式：{ "replies": ["回覆1", "回覆2", "回覆3"] }`;
@@ -44,7 +48,7 @@ async function generateReplies(userMessage, businessProfile) {
   }
 }
 
-// Used by webhook — returns { replies, urgency, keywordMatch }
+// Used by webhook — returns { replies, urgency, intent, keywordMatch }
 async function analyzeMessage(userMessage, businessProfile, keywords = []) {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -74,6 +78,11 @@ ${keywordSection}
 - "urgent"：有急迫需求、趕時間、反覆追問
 - "normal"：一般詢問、平和語氣
 
+【購買意圖偵測】
+判斷用戶是否有明確的購買或下單意圖，填入 intent 欄位：
+- "purchase"：明確表示要買、要訂、詢問付款方式、確認數量規格準備下單、說「我要了」「幫我訂」「怎麼付款」等
+- "none"：只是一般詢問或比較，尚無明確購買動作
+
 【回覆建議】
 根據店家資訊與用戶訊息，生成 3 條回覆建議（正式、親切、簡潔）。
 
@@ -81,6 +90,7 @@ ${keywordSection}
 {
   "replies": ["正式版回覆", "親切版回覆", "簡潔版回覆"],
   "urgency": "normal",
+  "intent": "none",
   "keywordMatch": null
 }`;
 
@@ -98,11 +108,12 @@ ${keywordSection}
       replies: Array.isArray(parsed.replies) && parsed.replies.length === 3
         ? parsed.replies : FALLBACK_REPLIES,
       urgency: ['normal', 'urgent', 'angry'].includes(parsed.urgency) ? parsed.urgency : 'normal',
+      intent:  ['none', 'purchase'].includes(parsed.intent) ? parsed.intent : 'none',
       keywordMatch: parsed.keywordMatch || null
     };
   } catch (err) {
     console.error('[OpenAI] Error analyzing message:', err.message);
-    return { replies: FALLBACK_REPLIES, urgency: 'normal', keywordMatch: null };
+    return { replies: FALLBACK_REPLIES, urgency: 'normal', intent: 'none', keywordMatch: null };
   }
 }
 

@@ -37,7 +37,7 @@ router.post('/', async (req, res) => {
         Keyword.find({ isActive: true }).sort({ order: 1 }).lean()
       ]);
 
-      const { replies, urgency, keywordMatch } = await openaiService.analyzeMessage(
+      const { replies, urgency, intent, keywordMatch } = await openaiService.analyzeMessage(
         userMessage, businessProfile, keywords
       );
 
@@ -72,7 +72,7 @@ router.post('/', async (req, res) => {
             userMessage,
             replyToken,
             aiReplies: replies,
-            urgency,
+            urgency, intent,
             status: 'replied',
             selectedReply: autoReplySummary,
             repliedAt: new Date()
@@ -89,7 +89,7 @@ router.post('/', async (req, res) => {
         userMessage,
         replyToken,
         aiReplies: replies,
-        urgency,
+        urgency, intent,
         status: 'pending'
       });
       console.log(`[Webhook] Saved [${urgency}] message from ${lineProfile.displayName || lineUserId}`);
