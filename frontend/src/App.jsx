@@ -89,11 +89,43 @@ function App() {
     fetchStats();
     fetchLabels();
 
-    const es = new EventSource(`${API_BASE}/api/sse`);
-    es.addEventListener('new-message', () => {
+    let es = null;
+
+    function connectSSE() {
+      if (es) es.close();
+      es = new EventSource(`${API_BASE}/api/sse`);
+      es.addEventListener('new-message', () => {
+        fetchConversations();
+        fetchStats();
+      });
+      es.onerror = () => {
+        // Let EventSource auto-reconnect; we also reconnect on visibility
+      };
+    }
+
+    connectSSE();
+
+    // When user returns to the tab/app (mobile background → foreground)
+    function handleVisibility() {
+      if (document.visibilityState === 'visible') {
+        fetchConversations();
+        fetchStats();
+        // Reconnect SSE if it dropped while in background
+        if (es.readyState === EventSource.CLOSED) {
+          connectSSE();
+        }
+      }
+    }
+
+    // When network comes back online
+    function handleOnline() {
       fetchConversations();
       fetchStats();
-    });
+      connectSSE();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('online', handleOnline);
 
     const interval = setInterval(() => {
       fetchConversations();
@@ -103,6 +135,8 @@ function App() {
     return () => {
       es.close();
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleOnline);
     };
   }, [fetchConversations, fetchStats, fetchLabels]);
 
