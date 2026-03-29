@@ -390,6 +390,36 @@ router.delete('/labels/:id', async (req, res) => {
 
 // ─── Customer Labels ──────────────────────────────────────────────────────────
 
+// POST /api/customers/push  — proactive message from admin to customer
+// MUST be before /customers/:lineUserId/* routes
+router.post('/customers/push', async (req, res) => {
+  try {
+    const { lineUserId, message, displayName } = req.body;
+    if (!lineUserId || !message || !message.trim()) {
+      return res.status(400).json({ error: 'lineUserId and message are required' });
+    }
+
+    await pushMessage(lineUserId, message.trim());
+
+    await Message.create({
+      lineUserId,
+      displayName: displayName || '',
+      userMessage: '',
+      replyToken: '',
+      aiReplies: [],
+      isProactive: true,
+      selectedReply: message.trim(),
+      status: 'replied',
+      repliedAt: new Date()
+    });
+
+    sseService.broadcast('new-message', { lineUserId });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PATCH /api/customers/autoreply  — toggle per-user auto-reply
 // MUST be before /customers/:lineUserId/* routes
 router.patch('/customers/autoreply', async (req, res) => {

@@ -7,6 +7,11 @@ function groupHistory(messages) {
   const batchKey = (msg) => `${msg.repliedAt}__${msg.selectedReply}`;
 
   for (const msg of messages) {
+    // Proactive messages are always shown as standalone entries
+    if (msg.isProactive) {
+      groups.push({ batchKey: null, messages: [msg], selectedReply: msg.selectedReply, repliedAt: msg.repliedAt, status: 'proactive' });
+      continue;
+    }
     if (msg.status === 'replied' && msg.repliedAt && msg.selectedReply) {
       const key = batchKey(msg);
       const existing = groups.find(g => g.batchKey === key);
@@ -48,8 +53,8 @@ function CustomerHistory({ lineUserId, displayName, onClose }) {
       .catch(() => setLoading(false));
   }, [lineUserId]);
 
-  const statusLabel = { pending: '待回覆', processing: '處理中', replied: '已回覆', failed: '失敗' };
-  const statusColor = { pending: '#FF9800', processing: '#2196F3', replied: '#4CAF50', failed: '#f44336' };
+  const statusLabel = { pending: '待回覆', processing: '處理中', replied: '已回覆', failed: '失敗', proactive: '主動傳訊' };
+  const statusColor = { pending: '#FF9800', processing: '#2196F3', replied: '#4CAF50', failed: '#f44336', proactive: '#9c27b0' };
 
   const groups = groupHistory(history);
 
@@ -123,7 +128,21 @@ function CustomerHistory({ lineUserId, displayName, onClose }) {
                 </span>
               </div>
 
+              {/* Proactive outbound message */}
+              {group.status === 'proactive' && (
+                <div style={{ padding: '10px 12px', backgroundColor: '#f3e5f5', borderTop: '1px solid #f0f0f0' }}>
+                  <div style={{ fontSize: '12px', color: '#9c27b0', marginBottom: '3px' }}>客服主動傳送</div>
+                  <div style={{ fontSize: '14px', color: '#4a148c', lineHeight: 1.6 }}>{group.selectedReply}</div>
+                  {group.repliedAt && (
+                    <div style={{ fontSize: '11px', color: '#ce93d8', marginTop: '4px' }}>
+                      {new Date(group.repliedAt).toLocaleString('zh-TW')}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* All user messages in this batch */}
+              {group.status !== 'proactive' && (
               <div style={{ padding: '10px 12px' }}>
                 <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '6px' }}>用戶訊息</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -147,6 +166,7 @@ function CustomerHistory({ lineUserId, displayName, onClose }) {
                   ))}
                 </div>
               </div>
+              )}
 
               {/* Reply (shown once per batch) */}
               {group.status === 'replied' && group.selectedReply && (

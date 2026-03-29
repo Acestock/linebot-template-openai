@@ -14,6 +14,7 @@ const MessageSchema = new mongoose.Schema({
   },
   urgency: { type: String, enum: ['normal', 'urgent', 'angry'], default: 'normal' },
   intent:  { type: String, enum: ['none', 'purchase'], default: 'none' },
+  isProactive: { type: Boolean, default: false },
   errorMessage: { type: String, default: '' },
   syncedToSheet: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },

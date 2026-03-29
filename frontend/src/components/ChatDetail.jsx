@@ -115,7 +115,101 @@ function AutoReplyToggle({ lineUserId, enabled, onChange }) {
   );
 }
 
-function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsChange, onAutoReplyChange }) {
+function ProactiveSend({ lineUserId, displayName, onSent }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+
+  async function send() {
+    if (!text.trim()) return;
+    setSending(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/customers/push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lineUserId, displayName, message: text.trim() })
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        setError(d.error || '發送失敗');
+      } else {
+        setText('');
+        setOpen(false);
+        onSent && onSent();
+      }
+    } catch {
+      setError('網路錯誤，請稍後再試');
+    }
+    setSending(false);
+  }
+
+  return (
+    <div style={{ marginTop: '12px' }}>
+      {!open ? (
+        <button onClick={() => setOpen(true)} style={{
+          width: '100%', padding: '8px', borderRadius: '8px',
+          border: '1px dashed #bbb', background: '#fafafa', color: '#888',
+          fontSize: '13px', cursor: 'pointer'
+        }}>
+          ✉ 主動傳訊給此客戶
+        </button>
+      ) : (
+        <div style={{
+          borderRadius: '8px', border: '1px solid #e0e0e0',
+          overflow: 'hidden', backgroundColor: '#fff'
+        }}>
+          <div style={{
+            padding: '8px 12px', backgroundColor: '#f5f5f5',
+            fontSize: '12px', color: '#666', borderBottom: '1px solid #e0e0e0',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+          }}>
+            <span>主動傳訊</span>
+            <button onClick={() => { setOpen(false); setText(''); setError(''); }} style={{
+              background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '14px', padding: 0
+            }}>✕</button>
+          </div>
+          <textarea
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder="輸入要傳送給客戶的訊息..."
+            rows={3}
+            style={{
+              width: '100%', padding: '10px 12px', border: 'none', resize: 'vertical',
+              fontSize: '14px', lineHeight: '1.6', outline: 'none', boxSizing: 'border-box'
+            }}
+          />
+          {error && (
+            <div style={{ padding: '4px 12px', fontSize: '12px', color: '#e53935' }}>{error}</div>
+          )}
+          <div style={{
+            padding: '8px 12px', borderTop: '1px solid #f0f0f0',
+            display: 'flex', justifyContent: 'flex-end', gap: '8px'
+          }}>
+            <button onClick={() => { setOpen(false); setText(''); setError(''); }} style={{
+              padding: '5px 14px', borderRadius: '6px', border: '1px solid #ddd',
+              background: '#fff', color: '#666', fontSize: '13px', cursor: 'pointer'
+            }}>取消</button>
+            <button
+              onClick={send}
+              disabled={sending || !text.trim()}
+              style={{
+                padding: '5px 14px', borderRadius: '6px', border: 'none',
+                background: text.trim() ? '#00B900' : '#ccc',
+                color: '#fff', fontSize: '13px', cursor: text.trim() ? 'pointer' : 'default'
+              }}
+            >
+              {sending ? '傳送中...' : '傳送'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsChange, onAutoReplyChange, onRefresh }) {
   const [showHistory, setShowHistory] = useState(false);
 
   if (!conversation) {
@@ -206,6 +300,8 @@ function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsCh
           此客戶的訊息已略過
         </div>
       )}
+
+      <ProactiveSend lineUserId={lineUserId} displayName={displayName} onSent={onRefresh} />
     </div>
   );
 }

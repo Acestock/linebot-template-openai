@@ -227,7 +227,7 @@ function App() {
             </div>
           ) : (
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              <ChatDetail conversation={selectedConv} labels={labels} customerLabels={customerLabels} onLabelsChange={handleLabelsChange} onAutoReplyChange={handleAutoReplyChange} />
+              <ChatDetail conversation={selectedConv} labels={labels} customerLabels={customerLabels} onLabelsChange={handleLabelsChange} onAutoReplyChange={handleAutoReplyChange} onRefresh={fetchConversations} />
               {selectedConv && (
                 <>
                   <ReplyPicker aiReplies={aiReplies} loading={loadingSuggest} selectedReply={draftReply} onSelect={handleReplyPick} intent={suggestIntent} />
@@ -266,7 +266,7 @@ function App() {
       <div style={{ display: 'flex', marginTop: '48px', width: '100%' }}>
         <ChatList conversations={conversations} selectedUserId={selectedUserId} onSelect={handleSelect} customerLabels={customerLabels} />
         <div style={{ flex: 1, overflowY: 'auto', height: 'calc(100vh - 48px)' }}>
-          <ChatDetail conversation={selectedConv} labels={labels} customerLabels={customerLabels} onLabelsChange={handleLabelsChange} onAutoReplyChange={handleAutoReplyChange} />
+          <ChatDetail conversation={selectedConv} labels={labels} customerLabels={customerLabels} onLabelsChange={handleLabelsChange} onAutoReplyChange={handleAutoReplyChange} onRefresh={fetchConversations} />
           {selectedConv && (
             <>
               <ReplyPicker aiReplies={aiReplies} loading={loadingSuggest} selectedReply={draftReply} onSelect={handleReplyPick} intent={suggestIntent} />
