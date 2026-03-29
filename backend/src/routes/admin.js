@@ -200,11 +200,11 @@ router.post('/conversations/:lineUserId/reply', async (req, res) => {
         { $set: { status: 'replied', selectedReply, repliedAt, errorMessage: '' } }
       );
 
-      // Google Sheet sync: one row per message
-      const updatedMsgs = await Message.find({ lineUserId, status: 'replied', repliedAt }).lean();
-      for (const msg of updatedMsgs) {
-        sheetService.appendRow(msg).then(() => {
-          Message.findByIdAndUpdate(msg._id, { syncedToSheet: true }).catch(() => {});
+      // Google Sheet sync: upsert one row per customer
+      const latestMsg = await Message.findOne({ lineUserId, status: 'replied', repliedAt }).lean();
+      if (latestMsg) {
+        sheetService.upsertCustomerRow(latestMsg).then(() => {
+          Message.updateMany({ lineUserId, status: 'replied', syncedToSheet: false }, { syncedToSheet: true }).catch(() => {});
         }).catch((err) => {
           console.error('[Admin] Sheet sync failed:', err.message);
         });
@@ -288,7 +288,7 @@ router.post('/messages/:id/send', async (req, res) => {
         errorMessage: ''
       });
 
-      sheetService.appendRow(updated).then(() => {
+      sheetService.upsertCustomerRow(updated).then(() => {
         dbService.updateMessage(req.params.id, { syncedToSheet: true });
       }).catch((err) => {
         console.error('[Admin] Sheet sync failed:', err.message);
