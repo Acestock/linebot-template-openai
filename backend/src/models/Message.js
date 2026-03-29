@@ -3,8 +3,8 @@ const mongoose = require('mongoose');
 const MessageSchema = new mongoose.Schema({
   lineUserId: { type: String, required: true },
   displayName: { type: String, default: '' },
-  userMessage: { type: String, required: true },
-  replyToken: { type: String, required: true },
+  userMessage: { type: String, default: '' },
+  replyToken: { type: String, default: '' },
   aiReplies: { type: [String], default: [] },
   selectedReply: { type: String, default: '' },
   status: {
