@@ -74,7 +74,48 @@ function LabelPicker({ lineUserId, labels, currentLabels, onLabelsChange }) {
   );
 }
 
-function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsChange }) {
+function AutoReplyToggle({ lineUserId, enabled, onChange }) {
+  const [loading, setLoading] = useState(false);
+
+  async function toggle() {
+    setLoading(true);
+    try {
+      await fetch(`${API_BASE}/api/customers/autoreply`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lineUserId, enabled: !enabled })
+      });
+      onChange(!enabled);
+    } catch {}
+    setLoading(false);
+  }
+
+  return (
+    <button
+      onClick={toggle}
+      disabled={loading}
+      title={enabled ? '此用戶 AI 自動回覆已啟用，點擊關閉' : '此用戶 AI 自動回覆已關閉，點擊啟用'}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '5px',
+        padding: '2px 10px', borderRadius: '12px', cursor: 'pointer',
+        border: `1px solid ${enabled ? '#00B900' : '#bbb'}`,
+        backgroundColor: enabled ? '#e8f5e9' : '#f5f5f5',
+        color: enabled ? '#2e7d32' : '#999',
+        fontSize: '12px', fontWeight: '500',
+        opacity: loading ? 0.6 : 1, transition: 'all 0.2s'
+      }}
+    >
+      <span style={{
+        width: '8px', height: '8px', borderRadius: '50%',
+        backgroundColor: enabled ? '#00B900' : '#bbb',
+        flexShrink: 0
+      }} />
+      {enabled ? 'AI 回覆開' : 'AI 回覆關'}
+    </button>
+  );
+}
+
+function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsChange, onAutoReplyChange }) {
   const [showHistory, setShowHistory] = useState(false);
 
   if (!conversation) {
@@ -85,7 +126,7 @@ function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsCh
     );
   }
 
-  const { lineUserId, displayName, pendingMessages = [], pendingCount, status, lastRepliedMsg } = conversation;
+  const { lineUserId, displayName, pendingMessages = [], pendingCount, status, lastRepliedMsg, autoReplyEnabled = true } = conversation;
   const assignedLabels = customerLabels[lineUserId] || [];
 
   return (
@@ -106,6 +147,11 @@ function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsCh
             border: '1px solid #2196F3', background: '#fff', color: '#2196F3',
             fontSize: '12px', cursor: 'pointer'
           }}>歷史紀錄</button>
+          <AutoReplyToggle
+            lineUserId={lineUserId}
+            enabled={autoReplyEnabled}
+            onChange={(val) => onAutoReplyChange && onAutoReplyChange(lineUserId, val)}
+          />
         </div>
 
         {/* Labels row */}

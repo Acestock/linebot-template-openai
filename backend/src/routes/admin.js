@@ -8,6 +8,7 @@ const Keyword = require('../models/Keyword');
 const ProductCard = require('../models/ProductCard');
 const Label = require('../models/Label');
 const CustomerLabel = require('../models/CustomerLabel');
+const CustomerSetting = require('../models/CustomerSetting');
 const Message = require('../models/Message');
 const openaiService = require('../services/openaiService');
 const sseService = require('../services/sseService');
@@ -143,7 +144,28 @@ router.get('/conversations', async (req, res) => {
       },
       { $project: { statuses: 0, allMessages: 0 } },
       // pending first, then by latest message time desc
-      { $sort: { sortOrder: 1, latestAt: -1 } }
+      { $sort: { sortOrder: 1, latestAt: -1 } },
+      // Join per-user auto-reply setting
+      {
+        $lookup: {
+          from: 'customersettings',
+          localField: 'lineUserId',
+          foreignField: 'lineUserId',
+          as: 'settingArr'
+        }
+      },
+      {
+        $addFields: {
+          autoReplyEnabled: {
+            $cond: [
+              { $gt: [{ $size: '$settingArr' }, 0] },
+              { $arrayElemAt: ['$settingArr.autoReplyEnabled', 0] },
+              true
+            ]
+          }
+        }
+      },
+      { $project: { settingArr: 0 } }
     ]);
     res.json(groups);
   } catch (err) {
@@ -367,6 +389,25 @@ router.delete('/labels/:id', async (req, res) => {
 });
 
 // ─── Customer Labels ──────────────────────────────────────────────────────────
+
+// PATCH /api/customers/autoreply  — toggle per-user auto-reply
+// MUST be before /customers/:lineUserId/* routes
+router.patch('/customers/autoreply', async (req, res) => {
+  try {
+    const { lineUserId, enabled } = req.body;
+    if (!lineUserId || typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'lineUserId and enabled (boolean) are required' });
+    }
+    await CustomerSetting.findOneAndUpdate(
+      { lineUserId },
+      { $set: { autoReplyEnabled: enabled } },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true, autoReplyEnabled: enabled });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /api/customers/labels  — bulk map: { [lineUserId]: [labelObj, ...] }
 // MUST be before /customers/:lineUserId/* routes

@@ -153,6 +153,12 @@ function App() {
     setCustomerLabels(prev => ({ ...prev, [lineUserId]: newLabels }));
   }
 
+  function handleAutoReplyChange(lineUserId, enabled) {
+    setConversations(prev => prev.map(c =>
+      c.lineUserId === lineUserId ? { ...c, autoReplyEnabled: enabled } : c
+    ));
+  }
+
   // ─── Mobile layout ─────────────────────────────────────────────────────────
   if (isMobile) {
     return (
@@ -187,7 +193,7 @@ function App() {
             </div>
           ) : (
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              <ChatDetail conversation={selectedConv} labels={labels} customerLabels={customerLabels} onLabelsChange={handleLabelsChange} />
+              <ChatDetail conversation={selectedConv} labels={labels} customerLabels={customerLabels} onLabelsChange={handleLabelsChange} onAutoReplyChange={handleAutoReplyChange} />
               {selectedConv && (
                 <>
                   <ReplyPicker aiReplies={aiReplies} loading={loadingSuggest} selectedReply={draftReply} onSelect={handleReplyPick} intent={suggestIntent} />
@@ -226,7 +232,7 @@ function App() {
       <div style={{ display: 'flex', marginTop: '48px', width: '100%' }}>
         <ChatList conversations={conversations} selectedUserId={selectedUserId} onSelect={handleSelect} customerLabels={customerLabels} />
         <div style={{ flex: 1, overflowY: 'auto', height: 'calc(100vh - 48px)' }}>
-          <ChatDetail conversation={selectedConv} labels={labels} customerLabels={customerLabels} onLabelsChange={handleLabelsChange} />
+          <ChatDetail conversation={selectedConv} labels={labels} customerLabels={customerLabels} onLabelsChange={handleLabelsChange} onAutoReplyChange={handleAutoReplyChange} />
           {selectedConv && (
             <>
               <ReplyPicker aiReplies={aiReplies} loading={loadingSuggest} selectedReply={draftReply} onSelect={handleReplyPick} intent={suggestIntent} />

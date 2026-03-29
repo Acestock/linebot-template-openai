@@ -6,6 +6,7 @@ const { getUserProfile, pushMessage, pushFlexCard } = require('../services/lineS
 const BusinessProfile = require('../models/BusinessProfile');
 const Keyword = require('../models/Keyword');
 const ProductCard = require('../models/ProductCard');
+const CustomerSetting = require('../models/CustomerSetting');
 const sseService = require('../services/sseService');
 const autoReplyService = require('../services/autoReplyService');
 
@@ -94,9 +95,13 @@ router.post('/', async (req, res) => {
       });
       console.log(`[Webhook] Saved [${urgency}] message from ${lineProfile.displayName || lineUserId}`);
 
-      // Schedule auto-reply if enabled (resets timer for segmented messages)
+      // Schedule auto-reply if enabled globally AND not disabled for this user
       if (businessProfile?.autoReply) {
-        autoReplyService.schedule(lineUserId, businessProfile.autoReplyDelay || 60);
+        const userSetting = await CustomerSetting.findOne({ lineUserId }).lean();
+        const userAutoReply = userSetting ? userSetting.autoReplyEnabled : true;
+        if (userAutoReply) {
+          autoReplyService.schedule(lineUserId, businessProfile.autoReplyDelay || 60);
+        }
       }
 
       sseService.broadcast('new-message', { lineUserId });
