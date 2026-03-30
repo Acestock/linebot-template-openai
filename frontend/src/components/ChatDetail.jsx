@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import CustomerHistory from './CustomerHistory';
-import API_BASE from '../config';
+import API_BASE, { authFetch } from '../config';
 
 function LabelPicker({ lineUserId, labels, currentLabels, onLabelsChange }) {
   const [open, setOpen] = useState(false);
@@ -21,14 +21,17 @@ function LabelPicker({ lineUserId, labels, currentLabels, onLabelsChange }) {
       : [...currentIds, label._id];
 
     try {
-      const res = await fetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/labels`, {
+      const res = await authFetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/labels`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ labelIds: newIds })
       });
+      if (!res.ok) throw new Error('標籤更新失敗');
       const newLabels = await res.json();
       onLabelsChange(lineUserId, newLabels);
-    } catch {}
+    } catch (err) {
+      console.error('[LabelPicker] Failed to update labels:', err);
+    }
   }
 
   return (
@@ -76,42 +79,51 @@ function LabelPicker({ lineUserId, labels, currentLabels, onLabelsChange }) {
 
 function AutoReplyToggle({ lineUserId, enabled, onChange }) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   async function toggle() {
     setLoading(true);
+    setError('');
     try {
-      await fetch(`${API_BASE}/api/customers/autoreply`, {
+      const res = await authFetch(`${API_BASE}/api/customers/autoreply`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lineUserId, enabled: !enabled })
       });
+      if (!res.ok) throw new Error('切換失敗，請稍後再試');
       onChange(!enabled);
-    } catch {}
+    } catch (err) {
+      setError(err.message);
+      setTimeout(() => setError(''), 3000);
+    }
     setLoading(false);
   }
 
   return (
-    <button
-      onClick={toggle}
-      disabled={loading}
-      title={enabled ? '此用戶 AI 自動回覆已啟用，點擊關閉' : '此用戶 AI 自動回覆已關閉，點擊啟用'}
-      style={{
-        display: 'flex', alignItems: 'center', gap: '5px',
-        padding: '2px 10px', borderRadius: '12px', cursor: 'pointer',
-        border: `1px solid ${enabled ? '#00B900' : '#bbb'}`,
-        backgroundColor: enabled ? '#e8f5e9' : '#f5f5f5',
-        color: enabled ? '#2e7d32' : '#999',
-        fontSize: '12px', fontWeight: '500',
-        opacity: loading ? 0.6 : 1, transition: 'all 0.2s'
-      }}
-    >
-      <span style={{
-        width: '8px', height: '8px', borderRadius: '50%',
-        backgroundColor: enabled ? '#00B900' : '#bbb',
-        flexShrink: 0
-      }} />
-      {enabled ? 'AI 回覆開' : 'AI 回覆關'}
-    </button>
+    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+      <button
+        onClick={toggle}
+        disabled={loading}
+        title={enabled ? '此用戶 AI 自動回覆已啟用，點擊關閉' : '此用戶 AI 自動回覆已關閉，點擊啟用'}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '5px',
+          padding: '2px 10px', borderRadius: '12px', cursor: 'pointer',
+          border: `1px solid ${enabled ? '#00B900' : '#bbb'}`,
+          backgroundColor: enabled ? '#e8f5e9' : '#f5f5f5',
+          color: enabled ? '#2e7d32' : '#999',
+          fontSize: '12px', fontWeight: '500',
+          opacity: loading ? 0.6 : 1, transition: 'all 0.2s'
+        }}
+      >
+        <span style={{
+          width: '8px', height: '8px', borderRadius: '50%',
+          backgroundColor: enabled ? '#00B900' : '#bbb',
+          flexShrink: 0
+        }} />
+        {enabled ? 'AI 回覆開' : 'AI 回覆關'}
+      </button>
+      {error && <span style={{ fontSize: '11px', color: '#e53935', marginTop: '2px' }}>{error}</span>}
+    </div>
   );
 }
 
@@ -126,7 +138,7 @@ function ProactiveSend({ lineUserId, displayName, onSent }) {
     setSending(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/api/customers/push`, {
+      const res = await authFetch(`${API_BASE}/api/customers/push`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lineUserId, displayName, message: text.trim() })

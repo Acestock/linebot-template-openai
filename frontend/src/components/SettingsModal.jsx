@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import API_BASE from '../config';
+import API_BASE, { authFetch } from '../config';
 
 const FIELD = {
   width: '100%', boxSizing: 'border-box', padding: '8px 10px',
@@ -58,11 +58,11 @@ function KeywordTab() {
   useEffect(() => { loadKeywords(); loadCards(); }, []);
 
   async function loadKeywords() {
-    const res = await fetch(`${API_BASE}/api/keywords`);
+    const res = await authFetch(`${API_BASE}/api/keywords`);
     setKeywords(await res.json());
   }
   async function loadCards() {
-    const res = await fetch(`${API_BASE}/api/cards`);
+    const res = await authFetch(`${API_BASE}/api/cards`);
     setCards(await res.json());
   }
 
@@ -93,7 +93,7 @@ function KeywordTab() {
     setSaving(true);
     try {
       const url = editing ? `${API_BASE}/api/keywords/${editing._id}` : `${API_BASE}/api/keywords`;
-      const res = await fetch(url, { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      const res = await authFetch(url, { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
       if (!res.ok) throw new Error('操作失敗');
       await loadKeywords();
       setShowForm(false);
@@ -103,12 +103,12 @@ function KeywordTab() {
 
   async function handleDelete(id) {
     if (!confirm('確定刪除？')) return;
-    await fetch(`${API_BASE}/api/keywords/${id}`, { method: 'DELETE' });
+    await authFetch(`${API_BASE}/api/keywords/${id}`, { method: 'DELETE' });
     await loadKeywords();
   }
 
   async function toggleActive(kw) {
-    await fetch(`${API_BASE}/api/keywords/${kw._id}`, {
+    await authFetch(`${API_BASE}/api/keywords/${kw._id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...kw, isActive: !kw.isActive })
     });
@@ -331,7 +331,7 @@ function CardTab() {
 
   useEffect(() => { load(); }, []);
   async function load() {
-    const res = await fetch(`${API_BASE}/api/cards`);
+    const res = await authFetch(`${API_BASE}/api/cards`);
     setCards(await res.json());
   }
 
@@ -368,7 +368,7 @@ function CardTab() {
     setSaving(true);
     try {
       const url = editing ? `${API_BASE}/api/cards/${editing._id}` : `${API_BASE}/api/cards`;
-      const res = await fetch(url, { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      const res = await authFetch(url, { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
       if (!res.ok) throw new Error('操作失敗');
       await load(); setShowForm(false);
     } catch (err) { alert(err.message); }
@@ -377,7 +377,7 @@ function CardTab() {
 
   async function handleDelete(id) {
     if (!confirm('確定刪除？使用此卡片的關鍵字觸發將自動改為文字模式。')) return;
-    await fetch(`${API_BASE}/api/cards/${id}`, { method: 'DELETE' });
+    await authFetch(`${API_BASE}/api/cards/${id}`, { method: 'DELETE' });
     await load();
   }
 
@@ -574,7 +574,7 @@ function LabelTab() {
   useEffect(() => { load(); }, []);
 
   async function load() {
-    const res = await fetch(`${API_BASE}/api/labels`);
+    const res = await authFetch(`${API_BASE}/api/labels`);
     setLabels(await res.json());
   }
 
@@ -586,7 +586,7 @@ function LabelTab() {
     setSaving(true);
     try {
       const url = editing ? `${API_BASE}/api/labels/${editing._id}` : `${API_BASE}/api/labels`;
-      const res = await fetch(url, { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      const res = await authFetch(url, { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
       if (!res.ok) throw new Error('操作失敗');
       await load(); setShowForm(false);
     } catch (err) { alert(err.message); }
@@ -595,7 +595,7 @@ function LabelTab() {
 
   async function handleDelete(id) {
     if (!confirm('確定刪除？此標籤將從所有客戶移除。')) return;
-    await fetch(`${API_BASE}/api/labels/${id}`, { method: 'DELETE' });
+    await authFetch(`${API_BASE}/api/labels/${id}`, { method: 'DELETE' });
     await load();
   }
 
@@ -686,7 +686,7 @@ function SettingsModal({ onClose }) {
   async function handleSave() {
     setSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/api/settings`, {
+      const res = await authFetch(`${API_BASE}/api/settings`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profile)
       });
       if (!res.ok) throw new Error('儲存失敗');

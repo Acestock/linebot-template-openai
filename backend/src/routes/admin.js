@@ -12,6 +12,7 @@ const CustomerSetting = require('../models/CustomerSetting');
 const Message = require('../models/Message');
 const openaiService = require('../services/openaiService');
 const sseService = require('../services/sseService');
+const autoReplyService = require('../services/autoReplyService');
 
 const router = express.Router();
 
@@ -203,6 +204,8 @@ router.post('/conversations/:lineUserId/reply', async (req, res) => {
   try {
     const { lineUserId } = req.params;
     const { selectedReply } = req.body;
+    // Cancel any pending auto-reply timer so it doesn't send a duplicate
+    autoReplyService.cancel(lineUserId);
     if (!selectedReply) return res.status(400).json({ error: 'selectedReply is required' });
 
     const pendingMsgs = await Message.find({ lineUserId, status: { $in: ['pending', 'processing'] } });

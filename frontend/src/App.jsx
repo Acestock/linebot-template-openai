@@ -5,7 +5,8 @@ import ReplyPicker from './components/ReplyPicker';
 import SendPanel from './components/SendPanel';
 import SettingsModal from './components/SettingsModal';
 import StickyNotes from './components/StickyNotes';
-import API_BASE from './config';
+import LoginScreen from './components/LoginScreen';
+import API_BASE, { authFetch } from './config';
 
 const FALLBACK_POLL_INTERVAL = 30000;
 
@@ -21,6 +22,7 @@ function useIsMobile() {
 
 function App() {
   const isMobile = useIsMobile();
+  const [token, setToken] = useState(() => localStorage.getItem('adminToken') || '');
   const [mobileView, setMobileView] = useState('list'); // 'list' | 'chat'
   const [conversations, setConversations] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(null);
@@ -33,37 +35,57 @@ function App() {
   const [labels, setLabels] = useState([]);
   const [customerLabels, setCustomerLabels] = useState({});
 
+  function handleLogout() {
+    localStorage.removeItem('adminToken');
+    setToken('');
+  }
+
+  // Handle 401 from any API call — log out and show login screen
+  function handle401(res) {
+    if (res.status === 401) {
+      handleLogout();
+      return true;
+    }
+    return false;
+  }
+
   const selectedConv = conversations.find((c) => c.lineUserId === selectedUserId) || null;
 
   const fetchConversations = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/conversations`);
+      const res = await authFetch(`${API_BASE}/api/conversations`);
+      if (handle401(res)) return;
       const data = await res.json();
       setConversations(data);
     } catch (err) {
       console.error('Failed to fetch conversations:', err);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/stats`);
+      const res = await authFetch(`${API_BASE}/api/stats`);
+      if (handle401(res)) return;
       const data = await res.json();
       setStats(data);
     } catch (err) {
       console.error('Failed to fetch stats:', err);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchLabels = useCallback(async () => {
     try {
       const [labelsRes, clRes] = await Promise.all([
-        fetch(`${API_BASE}/api/labels`),
-        fetch(`${API_BASE}/api/customers/labels`)
+        authFetch(`${API_BASE}/api/labels`),
+        authFetch(`${API_BASE}/api/customers/labels`)
       ]);
+      if (handle401(labelsRes) || handle401(clRes)) return;
       setLabels(await labelsRes.json());
       setCustomerLabels(await clRes.json());
     } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchSuggest = useCallback(async (lineUserId) => {
@@ -71,9 +93,11 @@ function App() {
     setSuggestIntent('none');
     setLoadingSuggest(true);
     try {
-      const res = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(lineUserId)}/suggest`, {
-        method: 'POST'
-      });
+      const res = await authFetch(
+        `${API_BASE}/api/conversations/${encodeURIComponent(lineUserId)}/suggest`,
+        { method: 'POST' }
+      );
+      if (handle401(res)) return;
       const data = await res.json();
       setAiReplies(data.aiReplies || []);
       setSuggestIntent(data.intent || 'none');
@@ -82,9 +106,12 @@ function App() {
     } finally {
       setLoadingSuggest(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
+    if (!token) return; // Don't connect if not logged in
+
     fetchConversations();
     fetchStats();
     fetchLabels();
@@ -93,7 +120,8 @@ function App() {
 
     function connectSSE() {
       if (es) es.close();
-      es = new EventSource(`${API_BASE}/api/sse`);
+      // EventSource doesn't support custom headers — pass token as query param
+      es = new EventSource(`${API_BASE}/api/sse?token=${encodeURIComponent(token)}`);
       es.addEventListener('new-message', () => {
         fetchConversations();
         fetchStats();
@@ -110,8 +138,8 @@ function App() {
       if (document.visibilityState === 'visible') {
         fetchConversations();
         fetchStats();
-        // Reconnect SSE if it dropped while in background
-        if (es.readyState === EventSource.CLOSED) {
+        // Bug 1 fix: guard against es being replaced or null
+        if (es && es.readyState === EventSource.CLOSED) {
           connectSSE();
         }
       }
@@ -133,12 +161,17 @@ function App() {
     }, FALLBACK_POLL_INTERVAL);
 
     return () => {
-      es.close();
+      if (es) es.close();
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('online', handleOnline);
     };
-  }, [fetchConversations, fetchStats, fetchLabels]);
+  }, [token, fetchConversations, fetchStats, fetchLabels]);
+
+  // Show login screen if not authenticated
+  if (!token) {
+    return <LoginScreen onLogin={(newToken) => setToken(newToken)} />;
+  }
 
   function handleSelect(lineUserId) {
     setSelectedUserId(lineUserId);
@@ -257,6 +290,8 @@ function App() {
           <span>今日待回覆：{stats.pending} | 已回覆：{stats.replied}</span>
           <button onClick={() => setShowSettings(true)} title="系統設定"
             style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '16px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>⚙</button>
+          <button onClick={handleLogout} title="登出"
+            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }}>登出</button>
         </span>
       </div>
 

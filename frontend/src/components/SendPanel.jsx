@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import API_BASE from '../config';
+import API_BASE, { authFetch } from '../config';
 import TemplatePanel from './TemplatePanel';
 
 function SendPanel({ conversation, draftReply, onDraftChange, onSent, onSkipped }) {
@@ -20,7 +20,7 @@ function SendPanel({ conversation, draftReply, onDraftChange, onSent, onSkipped 
     }
     setSending(true);
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `${API_BASE}/api/conversations/${encodeURIComponent(lineUserId)}/reply`,
         {
           method: 'POST',
@@ -42,7 +42,7 @@ function SendPanel({ conversation, draftReply, onDraftChange, onSent, onSkipped 
     if (!confirm('確定略過此客戶所有未回覆訊息？')) return;
     setSkipping(true);
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `${API_BASE}/api/conversations/${encodeURIComponent(lineUserId)}/skip`,
         { method: 'PATCH' }
       );

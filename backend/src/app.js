@@ -1,14 +1,20 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 const mongoose = require('mongoose');
 const cron = require('node-cron');
 const path = require('path');
 
 const webhookRouter = require('./routes/webhook');
 const adminRouter = require('./routes/admin');
+const { authMiddleware, createToken } = require('./middleware/auth');
 const dbService = require('./services/dbService');
 const sheetService = require('./services/sheetService');
+
+if (!process.env.ADMIN_PASSWORD) {
+  console.warn('[Auth] WARNING: ADMIN_PASSWORD is not set. Please set it in environment variables.');
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,7 +36,31 @@ app.use('/webhook', webhookRouter);
 // JSON body parser for all other routes
 app.use(express.json());
 
-// Admin REST API routes
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+function safeEqual(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// POST /api/auth/login — public, no auth required
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+  const validUser = process.env.ADMIN_USERNAME || 'admin';
+  const validPass = process.env.ADMIN_PASSWORD;
+  if (!validPass) return res.status(500).json({ error: 'ADMIN_PASSWORD 未設定，請聯絡管理員' });
+  if (!username || !password) return res.status(400).json({ error: '請輸入帳號與密碼' });
+  if (!safeEqual(username, validUser) || !safeEqual(password, validPass))
+    return res.status(401).json({ error: '帳號或密碼錯誤' });
+  res.json({ token: createToken() });
+});
+
+// GET /api/auth/verify — check if current token is still valid
+app.get('/api/auth/verify', authMiddleware, (req, res) => res.json({ ok: true }));
+
+// All other /api/* routes require auth
+app.use('/api', authMiddleware);
 app.use('/api', adminRouter);
 
 // Serve frontend static files (production build)

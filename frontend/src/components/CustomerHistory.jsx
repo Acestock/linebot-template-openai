@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import API_BASE from '../config';
+import API_BASE, { authFetch } from '../config';
 
 // Group messages that were replied to together (same repliedAt + same selectedReply)
 function groupHistory(messages) {
@@ -47,7 +47,7 @@ function CustomerHistory({ lineUserId, displayName, onClose }) {
   useEffect(() => {
     if (!lineUserId) return;
     setLoading(true);
-    fetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/history`)
+    authFetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/history`)
       .then(r => r.json())
       .then(data => { setHistory(data); setLoading(false); })
       .catch(() => setLoading(false));
