@@ -667,7 +667,7 @@ function SettingsModal({ onClose }) {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/settings`).then(r => r.json()).then(data => {
+    authFetch(`${API_BASE}/api/settings`).then(r => r.json()).then(data => {
       setProfile({
         shopName: data.shopName || '', industry: data.industry || '',
         products: data.products || '', businessHours: data.businessHours || '',
