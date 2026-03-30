@@ -4,6 +4,7 @@ import ChatDetail from './components/ChatDetail';
 import ReplyPicker from './components/ReplyPicker';
 import SendPanel from './components/SendPanel';
 import SettingsModal from './components/SettingsModal';
+import BroadcastModal from './components/BroadcastModal';
 import StickyNotes from './components/StickyNotes';
 import LoginScreen from './components/LoginScreen';
 import API_BASE, { authFetch } from './config';
@@ -32,6 +33,7 @@ function App() {
   const [loadingSuggest, setLoadingSuggest] = useState(false);
   const [stats, setStats] = useState({ pending: 0, replied: 0 });
   const [showSettings, setShowSettings] = useState(false);
+  const [showBroadcast, setShowBroadcast] = useState(false);
   const [labels, setLabels] = useState([]);
   const [customerLabels, setCustomerLabels] = useState({});
 
@@ -247,10 +249,12 @@ function App() {
               </span>
             </>
           )}
+          <button onClick={() => setShowBroadcast(true)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 8px' }}>群發</button>
           <button onClick={() => setShowSettings(true)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '16px', cursor: 'pointer', padding: '4px 8px' }}>⚙</button>
         </div>
 
         {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+        {showBroadcast && <BroadcastModal onClose={() => setShowBroadcast(false)} />}
 
         {/* Mobile Content */}
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -288,6 +292,8 @@ function App() {
         <span style={{ fontWeight: 'bold', fontSize: '16px' }}>LINE AI 聊天輔助系統</span>
         <span style={{ marginLeft: 'auto', fontSize: '13px', opacity: 0.9, display: 'flex', alignItems: 'center', gap: '16px' }}>
           <span>今日待回覆：{stats.pending} | 已回覆：{stats.replied}</span>
+          <button onClick={() => setShowBroadcast(true)} title="群發訊息"
+            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }}>群發</button>
           <button onClick={() => setShowSettings(true)} title="系統設定"
             style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '16px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>⚙</button>
           <button onClick={handleLogout} title="登出"
@@ -296,6 +302,7 @@ function App() {
       </div>
 
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {showBroadcast && <BroadcastModal onClose={() => setShowBroadcast(false)} />}
 
       {/* Main layout */}
       <div style={{ display: 'flex', marginTop: '48px', width: '100%' }}>

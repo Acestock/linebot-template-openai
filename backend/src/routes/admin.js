@@ -393,6 +393,62 @@ router.delete('/labels/:id', async (req, res) => {
 
 // ─── Customer Labels ──────────────────────────────────────────────────────────
 
+// POST /api/customers/broadcast  — send message to all users with a specific label
+// MUST be before /customers/:lineUserId/* routes
+router.post('/customers/broadcast', async (req, res) => {
+  try {
+    const { labelId, message } = req.body;
+    if (!labelId || !message || !message.trim()) {
+      return res.status(400).json({ error: 'labelId and message are required' });
+    }
+
+    // Find all customers with this label
+    const assignments = await CustomerLabel.find({ labelIds: labelId }).lean();
+    if (assignments.length === 0) {
+      return res.json({ sent: 0, failed: 0, total: 0 });
+    }
+
+    // Get latest displayName for each user from Message history
+    const lineUserIds = assignments.map(a => a.lineUserId);
+    const latestMsgs = await Message.aggregate([
+      { $match: { lineUserId: { $in: lineUserIds }, displayName: { $exists: true, $ne: '' } } },
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: '$lineUserId', displayName: { $first: '$displayName' } } }
+    ]);
+    const nameMap = {};
+    for (const m of latestMsgs) nameMap[m._id] = m.displayName;
+
+    let sent = 0;
+    let failed = 0;
+    const now = new Date();
+
+    for (const a of assignments) {
+      try {
+        await pushMessage(a.lineUserId, message.trim());
+        await Message.create({
+          lineUserId: a.lineUserId,
+          displayName: nameMap[a.lineUserId] || '',
+          userMessage: '',
+          replyToken: '',
+          aiReplies: [],
+          isProactive: true,
+          selectedReply: message.trim(),
+          status: 'replied',
+          repliedAt: now
+        });
+        sseService.broadcast('new-message', { lineUserId: a.lineUserId });
+        sent++;
+      } catch {
+        failed++;
+      }
+    }
+
+    res.json({ sent, failed, total: assignments.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/customers/push  — proactive message from admin to customer
 // MUST be before /customers/:lineUserId/* routes
 router.post('/customers/push', async (req, res) => {
