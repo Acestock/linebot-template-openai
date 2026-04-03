@@ -73,15 +73,17 @@ router.post('/', async (req, res) => {
     const userMessage = message.text;
 
     try {
-      const [lineProfile, businessProfile, keywords, faqs] = await Promise.all([
+      const [lineProfile, businessProfile, keywords, faqs, customerSetting] = await Promise.all([
         getUserProfile(lineUserId),
         BusinessProfile.findOne().lean(),
         Keyword.find({ isActive: true }).sort({ order: 1 }).lean(),
-        FAQ.find({ isActive: true }).sort({ order: 1 }).lean()
+        FAQ.find({ isActive: true }).sort({ order: 1 }).lean(),
+        CustomerSetting.findOne({ lineUserId }).lean()
       ]);
+      const conversationSummary = customerSetting?.conversationSummary || '';
 
       const { replies, urgency, intent, keywordMatch } = await openaiService.analyzeMessage(
-        userMessage, businessProfile, keywords, faqs
+        userMessage, businessProfile, keywords, faqs, conversationSummary
       );
 
       // Keyword matched — auto-reply immediately, no admin review needed

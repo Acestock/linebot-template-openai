@@ -22,16 +22,51 @@ function buildBasePrompt(bp, faqs = []) {
   return lines.join('\n');
 }
 
+// Async: summarize a conversation and return concise summary string
+async function summarizeConversation(messages, existingSummary = '', displayName = '') {
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const transcript = messages
+    .map(m => m.isProactive
+      ? `客服：${m.selectedReply}`
+      : `客戶：${m.userMessage}${m.selectedReply ? `\n客服：${m.selectedReply}` : ''}`)
+    .join('\n');
+
+  const systemPrompt = `你是對話記錄摘要助手。請根據以下對話，更新並生成一份精簡摘要（繁體中文，100 字以內）。
+摘要應包含：客戶的主要需求、偏好、已確認的事項、尚未解決的問題。
+${existingSummary ? `\n現有摘要（請在此基礎上更新）：\n${existingSummary}` : ''}
+只回傳摘要文字，不要任何說明或標題。`;
+
+  try {
+    const response = await client.chat.completions.create({
+      model: 'gpt-4o-mini', // 用較便宜的模型做摘要
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `客戶名稱：${displayName}\n\n對話記錄：\n${transcript}` }
+      ],
+      max_tokens: 200
+    });
+    return response.choices[0].message.content.trim();
+  } catch (err) {
+    console.error('[OpenAI] Summary error:', err.message);
+    return existingSummary; // 失敗時保留舊摘要
+  }
+}
+
 // Used by /api/conversations/:lineUserId/suggest  (returns string[])
 // intent = 'purchase' → generate sales-closing focused replies
-async function generateReplies(userMessage, businessProfile, intent = 'none', faqs = []) {
+async function generateReplies(userMessage, businessProfile, intent = 'none', faqs = [], conversationSummary = '') {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const intentNote = intent === 'purchase'
     ? '\n⚠️ 此客戶已表現出明確的購買意圖。請生成 3 條偏向促成交易的回覆建議，內容應包含引導下單步驟、確認規格數量、付款方式說明，或讓客戶安心購買的保證話術。'
     : '\n根據以上店家資訊與用戶訊息，生成 3 條適合的回覆建議，每條風格略有不同（正式、親切、簡潔）。';
 
-  const systemPrompt = buildBasePrompt(businessProfile, faqs) + intentNote + `
+  const summarySection = conversationSummary
+    ? `\n\n【此客戶對話背景摘要】\n${conversationSummary}\n`
+    : '';
+
+  const systemPrompt = buildBasePrompt(businessProfile, faqs) + summarySection + intentNote + `
 注意：用戶訊息中若有「[訊息1]」「[訊息2]」等系統標記，代表客人分段傳送的多則訊息，請根據整體語意回覆，回覆中不要出現這些標記。
 只回傳 JSON 格式，不要其他說明。
 格式：{ "replies": ["回覆1", "回覆2", "回覆3"] }`;
@@ -55,10 +90,14 @@ async function generateReplies(userMessage, businessProfile, intent = 'none', fa
 }
 
 // Used by webhook — returns { replies, urgency, intent, keywordMatch }
-async function analyzeMessage(userMessage, businessProfile, keywords = [], faqs = []) {
+async function analyzeMessage(userMessage, businessProfile, keywords = [], faqs = [], conversationSummary = '') {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const basePrompt = buildBasePrompt(businessProfile, faqs);
+
+  const summarySection = conversationSummary
+    ? `\n\n【此客戶對話背景摘要】\n${conversationSummary}\n`
+    : '';
 
   let keywordSection = '';
   if (keywords.length > 0) {
@@ -75,7 +114,7 @@ ${list}
 若有匹配，在 keywordMatch 回傳 { "trigger": "...", "reply": "預設回覆文字，卡片類型填空字串" }；否則填 null。`;
   }
 
-  const systemPrompt = `${basePrompt}
+  const systemPrompt = `${basePrompt}${summarySection}
 ${keywordSection}
 
 【情緒分析】
@@ -123,4 +162,4 @@ ${keywordSection}
   }
 }
 
-module.exports = { generateReplies, analyzeMessage };
+module.exports = { generateReplies, analyzeMessage, summarizeConversation };

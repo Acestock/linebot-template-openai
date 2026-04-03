@@ -15,6 +15,7 @@ const { pushOrderCard } = require('../services/lineService');
 const CustomerSetting = require('../models/CustomerSetting');
 const Message = require('../models/Message');
 const openaiService = require('../services/openaiService');
+const { summarizeConversation } = openaiService;
 const sseService = require('../services/sseService');
 const autoReplyService = require('../services/autoReplyService');
 
@@ -193,12 +194,14 @@ router.post('/conversations/:lineUserId/suggest', async (req, res) => {
     const combinedText = pendingMsgs.map(m => m.userMessage).join('\n---\n');
     const hasPurchaseIntent = pendingMsgs.some(m => m.intent === 'purchase');
 
-    const [bp, faqs] = await Promise.all([
+    const [bp, faqs, setting] = await Promise.all([
       BusinessProfile.findOne().lean(),
-      FAQ.find({ isActive: true }).sort({ order: 1 }).lean()
+      FAQ.find({ isActive: true }).sort({ order: 1 }).lean(),
+      CustomerSetting.findOne({ lineUserId }).lean()
     ]);
+    const conversationSummary = setting?.conversationSummary || '';
     const aiReplies = await openaiService.generateReplies(
-      combinedText, bp, hasPurchaseIntent ? 'purchase' : 'none', faqs
+      combinedText, bp, hasPurchaseIntent ? 'purchase' : 'none', faqs, conversationSummary
     );
     res.json({ aiReplies, intent: hasPurchaseIntent ? 'purchase' : 'none' });
   } catch (err) {
@@ -243,6 +246,26 @@ router.post('/conversations/:lineUserId/reply', async (req, res) => {
       }
 
       res.json({ success: true });
+
+      // Async: update conversation summary (do not block response)
+      (async () => {
+        try {
+          const recentMsgs = await Message.find({ lineUserId })
+            .sort({ createdAt: -1 }).limit(20).lean();
+          const displayName = recentMsgs[0]?.displayName || '';
+          const existing = await CustomerSetting.findOne({ lineUserId }).lean();
+          const newSummary = await summarizeConversation(
+            recentMsgs.reverse(), existing?.conversationSummary || '', displayName
+          );
+          await CustomerSetting.findOneAndUpdate(
+            { lineUserId },
+            { conversationSummary: newSummary, summaryUpdatedAt: new Date() },
+            { upsert: true }
+          );
+        } catch (e) {
+          console.error('[Admin] Summary update failed:', e.message);
+        }
+      })();
     } catch (lineErr) {
       const errMsg = lineErr.message || 'LINE API error';
       await Message.updateMany(
@@ -619,6 +642,30 @@ router.patch('/customers/autoreply', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/customers/:lineUserId/summary
+router.get('/customers/:lineUserId/summary', async (req, res) => {
+  try {
+    const setting = await CustomerSetting.findOne({ lineUserId: req.params.lineUserId }).lean();
+    res.json({
+      conversationSummary: setting?.conversationSummary || '',
+      summaryUpdatedAt: setting?.summaryUpdatedAt || null
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/customers/:lineUserId/summary — manual edit or clear
+router.patch('/customers/:lineUserId/summary', async (req, res) => {
+  try {
+    const { conversationSummary } = req.body;
+    await CustomerSetting.findOneAndUpdate(
+      { lineUserId: req.params.lineUserId },
+      { conversationSummary: conversationSummary || '', summaryUpdatedAt: new Date() },
+      { upsert: true }
+    );
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // GET /api/customers/labels  — bulk map: { [lineUserId]: [labelObj, ...] }

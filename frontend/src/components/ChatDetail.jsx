@@ -260,6 +260,102 @@ function ProactiveSend({ lineUserId, displayName, onSent }) {
   );
 }
 
+function ConversationSummary({ lineUserId }) {
+  const [summary, setSummary] = useState('');
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!lineUserId) return;
+    setSummary('');
+    setEditing(false);
+    authFetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/summary`)
+      .then(r => r.json())
+      .then(data => {
+        setSummary(data.conversationSummary || '');
+        setUpdatedAt(data.summaryUpdatedAt);
+      })
+      .catch(() => {});
+  }, [lineUserId]);
+
+  async function saveDraft() {
+    setSaving(true);
+    try {
+      await authFetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/summary`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationSummary: draft })
+      });
+      setSummary(draft);
+      setEditing(false);
+    } catch {}
+    setSaving(false);
+  }
+
+  if (!summary && !editing) {
+    return (
+      <div style={{ marginBottom: '10px' }}>
+        <button onClick={() => { setDraft(''); setEditing(true); setCollapsed(false); }} style={{
+          fontSize: '11px', color: '#bbb', background: 'none', border: 'none',
+          cursor: 'pointer', padding: 0, textDecoration: 'underline'
+        }}>＋ 新增對話摘要</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      marginBottom: '10px', borderRadius: '8px',
+      border: '1px solid #c5dcf5', backgroundColor: '#f0f7ff', overflow: 'hidden'
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '6px 10px', cursor: 'pointer', userSelect: 'none'
+      }} onClick={() => !editing && setCollapsed(p => !p)}>
+        <span style={{ fontSize: '12px', fontWeight: '700', color: '#1565c0' }}>
+          💡 對話摘要{updatedAt && <span style={{ fontWeight: 400, marginLeft: '6px', color: '#90a4ae', fontSize: '11px' }}>
+            {new Date(updatedAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </span>}
+        </span>
+        <span style={{ fontSize: '11px', color: '#90a4ae' }}>{collapsed ? '▼' : '▲'}</span>
+      </div>
+
+      {!collapsed && (
+        <div style={{ padding: '0 10px 8px' }}>
+          {editing ? (
+            <>
+              <textarea
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                rows={3}
+                autoFocus
+                style={{ width: '100%', boxSizing: 'border-box', padding: '6px 8px', borderRadius: '6px', border: '1px solid #90caf9', fontSize: '13px', lineHeight: 1.5, resize: 'vertical', outline: 'none', backgroundColor: '#fff' }}
+              />
+              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button onClick={() => setEditing(false)} style={{ padding: '3px 10px', borderRadius: '5px', border: '1px solid #ddd', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#666' }}>取消</button>
+                <button onClick={saveDraft} disabled={saving} style={{ padding: '3px 10px', borderRadius: '5px', border: 'none', background: '#1565c0', color: '#fff', fontSize: '12px', cursor: 'pointer' }}>
+                  {saving ? '儲存中' : '儲存'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+              <div style={{ flex: 1, fontSize: '13px', color: '#1a237e', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{summary}</div>
+              <button onClick={() => { setDraft(summary); setEditing(true); }} style={{
+                flexShrink: 0, padding: '2px 7px', borderRadius: '4px', border: '1px solid #90caf9',
+                background: '#fff', fontSize: '11px', cursor: 'pointer', color: '#1565c0'
+              }}>編輯</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsChange, onAutoReplyChange, onRefresh }) {
   const [showHistory, setShowHistory] = useState(false);
 
@@ -316,6 +412,8 @@ function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsCh
           />
         </div>
       </div>
+
+      <ConversationSummary lineUserId={lineUserId} />
 
       {/* Pending messages */}
       {pendingCount > 0 && (

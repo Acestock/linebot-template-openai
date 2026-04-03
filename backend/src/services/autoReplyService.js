@@ -29,11 +29,13 @@ function cancel(lineUserId) {
 async function execute(lineUserId) {
   try {
     // Re-check auto-reply is still enabled
-    const [bp, faqs] = await Promise.all([
+    const [bp, faqs, setting] = await Promise.all([
       BusinessProfile.findOne().lean(),
-      FAQ.find({ isActive: true }).sort({ order: 1 }).lean()
+      FAQ.find({ isActive: true }).sort({ order: 1 }).lean(),
+      require('../models/CustomerSetting').findOne({ lineUserId }).lean()
     ]);
     if (!bp || !bp.autoReply) return;
+    const conversationSummary = setting?.conversationSummary || '';
 
     // Check still has pending messages (admin may have already replied)
     const pendingMsgs = await Message.find({ lineUserId, status: 'pending' })
@@ -44,7 +46,7 @@ async function execute(lineUserId) {
     // Join messages with a neutral separator — no [訊息N] tags that AI might echo back
     const combinedText = pendingMsgs.map(m => m.userMessage).join('\n---\n');
 
-    const replies = await generateReplies(combinedText, bp, 'none', faqs);
+    const replies = await generateReplies(combinedText, bp, 'none', faqs, conversationSummary);
     // Use the 親切 (friendly) version as auto-reply
     const replyText = (replies[1] && replies[1].trim()) ? replies[1] : (replies[0] || '');
     if (!replyText) {
@@ -62,6 +64,27 @@ async function execute(lineUserId) {
 
     sseService.broadcast('new-message', { lineUserId });
     console.log(`[AutoReply] Sent to ${lineUserId}`);
+
+    // Async: update conversation summary
+    (async () => {
+      try {
+        const { summarizeConversation } = require('./openaiService');
+        const CustomerSetting = require('../models/CustomerSetting');
+        const recentMsgs = await Message.find({ lineUserId }).sort({ createdAt: -1 }).limit(20).lean();
+        const displayName = recentMsgs[0]?.displayName || '';
+        const existing = await CustomerSetting.findOne({ lineUserId }).lean();
+        const newSummary = await summarizeConversation(
+          recentMsgs.reverse(), existing?.conversationSummary || '', displayName
+        );
+        await CustomerSetting.findOneAndUpdate(
+          { lineUserId },
+          { conversationSummary: newSummary, summaryUpdatedAt: new Date() },
+          { upsert: true }
+        );
+      } catch (e) {
+        console.error('[AutoReply] Summary update failed:', e.message);
+      }
+    })();
   } catch (err) {
     console.error('[AutoReply] Error:', err.message);
   }
