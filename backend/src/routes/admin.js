@@ -8,6 +8,7 @@ const Keyword = require('../models/Keyword');
 const ProductCard = require('../models/ProductCard');
 const Label = require('../models/Label');
 const CustomerLabel = require('../models/CustomerLabel');
+const FAQ = require('../models/FAQ');
 const CustomerSetting = require('../models/CustomerSetting');
 const Message = require('../models/Message');
 const openaiService = require('../services/openaiService');
@@ -189,9 +190,12 @@ router.post('/conversations/:lineUserId/suggest', async (req, res) => {
     const combinedText = pendingMsgs.map(m => m.userMessage).join('\n---\n');
     const hasPurchaseIntent = pendingMsgs.some(m => m.intent === 'purchase');
 
-    const bp = await BusinessProfile.findOne().lean();
+    const [bp, faqs] = await Promise.all([
+      BusinessProfile.findOne().lean(),
+      FAQ.find({ isActive: true }).sort({ order: 1 }).lean()
+    ]);
     const aiReplies = await openaiService.generateReplies(
-      combinedText, bp, hasPurchaseIntent ? 'purchase' : 'none'
+      combinedText, bp, hasPurchaseIntent ? 'purchase' : 'none', faqs
     );
     res.json({ aiReplies, intent: hasPurchaseIntent ? 'purchase' : 'none' });
   } catch (err) {
@@ -352,6 +356,44 @@ router.get('/stats', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── FAQ ─────────────────────────────────────────────────────────────────────
+
+// GET /api/faqs
+router.get('/faqs', async (req, res) => {
+  try {
+    res.json(await FAQ.find().sort({ order: 1, createdAt: 1 }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/faqs
+router.post('/faqs', async (req, res) => {
+  try {
+    const { question, answer, order } = req.body;
+    if (!question || !answer) return res.status(400).json({ error: 'question and answer required' });
+    res.status(201).json(await FAQ.create({ question, answer, order: order || 0 }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/faqs/:id
+router.put('/faqs/:id', async (req, res) => {
+  try {
+    const { question, answer, isActive, order } = req.body;
+    const faq = await FAQ.findByIdAndUpdate(
+      req.params.id, { question, answer, isActive, order }, { new: true }
+    );
+    if (!faq) return res.status(404).json({ error: 'not found' });
+    res.json(faq);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/faqs/:id
+router.delete('/faqs/:id', async (req, res) => {
+  try {
+    await FAQ.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── Labels ──────────────────────────────────────────────────────────────────

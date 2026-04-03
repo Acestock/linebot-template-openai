@@ -29,9 +29,9 @@ function ProfileTab({ profile, onChange, onSave, saving, saved }) {
       <div style={GROUP}><label style={LABEL}>商品／服務說明</label>
         <textarea name="products" value={profile.products} onChange={onChange}
           placeholder={'例：\n- 手工麵包（每日現烤）\n- 客製化蛋糕（需提前3天預訂）'} rows={4} style={FIELD} /></div>
-      <div style={GROUP}><label style={LABEL}>常見問題 Q&A</label>
-        <textarea name="faq" value={profile.faq} onChange={onChange}
-          placeholder={'例：\nQ: 可以客製化嗎？\nA: 可以，請提前3天告知需求'} rows={4} style={FIELD} /></div>
+      <div style={{ ...GROUP, padding: '10px 12px', backgroundColor: '#f0f7ff', borderRadius: '8px', border: '1px solid #c5dcf5' }}>
+        <span style={{ fontSize: '13px', color: '#1565c0' }}>💡 常見問題 Q&A 已移至「<strong>FAQ 知識庫</strong>」分頁，可新增結構化問答對，讓 AI 回覆更精準。</span>
+      </div>
       <div style={GROUP}><label style={LABEL}>回覆風格備注</label>
         <input name="toneNote" value={profile.toneNote} onChange={onChange} placeholder="例：親切友善、多用表情符號" style={FIELD} /></div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '4px' }}>
@@ -562,6 +562,143 @@ function AutoReplyTab({ profile, onChange, onSave, saving, saved }) {
 }
 
 // ─── Tab 4: 標籤管理 ─────────────────────────────────────────────────────────
+// ─── Tab 5: FAQ 知識庫 ───────────────────────────────────────────────────────
+function FAQTab() {
+  const [faqs, setFaqs] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ question: '', answer: '', order: 0 });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { loadFaqs(); }, []);
+
+  async function loadFaqs() {
+    try {
+      const res = await authFetch(`${API_BASE}/api/faqs`);
+      setFaqs(await res.json());
+    } catch {}
+  }
+
+  function openNew() {
+    setEditing(null);
+    setForm({ question: '', answer: '', order: faqs.length });
+    setShowForm(true);
+  }
+
+  function openEdit(faq) {
+    setEditing(faq);
+    setForm({ question: faq.question, answer: faq.answer, order: faq.order });
+    setShowForm(true);
+  }
+
+  async function handleSave() {
+    if (!form.question.trim() || !form.answer.trim()) { alert('問題和回答皆為必填'); return; }
+    setSaving(true);
+    try {
+      const url = editing ? `${API_BASE}/api/faqs/${editing._id}` : `${API_BASE}/api/faqs`;
+      const res = await authFetch(url, {
+        method: editing ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+      if (!res.ok) throw new Error('操作失敗');
+      await loadFaqs();
+      setShowForm(false);
+    } catch (err) { alert(err.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('確定刪除此問答？')) return;
+    try {
+      await authFetch(`${API_BASE}/api/faqs/${id}`, { method: 'DELETE' });
+      await loadFaqs();
+    } catch (err) { alert('刪除失敗'); }
+  }
+
+  async function toggleActive(faq) {
+    try {
+      await authFetch(`${API_BASE}/api/faqs/${faq._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...faq, isActive: !faq.isActive })
+      });
+      await loadFaqs();
+    } catch {}
+  }
+
+  if (showForm) {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+          <button onClick={() => setShowForm(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#999', padding: 0 }}>←</button>
+          <span style={{ fontWeight: 'bold', fontSize: '15px' }}>{editing ? '編輯問答' : '新增問答'}</span>
+        </div>
+        <div style={GROUP}>
+          <label style={LABEL}>問題 *</label>
+          <textarea value={form.question} onChange={e => setForm(p => ({ ...p, question: e.target.value }))}
+            placeholder="例：你們幾點開門？" rows={2} style={FIELD} />
+        </div>
+        <div style={GROUP}>
+          <label style={LABEL}>回答 *</label>
+          <textarea value={form.answer} onChange={e => setForm(p => ({ ...p, answer: e.target.value }))}
+            placeholder="例：週一至週五 10:00–20:00，週末 11:00–19:00" rows={4} style={FIELD} />
+        </div>
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+          <button onClick={() => setShowForm(false)} style={{ padding: '8px 18px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', color: '#666', fontSize: '14px', cursor: 'pointer' }}>取消</button>
+          <button onClick={handleSave} disabled={saving} style={{ padding: '8px 18px', borderRadius: '6px', border: 'none', background: saving ? '#b0bec5' : '#00B900', color: '#fff', fontSize: '14px', fontWeight: 'bold', cursor: saving ? 'not-allowed' : 'pointer' }}>
+            {saving ? '儲存中...' : '儲存'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p style={{ fontSize: '13px', color: '#888', marginTop: 0, marginBottom: '16px' }}>
+        新增結構化問答對，AI 回覆時會優先參考這些 Q&A，比純文字知識庫更精準。
+      </p>
+      {faqs.length === 0 && (
+        <div style={{ textAlign: 'center', color: '#bbb', padding: '24px', fontSize: '14px', background: '#fafafa', borderRadius: '8px', border: '1px dashed #e0e0e0' }}>
+          尚無問答，點擊下方新增第一筆
+        </div>
+      )}
+      {faqs.map((faq, i) => (
+        <div key={faq._id} style={{
+          padding: '12px 14px', marginBottom: '8px', borderRadius: '8px',
+          border: `1px solid ${faq.isActive ? '#e0e0e0' : '#f5f5f5'}`,
+          backgroundColor: faq.isActive ? '#fff' : '#fafafa',
+          opacity: faq.isActive ? 1 : 0.6
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: '#1565c0', marginBottom: '4px' }}>
+                Q: {faq.question}
+              </div>
+              <div style={{ fontSize: '13px', color: '#555', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                A: {faq.answer}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
+              <button onClick={() => toggleActive(faq)} style={{
+                padding: '3px 8px', borderRadius: '10px', border: 'none', fontSize: '11px', cursor: 'pointer',
+                backgroundColor: faq.isActive ? '#e8f5e9' : '#f5f5f5',
+                color: faq.isActive ? '#2e7d32' : '#999'
+              }}>{faq.isActive ? '啟用' : '停用'}</button>
+              <button onClick={() => openEdit(faq)} style={{ padding: '4px 10px', borderRadius: '5px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#555' }}>編輯</button>
+              <button onClick={() => handleDelete(faq._id)} style={{ padding: '4px 10px', borderRadius: '5px', border: '1px solid #ffcdd2', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#e53935' }}>刪除</button>
+            </div>
+          </div>
+        </div>
+      ))}
+      <button onClick={openNew} style={{ width: '100%', marginTop: '4px', padding: '10px', borderRadius: '8px', border: '2px dashed #e0e0e0', background: '#fff', color: '#00B900', fontSize: '14px', cursor: 'pointer', fontWeight: '600' }}>
+        + 新增問答
+      </button>
+    </div>
+  );
+}
+
 const PRESET_COLORS = ['#f44336','#e91e63','#9c27b0','#3f51b5','#2196F3','#009688','#4CAF50','#FF9800','#FF5722','#607d8b'];
 
 function LabelTab() {
@@ -697,6 +834,7 @@ function SettingsModal({ onClose }) {
 
   const TABS = [
     { key: 'profile',  label: '商家知識庫' },
+    { key: 'faq',      label: 'FAQ 知識庫' },
     { key: 'cards',    label: '商品卡片' },
     { key: 'keywords', label: '關鍵字觸發' },
     { key: 'autoReply',label: '自動回覆' },
@@ -728,6 +866,7 @@ function SettingsModal({ onClose }) {
         {/* Body */}
         <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
           {tab === 'profile'   && <ProfileTab profile={profile} onChange={handleChange} onSave={handleSave} saving={saving} saved={saved} />}
+          {tab === 'faq'       && <FAQTab />}
           {tab === 'cards'     && <CardTab />}
           {tab === 'keywords'  && <KeywordTab />}
           {tab === 'autoReply' && <AutoReplyTab profile={profile} onChange={handleChange} onSave={handleSave} saving={saving} saved={saved} />}

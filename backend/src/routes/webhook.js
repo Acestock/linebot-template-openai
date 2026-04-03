@@ -7,6 +7,7 @@ const BusinessProfile = require('../models/BusinessProfile');
 const Keyword = require('../models/Keyword');
 const ProductCard = require('../models/ProductCard');
 const CustomerSetting = require('../models/CustomerSetting');
+const FAQ = require('../models/FAQ');
 const sseService = require('../services/sseService');
 const autoReplyService = require('../services/autoReplyService');
 
@@ -32,14 +33,15 @@ router.post('/', async (req, res) => {
     const userMessage = message.text;
 
     try {
-      const [lineProfile, businessProfile, keywords] = await Promise.all([
+      const [lineProfile, businessProfile, keywords, faqs] = await Promise.all([
         getUserProfile(lineUserId),
         BusinessProfile.findOne().lean(),
-        Keyword.find({ isActive: true }).sort({ order: 1 }).lean()
+        Keyword.find({ isActive: true }).sort({ order: 1 }).lean(),
+        FAQ.find({ isActive: true }).sort({ order: 1 }).lean()
       ]);
 
       const { replies, urgency, intent, keywordMatch } = await openaiService.analyzeMessage(
-        userMessage, businessProfile, keywords
+        userMessage, businessProfile, keywords, faqs
       );
 
       // Keyword matched — auto-reply immediately, no admin review needed

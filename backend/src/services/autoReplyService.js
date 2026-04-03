@@ -1,5 +1,6 @@
 const Message = require('../models/Message');
 const BusinessProfile = require('../models/BusinessProfile');
+const FAQ = require('../models/FAQ');
 const { generateReplies } = require('./openaiService');
 const { pushMessage } = require('./lineService');
 const sseService = require('./sseService');
@@ -28,7 +29,10 @@ function cancel(lineUserId) {
 async function execute(lineUserId) {
   try {
     // Re-check auto-reply is still enabled
-    const bp = await BusinessProfile.findOne().lean();
+    const [bp, faqs] = await Promise.all([
+      BusinessProfile.findOne().lean(),
+      FAQ.find({ isActive: true }).sort({ order: 1 }).lean()
+    ]);
     if (!bp || !bp.autoReply) return;
 
     // Check still has pending messages (admin may have already replied)
@@ -40,7 +44,7 @@ async function execute(lineUserId) {
     // Join messages with a neutral separator — no [訊息N] tags that AI might echo back
     const combinedText = pendingMsgs.map(m => m.userMessage).join('\n---\n');
 
-    const replies = await generateReplies(combinedText, bp);
+    const replies = await generateReplies(combinedText, bp, 'none', faqs);
     // Use the 親切 (friendly) version as auto-reply
     const replyText = (replies[1] && replies[1].trim()) ? replies[1] : (replies[0] || '');
     if (!replyText) {

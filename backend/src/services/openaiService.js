@@ -2,7 +2,7 @@ const OpenAI = require('openai');
 
 const FALLBACK_REPLIES = ['', '', ''];
 
-function buildBasePrompt(bp) {
+function buildBasePrompt(bp, faqs = []) {
   if (!bp || !bp.shopName) {
     return '你是一個專業的客服助理。';
   }
@@ -11,21 +11,27 @@ function buildBasePrompt(bp) {
   if (bp.address)       lines.push(`📍 地址：${bp.address}`);
   if (bp.businessHours) lines.push(`🕐 營業時間：${bp.businessHours}`);
   if (bp.products)      lines.push(`📦 商品／服務：\n${bp.products}`);
-  if (bp.faq)           lines.push(`❓ 常見問題：\n${bp.faq}`);
   if (bp.toneNote)      lines.push(`💬 回覆風格：${bp.toneNote}`);
+  // 結構化 FAQ 優先；若無則回退舊版純文字欄位
+  if (faqs.length > 0) {
+    const faqText = faqs.map(f => `Q: ${f.question}\nA: ${f.answer}`).join('\n\n');
+    lines.push(`❓ 常見問題（請優先參考以下 Q&A 回答）：\n${faqText}`);
+  } else if (bp.faq) {
+    lines.push(`❓ 常見問題：\n${bp.faq}`);
+  }
   return lines.join('\n');
 }
 
 // Used by /api/conversations/:lineUserId/suggest  (returns string[])
 // intent = 'purchase' → generate sales-closing focused replies
-async function generateReplies(userMessage, businessProfile, intent = 'none') {
+async function generateReplies(userMessage, businessProfile, intent = 'none', faqs = []) {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const intentNote = intent === 'purchase'
     ? '\n⚠️ 此客戶已表現出明確的購買意圖。請生成 3 條偏向促成交易的回覆建議，內容應包含引導下單步驟、確認規格數量、付款方式說明，或讓客戶安心購買的保證話術。'
     : '\n根據以上店家資訊與用戶訊息，生成 3 條適合的回覆建議，每條風格略有不同（正式、親切、簡潔）。';
 
-  const systemPrompt = buildBasePrompt(businessProfile) + intentNote + `
+  const systemPrompt = buildBasePrompt(businessProfile, faqs) + intentNote + `
 注意：用戶訊息中若有「[訊息1]」「[訊息2]」等系統標記，代表客人分段傳送的多則訊息，請根據整體語意回覆，回覆中不要出現這些標記。
 只回傳 JSON 格式，不要其他說明。
 格式：{ "replies": ["回覆1", "回覆2", "回覆3"] }`;
@@ -49,10 +55,10 @@ async function generateReplies(userMessage, businessProfile, intent = 'none') {
 }
 
 // Used by webhook — returns { replies, urgency, intent, keywordMatch }
-async function analyzeMessage(userMessage, businessProfile, keywords = []) {
+async function analyzeMessage(userMessage, businessProfile, keywords = [], faqs = []) {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  const basePrompt = buildBasePrompt(businessProfile);
+  const basePrompt = buildBasePrompt(businessProfile, faqs);
 
   let keywordSection = '';
   if (keywords.length > 0) {
