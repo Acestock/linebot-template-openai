@@ -5,6 +5,7 @@ import ReplyPicker from './components/ReplyPicker';
 import SendPanel from './components/SendPanel';
 import SettingsModal from './components/SettingsModal';
 import BroadcastModal from './components/BroadcastModal';
+import OrdersModal from './components/OrdersModal';
 import StickyNotes from './components/StickyNotes';
 import LoginScreen from './components/LoginScreen';
 import API_BASE, { authFetch } from './config';
@@ -34,6 +35,8 @@ function App() {
   const [stats, setStats] = useState({ pending: 0, replied: 0 });
   const [showSettings, setShowSettings] = useState(false);
   const [showBroadcast, setShowBroadcast] = useState(false);
+  const [showOrders, setShowOrders] = useState(false);
+  const [newOrderCount, setNewOrderCount] = useState(0);
   const [labels, setLabels] = useState([]);
   const [customerLabels, setCustomerLabels] = useState({});
 
@@ -127,6 +130,9 @@ function App() {
       es.addEventListener('new-message', () => {
         fetchConversations();
         fetchStats();
+      });
+      es.addEventListener('new-order', () => {
+        setNewOrderCount(n => n + 1);
       });
       es.onerror = () => {
         // Let EventSource auto-reconnect; we also reconnect on visibility
@@ -249,12 +255,16 @@ function App() {
               </span>
             </>
           )}
+          <button onClick={() => { setShowOrders(true); setNewOrderCount(0); }} style={{ position: 'relative', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 8px' }}>
+            訂單{newOrderCount > 0 && <span style={{ position: 'absolute', top: '-4px', right: '-4px', backgroundColor: '#f44336', color: '#fff', borderRadius: '8px', fontSize: '10px', padding: '0 4px', minWidth: '14px', textAlign: 'center' }}>{newOrderCount}</span>}
+          </button>
           <button onClick={() => setShowBroadcast(true)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 8px' }}>群發</button>
           <button onClick={() => setShowSettings(true)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '16px', cursor: 'pointer', padding: '4px 8px' }}>⚙</button>
         </div>
 
         {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
         {showBroadcast && <BroadcastModal onClose={() => setShowBroadcast(false)} />}
+        {showOrders && <OrdersModal onClose={() => setShowOrders(false)} />}
 
         {/* Mobile Content */}
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -292,6 +302,10 @@ function App() {
         <span style={{ fontWeight: 'bold', fontSize: '16px' }}>LINE AI 聊天輔助系統</span>
         <span style={{ marginLeft: 'auto', fontSize: '13px', opacity: 0.9, display: 'flex', alignItems: 'center', gap: '16px' }}>
           <span>今日待回覆：{stats.pending} | 已回覆：{stats.replied}</span>
+          <button onClick={() => { setShowOrders(true); setNewOrderCount(0); }} title="訂單管理"
+            style={{ position: 'relative', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }}>
+            訂單{newOrderCount > 0 && <span style={{ position: 'absolute', top: '-6px', right: '-6px', backgroundColor: '#f44336', color: '#fff', borderRadius: '8px', fontSize: '10px', padding: '0 4px', minWidth: '14px', textAlign: 'center' }}>{newOrderCount}</span>}
+          </button>
           <button onClick={() => setShowBroadcast(true)} title="群發訊息"
             style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }}>群發</button>
           <button onClick={() => setShowSettings(true)} title="系統設定"
@@ -303,6 +317,7 @@ function App() {
 
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {showBroadcast && <BroadcastModal onClose={() => setShowBroadcast(false)} />}
+      {showOrders && <OrdersModal onClose={() => setShowOrders(false)} />}
 
       {/* Main layout */}
       <div style={{ display: 'flex', marginTop: '48px', width: '100%' }}>

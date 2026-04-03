@@ -127,6 +127,45 @@ function AutoReplyToggle({ lineUserId, enabled, onChange }) {
   );
 }
 
+function SendOrderCard({ lineUserId }) {
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(''); // '' | 'ok' | error message
+
+  async function send() {
+    setSending(true);
+    setResult('');
+    try {
+      const res = await authFetch(`${API_BASE}/api/orders/send-card`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lineUserId })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '發送失敗');
+      setResult('ok');
+      setTimeout(() => setResult(''), 4000);
+    } catch (err) {
+      setResult(err.message);
+      setTimeout(() => setResult(''), 4000);
+    }
+    setSending(false);
+  }
+
+  return (
+    <div style={{ marginTop: '8px' }}>
+      <button onClick={send} disabled={sending} style={{
+        width: '100%', padding: '8px', borderRadius: '8px',
+        border: '1px dashed #00B900', background: '#f1fff1', color: '#2e7d32',
+        fontSize: '13px', cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.7 : 1
+      }}>
+        {sending ? '發送中...' : '📋 傳送訂購單給此客戶'}
+      </button>
+      {result === 'ok' && <div style={{ fontSize: '12px', color: '#4CAF50', marginTop: '4px', textAlign: 'center' }}>✓ 訂購單已發送</div>}
+      {result && result !== 'ok' && <div style={{ fontSize: '12px', color: '#e53935', marginTop: '4px', textAlign: 'center' }}>{result}</div>}
+    </div>
+  );
+}
+
 function ProactiveSend({ lineUserId, displayName, onSent }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
@@ -313,6 +352,7 @@ function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsCh
         </div>
       )}
 
+      <SendOrderCard lineUserId={lineUserId} />
       <ProactiveSend lineUserId={lineUserId} displayName={displayName} onSent={onRefresh} />
     </div>
   );

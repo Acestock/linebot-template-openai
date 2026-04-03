@@ -113,4 +113,70 @@ async function pushFlexCard(lineUserId, cards) {
   });
 }
 
-module.exports = { getUserProfile, pushMessage, pushFlexCard };
+// Build and push an order card (Flex Message) to customer
+function buildOrderFlexMessage(items, shopName) {
+  const rows = items.map(item => ({
+    type: 'box', layout: 'horizontal', paddingTop: '8px',
+    contents: [
+      {
+        type: 'box', layout: 'vertical', flex: 3,
+        contents: [
+          { type: 'text', text: item.name, size: 'sm', color: '#222222', wrap: true, weight: 'bold' },
+          ...(item.description ? [{ type: 'text', text: item.description, size: 'xs', color: '#888888', wrap: true }] : [])
+        ]
+      },
+      {
+        type: 'box', layout: 'vertical', flex: 2, alignItems: 'flex-end',
+        contents: [
+          { type: 'text', text: item.price, size: 'sm', color: '#00B900', weight: 'bold', align: 'end' },
+          ...(item.unit ? [{ type: 'text', text: `/ ${item.unit}`, size: 'xs', color: '#aaaaaa', align: 'end' }] : [])
+        ]
+      }
+    ]
+  }));
+
+  // Insert dividers between rows
+  const bodyContents = [];
+  rows.forEach((row, i) => {
+    bodyContents.push(row);
+    if (i < rows.length - 1) bodyContents.push({ type: 'separator', margin: 'sm' });
+  });
+
+  return {
+    type: 'bubble',
+    styles: { header: { backgroundColor: '#00B900' } },
+    header: {
+      type: 'box', layout: 'vertical', paddingAll: '14px',
+      contents: [
+        { type: 'text', text: '📋 訂購單', color: '#ffffff', size: 'lg', weight: 'bold' },
+        { type: 'text', text: shopName || '歡迎選購', color: '#d0f5d0', size: 'xs', margin: 'xs' }
+      ]
+    },
+    body: {
+      type: 'box', layout: 'vertical', paddingAll: '14px',
+      contents: [
+        ...bodyContents,
+        { type: 'separator', margin: 'lg' },
+        { type: 'text', text: '請點擊下方按鈕確認您有意願下單，我們將與您確認細節。', size: 'xs', color: '#888888', wrap: true, margin: 'lg' }
+      ]
+    },
+    footer: {
+      type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px',
+      contents: [{
+        type: 'button', style: 'primary', color: '#00B900', height: 'sm',
+        action: { type: 'postback', label: '✓ 確認下單', data: 'action=order_confirm', displayText: '我想下單' }
+      }]
+    }
+  };
+}
+
+async function pushOrderCard(lineUserId, items, shopName) {
+  const client = getClient();
+  const bubble = buildOrderFlexMessage(items, shopName);
+  await client.pushMessage({
+    to: lineUserId,
+    messages: [{ type: 'flex', altText: `📋 ${shopName || '店家'} 訂購單 — 點擊查看品項`, contents: bubble }]
+  });
+}
+
+module.exports = { getUserProfile, pushMessage, pushFlexCard, pushOrderCard };

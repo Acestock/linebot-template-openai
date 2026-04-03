@@ -551,7 +551,16 @@ function AutoReplyTab({ profile, onChange, onSave, saving, saved }) {
         </div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
+      <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #f0f0f0' }}>
+        <label style={LABEL}>管理員 LINE User ID（接收訂單通知）</label>
+        <input name="adminLineUserId" value={profile.adminLineUserId} onChange={onChange}
+          placeholder="例：U1234567890abcdef..." style={{ ...FIELD, marginTop: '4px' }} />
+        <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>
+          填入後，客戶確認下單時將自動發送 LINE 通知給您。可從 LINE 官方帳號的 Webhook 紀錄取得您的 User ID。
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
         {saved && <span style={{ color: '#4CAF50', fontSize: '13px', alignSelf: 'center' }}>✓ 已儲存</span>}
         <button onClick={onSave} disabled={saving} style={{ padding: '8px 20px', borderRadius: '6px', border: 'none', background: saving ? '#b0bec5' : '#00B900', color: '#fff', fontSize: '14px', fontWeight: 'bold', cursor: saving ? 'not-allowed' : 'pointer' }}>
           {saving ? '儲存中...' : '儲存'}
@@ -562,7 +571,138 @@ function AutoReplyTab({ profile, onChange, onSave, saving, saved }) {
 }
 
 // ─── Tab 4: 標籤管理 ─────────────────────────────────────────────────────────
-// ─── Tab 5: FAQ 知識庫 ───────────────────────────────────────────────────────
+// ─── Tab 5: 訂購設定 ─────────────────────────────────────────────────────────
+function OrderItemsTab() {
+  const [items, setItems] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ name: '', description: '', price: '', unit: '', order: 0 });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { loadItems(); }, []);
+
+  async function loadItems() {
+    try {
+      const res = await authFetch(`${API_BASE}/api/order-items`);
+      setItems(await res.json());
+    } catch {}
+  }
+
+  function openNew() {
+    setEditing(null);
+    setForm({ name: '', description: '', price: '', unit: '', order: items.length });
+    setShowForm(true);
+  }
+
+  function openEdit(item) {
+    setEditing(item);
+    setForm({ name: item.name, description: item.description || '', price: item.price, unit: item.unit || '', order: item.order });
+    setShowForm(true);
+  }
+
+  async function handleSave() {
+    if (!form.name.trim() || !form.price.trim()) { alert('品項名稱和價格為必填'); return; }
+    setSaving(true);
+    try {
+      const url = editing ? `${API_BASE}/api/order-items/${editing._id}` : `${API_BASE}/api/order-items`;
+      const res = await authFetch(url, {
+        method: editing ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+      if (!res.ok) throw new Error('操作失敗');
+      await loadItems();
+      setShowForm(false);
+    } catch (err) { alert(err.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('確定刪除此品項？')) return;
+    await authFetch(`${API_BASE}/api/order-items/${id}`, { method: 'DELETE' });
+    await loadItems();
+  }
+
+  async function toggleActive(item) {
+    await authFetch(`${API_BASE}/api/order-items/${item._id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...item, isActive: !item.isActive })
+    });
+    await loadItems();
+  }
+
+  if (showForm) {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+          <button onClick={() => setShowForm(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#999', padding: 0 }}>←</button>
+          <span style={{ fontWeight: 'bold', fontSize: '15px' }}>{editing ? '編輯品項' : '新增品項'}</span>
+        </div>
+        <div style={GROUP}><label style={LABEL}>品項名稱 *</label>
+          <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="例：美式咖啡、有機蘋果" style={FIELD} /></div>
+        <div style={GROUP}><label style={LABEL}>說明（可選）</label>
+          <input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="例：手沖、冷萃可選" style={FIELD} /></div>
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '14px' }}>
+          <div style={{ flex: 1 }}><label style={LABEL}>價格 *</label>
+            <input value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} placeholder="例：$60、150元、報價" style={{ ...FIELD, marginTop: '4px' }} /></div>
+          <div style={{ flex: 1 }}><label style={LABEL}>單位（可選）</label>
+            <input value={form.unit} onChange={e => setForm(p => ({ ...p, unit: e.target.value }))} placeholder="例：杯、份、盒、kg" style={{ ...FIELD, marginTop: '4px' }} /></div>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+          <button onClick={() => setShowForm(false)} style={{ padding: '8px 18px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', color: '#666', fontSize: '14px', cursor: 'pointer' }}>取消</button>
+          <button onClick={handleSave} disabled={saving} style={{ padding: '8px 18px', borderRadius: '6px', border: 'none', background: saving ? '#b0bec5' : '#00B900', color: '#fff', fontSize: '14px', fontWeight: 'bold', cursor: saving ? 'not-allowed' : 'pointer' }}>
+            {saving ? '儲存中...' : '儲存'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p style={{ fontSize: '13px', color: '#888', marginTop: 0, marginBottom: '16px' }}>
+        設定訂購品項後，可從客戶對話頁面發送「訂購單」給客戶，客戶點擊確認後自動通知您。<br />
+        價格欄位可填 $60、150元、面議等任意格式。
+      </p>
+      {items.length === 0 && (
+        <div style={{ textAlign: 'center', color: '#bbb', padding: '24px', fontSize: '14px', background: '#fafafa', borderRadius: '8px', border: '1px dashed #e0e0e0' }}>
+          尚無品項，點擊下方新增
+        </div>
+      )}
+      {items.map(item => (
+        <div key={item._id} style={{
+          padding: '10px 14px', marginBottom: '8px', borderRadius: '8px',
+          border: `1px solid ${item.isActive ? '#e0e0e0' : '#f5f5f5'}`,
+          backgroundColor: item.isActive ? '#fff' : '#fafafa', opacity: item.isActive ? 1 : 0.6
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '14px', fontWeight: '600', color: '#333' }}>
+                {item.name}
+                {item.unit && <span style={{ fontSize: '12px', color: '#aaa', marginLeft: '6px' }}>/ {item.unit}</span>}
+              </div>
+              {item.description && <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{item.description}</div>}
+            </div>
+            <div style={{ fontSize: '14px', color: '#00B900', fontWeight: 'bold', flexShrink: 0 }}>{item.price}</div>
+            <div style={{ display: 'flex', gap: '5px', flexShrink: 0 }}>
+              <button onClick={() => toggleActive(item)} style={{ padding: '3px 8px', borderRadius: '10px', border: 'none', fontSize: '11px', cursor: 'pointer', backgroundColor: item.isActive ? '#e8f5e9' : '#f5f5f5', color: item.isActive ? '#2e7d32' : '#999' }}>
+                {item.isActive ? '啟用' : '停用'}
+              </button>
+              <button onClick={() => openEdit(item)} style={{ padding: '4px 10px', borderRadius: '5px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#555' }}>編輯</button>
+              <button onClick={() => handleDelete(item._id)} style={{ padding: '4px 10px', borderRadius: '5px', border: '1px solid #ffcdd2', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#e53935' }}>刪除</button>
+            </div>
+          </div>
+        </div>
+      ))}
+      <button onClick={openNew} style={{ width: '100%', marginTop: '4px', padding: '10px', borderRadius: '8px', border: '2px dashed #e0e0e0', background: '#fff', color: '#00B900', fontSize: '14px', cursor: 'pointer', fontWeight: '600' }}>
+        + 新增品項
+      </button>
+    </div>
+  );
+}
+
+// ─── Tab 6: FAQ 知識庫 ───────────────────────────────────────────────────────
 function FAQTab() {
   const [faqs, setFaqs] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -798,7 +938,7 @@ function SettingsModal({ onClose }) {
   const [tab, setTab] = useState('profile');
   const [profile, setProfile] = useState({
     shopName: '', industry: '', products: '', businessHours: '', address: '',
-    faq: '', toneNote: '', autoReply: false, autoReplyDelay: 60
+    faq: '', toneNote: '', autoReply: false, autoReplyDelay: 60, adminLineUserId: ''
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -809,7 +949,8 @@ function SettingsModal({ onClose }) {
         shopName: data.shopName || '', industry: data.industry || '',
         products: data.products || '', businessHours: data.businessHours || '',
         address: data.address || '', faq: data.faq || '', toneNote: data.toneNote || '',
-        autoReply: data.autoReply || false, autoReplyDelay: data.autoReplyDelay || 60
+        autoReply: data.autoReply || false, autoReplyDelay: data.autoReplyDelay || 60,
+        adminLineUserId: data.adminLineUserId || ''
       });
     }).catch(() => {});
   }, []);
@@ -833,12 +974,13 @@ function SettingsModal({ onClose }) {
   }
 
   const TABS = [
-    { key: 'profile',  label: '商家知識庫' },
-    { key: 'faq',      label: 'FAQ 知識庫' },
-    { key: 'cards',    label: '商品卡片' },
-    { key: 'keywords', label: '關鍵字觸發' },
-    { key: 'autoReply',label: '自動回覆' },
-    { key: 'labels',   label: '標籤管理' }
+    { key: 'profile',    label: '商家知識庫' },
+    { key: 'faq',        label: 'FAQ 知識庫' },
+    { key: 'orderItems', label: '訂購品項' },
+    { key: 'cards',      label: '商品卡片' },
+    { key: 'keywords',   label: '關鍵字觸發' },
+    { key: 'autoReply',  label: '自動回覆' },
+    { key: 'labels',     label: '標籤管理' }
   ];
 
   return (
@@ -865,12 +1007,13 @@ function SettingsModal({ onClose }) {
 
         {/* Body */}
         <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
-          {tab === 'profile'   && <ProfileTab profile={profile} onChange={handleChange} onSave={handleSave} saving={saving} saved={saved} />}
-          {tab === 'faq'       && <FAQTab />}
-          {tab === 'cards'     && <CardTab />}
-          {tab === 'keywords'  && <KeywordTab />}
-          {tab === 'autoReply' && <AutoReplyTab profile={profile} onChange={handleChange} onSave={handleSave} saving={saving} saved={saved} />}
-          {tab === 'labels'    && <LabelTab />}
+          {tab === 'profile'    && <ProfileTab profile={profile} onChange={handleChange} onSave={handleSave} saving={saving} saved={saved} />}
+          {tab === 'faq'        && <FAQTab />}
+          {tab === 'orderItems' && <OrderItemsTab />}
+          {tab === 'cards'      && <CardTab />}
+          {tab === 'keywords'   && <KeywordTab />}
+          {tab === 'autoReply'  && <AutoReplyTab profile={profile} onChange={handleChange} onSave={handleSave} saving={saving} saved={saved} />}
+          {tab === 'labels'     && <LabelTab />}
         </div>
       </div>
     </div>

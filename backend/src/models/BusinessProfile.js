@@ -8,9 +8,10 @@ const BusinessProfileSchema = new mongoose.Schema({
   address: { type: String, default: '' },
   faq: { type: String, default: '' },
   toneNote: { type: String, default: '' },
-  autoReply: { type: Boolean, default: false },
+  autoReply:      { type: Boolean, default: false },
   autoReplyDelay: { type: Number, default: 60 },
-  updatedAt: { type: Date, default: Date.now }
+  adminLineUserId:{ type: String, default: '' }, // LINE user ID to receive order notifications
+  updatedAt:      { type: Date, default: Date.now }
 });
 
 module.exports = mongoose.model('BusinessProfile', BusinessProfileSchema);

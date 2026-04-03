@@ -9,6 +9,9 @@ const ProductCard = require('../models/ProductCard');
 const Label = require('../models/Label');
 const CustomerLabel = require('../models/CustomerLabel');
 const FAQ = require('../models/FAQ');
+const OrderItem = require('../models/OrderItem');
+const Order = require('../models/Order');
+const { pushOrderCard } = require('../services/lineService');
 const CustomerSetting = require('../models/CustomerSetting');
 const Message = require('../models/Message');
 const openaiService = require('../services/openaiService');
@@ -358,6 +361,84 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+// ─── Order Items (品項目錄) ───────────────────────────────────────────────────
+
+router.get('/order-items', async (req, res) => {
+  try { res.json(await OrderItem.find().sort({ order: 1, createdAt: 1 })); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/order-items', async (req, res) => {
+  try {
+    const { name, description, price, unit, order } = req.body;
+    if (!name || !price) return res.status(400).json({ error: 'name and price required' });
+    res.status(201).json(await OrderItem.create({ name, description, price, unit, order: order || 0 }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/order-items/:id', async (req, res) => {
+  try {
+    const { name, description, price, unit, isActive, order } = req.body;
+    const item = await OrderItem.findByIdAndUpdate(
+      req.params.id, { name, description, price, unit, isActive, order }, { new: true }
+    );
+    if (!item) return res.status(404).json({ error: 'not found' });
+    res.json(item);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/order-items/:id', async (req, res) => {
+  try {
+    await OrderItem.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/orders/send-card — send order card to a customer (MUST be before /orders/:id)
+router.post('/orders/send-card', async (req, res) => {
+  try {
+    const { lineUserId } = req.body;
+    if (!lineUserId) return res.status(400).json({ error: 'lineUserId required' });
+    const [items, bp] = await Promise.all([
+      OrderItem.find({ isActive: true }).sort({ order: 1 }).lean(),
+      BusinessProfile.findOne().lean()
+    ]);
+    if (items.length === 0) return res.status(400).json({ error: '尚未設定任何品項，請先至設定新增' });
+    await pushOrderCard(lineUserId, items, bp?.shopName || '');
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Orders (訂單管理) ────────────────────────────────────────────────────────
+
+router.get('/orders', async (req, res) => {
+  try {
+    const { status } = req.query;
+    const filter = status ? { status } : {};
+    res.json(await Order.find(filter).sort({ createdAt: -1 }).limit(200));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.patch('/orders/:id', async (req, res) => {
+  try {
+    const { status, note, items } = req.body;
+    const update = {};
+    if (status) update.status = status;
+    if (note !== undefined) update.note = note;
+    if (items) update.items = items;
+    const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!order) return res.status(404).json({ error: 'not found' });
+    res.json(order);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/orders/:id', async (req, res) => {
+  try {
+    await Order.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── FAQ ─────────────────────────────────────────────────────────────────────
 
 // GET /api/faqs
@@ -595,10 +676,10 @@ router.get('/settings', async (req, res) => {
 // PUT /api/settings
 router.put('/settings', async (req, res) => {
   try {
-    const { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay } = req.body;
+    const { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId } = req.body;
     const profile = await BusinessProfile.findOneAndUpdate(
       {},
-      { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, updatedAt: new Date() },
+      { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId, updatedAt: new Date() },
       { upsert: true, new: true }
     );
     res.json(profile);
