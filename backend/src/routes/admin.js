@@ -11,6 +11,7 @@ const CustomerLabel = require('../models/CustomerLabel');
 const FAQ = require('../models/FAQ');
 const OrderItem = require('../models/OrderItem');
 const Order = require('../models/Order');
+const CalendarEvent = require('../models/CalendarEvent');
 const { pushOrderCard } = require('../services/lineService');
 const CustomerSetting = require('../models/CustomerSetting');
 const Message = require('../models/Message');
@@ -18,6 +19,7 @@ const openaiService = require('../services/openaiService');
 const { summarizeConversation } = openaiService;
 const sseService = require('../services/sseService');
 const autoReplyService = require('../services/autoReplyService');
+const { buildScheduleContext, getUpcomingEvents } = require('../services/calendarService');
 
 const router = express.Router();
 
@@ -193,6 +195,8 @@ router.post('/conversations/:lineUserId/suggest', async (req, res) => {
 
     const combinedText = pendingMsgs.map(m => m.userMessage).join('\n---\n');
     const hasPurchaseIntent = pendingMsgs.some(m => m.intent === 'purchase');
+    const hasSchedulingIntent = pendingMsgs.some(m => m.intent === 'scheduling');
+    const effectiveIntent = hasPurchaseIntent ? 'purchase' : hasSchedulingIntent ? 'scheduling' : 'none';
 
     const [bp, faqs, setting] = await Promise.all([
       BusinessProfile.findOne().lean(),
@@ -200,10 +204,17 @@ router.post('/conversations/:lineUserId/suggest', async (req, res) => {
       CustomerSetting.findOne({ lineUserId }).lean()
     ]);
     const conversationSummary = setting?.conversationSummary || '';
+
+    let scheduleContext = '';
+    if (hasSchedulingIntent && bp?.appointmentReplyEnabled) {
+      const upcomingEvents = await getUpcomingEvents();
+      scheduleContext = buildScheduleContext(bp.workingHours, upcomingEvents);
+    }
+
     const aiReplies = await openaiService.generateReplies(
-      combinedText, bp, hasPurchaseIntent ? 'purchase' : 'none', faqs, conversationSummary
+      combinedText, bp, effectiveIntent, faqs, conversationSummary, scheduleContext
     );
-    res.json({ aiReplies, intent: hasPurchaseIntent ? 'purchase' : 'none' });
+    res.json({ aiReplies, intent: effectiveIntent });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -892,6 +903,81 @@ router.delete('/cards/:id', async (req, res) => {
     // Remove from cardIds arrays; if array becomes empty, reset to text type
     await Keyword.updateMany({ cardIds: req.params.id }, { $pull: { cardIds: req.params.id } });
     await Keyword.updateMany({ cardIds: { $size: 0 }, replyType: 'card' }, { $set: { replyType: 'text' } });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Calendar ─────────────────────────────────────────────────────────────────
+
+// GET /api/calendar/events?start=ISO&end=ISO
+router.get('/calendar/events', async (req, res) => {
+  try {
+    const { start, end } = req.query;
+    const filter = {};
+    if (start || end) {
+      filter.startDateTime = {};
+      if (start) filter.startDateTime.$gte = new Date(start);
+      if (end)   filter.startDateTime.$lte = new Date(end);
+    }
+    const events = await CalendarEvent.find(filter).sort({ startDateTime: 1 }).lean();
+    res.json(events);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/calendar/events
+router.post('/calendar/events', async (req, res) => {
+  try {
+    const { title, description, startDateTime, endDateTime, isAllDay, type, color, notifyLineUserId, notifyMinutesBefore } = req.body;
+    if (!title || !startDateTime || !endDateTime) return res.status(400).json({ error: '標題與時間為必填' });
+    const event = await CalendarEvent.create({
+      title, description, startDateTime, endDateTime, isAllDay, type, color, notifyLineUserId, notifyMinutesBefore
+    });
+    res.json(event);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/calendar/events/:id
+router.put('/calendar/events/:id', async (req, res) => {
+  try {
+    const { title, description, startDateTime, endDateTime, isAllDay, type, color, notifyLineUserId, notifyMinutesBefore } = req.body;
+    const event = await CalendarEvent.findByIdAndUpdate(
+      req.params.id,
+      { title, description, startDateTime, endDateTime, isAllDay, type, color, notifyLineUserId, notifyMinutesBefore, notified: false },
+      { new: true }
+    );
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+    res.json(event);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/calendar/events/:id
+router.delete('/calendar/events/:id', async (req, res) => {
+  try {
+    await CalendarEvent.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/calendar/working-hours  — returns full bp (workingHours + appointmentReplyEnabled)
+router.get('/calendar/working-hours', async (req, res) => {
+  try {
+    const bp = await BusinessProfile.findOne().lean();
+    res.json({
+      workingHours: bp?.workingHours || {},
+      appointmentReplyEnabled: bp?.appointmentReplyEnabled || false
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/calendar/working-hours
+router.put('/calendar/working-hours', async (req, res) => {
+  try {
+    const { workingHours, appointmentReplyEnabled } = req.body;
+    await BusinessProfile.findOneAndUpdate(
+      {},
+      { $set: { workingHours, appointmentReplyEnabled } },
+      { upsert: true }
+    );
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

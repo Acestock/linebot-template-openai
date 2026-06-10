@@ -6,6 +6,7 @@ import SendPanel from './components/SendPanel';
 import SettingsModal from './components/SettingsModal';
 import BroadcastModal from './components/BroadcastModal';
 import OrdersModal from './components/OrdersModal';
+import CalendarModal from './components/CalendarModal';
 import StickyNotes from './components/StickyNotes';
 import LoginScreen from './components/LoginScreen';
 import API_BASE, { authFetch } from './config';
@@ -36,6 +37,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [showOrders, setShowOrders] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
   const [newOrderCount, setNewOrderCount] = useState(0);
   const [labels, setLabels] = useState([]);
   const [customerLabels, setCustomerLabels] = useState({});
@@ -258,6 +260,7 @@ function App() {
           <button onClick={() => { setShowOrders(true); setNewOrderCount(0); }} style={{ position: 'relative', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 8px' }}>
             訂單{newOrderCount > 0 && <span style={{ position: 'absolute', top: '-4px', right: '-4px', backgroundColor: '#f44336', color: '#fff', borderRadius: '8px', fontSize: '10px', padding: '0 4px', minWidth: '14px', textAlign: 'center' }}>{newOrderCount}</span>}
           </button>
+          <button onClick={() => setShowCalendar(true)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 8px' }}>📅</button>
           <button onClick={() => setShowBroadcast(true)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 8px' }}>群發</button>
           <button onClick={() => setShowSettings(true)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '16px', cursor: 'pointer', padding: '4px 8px' }}>⚙</button>
         </div>
@@ -265,6 +268,7 @@ function App() {
         {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
         {showBroadcast && <BroadcastModal onClose={() => setShowBroadcast(false)} />}
         {showOrders && <OrdersModal onClose={() => setShowOrders(false)} />}
+        {showCalendar && <CalendarModal onClose={() => setShowCalendar(false)} />}
 
         {/* Mobile Content */}
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -306,6 +310,8 @@ function App() {
             style={{ position: 'relative', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }}>
             訂單{newOrderCount > 0 && <span style={{ position: 'absolute', top: '-6px', right: '-6px', backgroundColor: '#f44336', color: '#fff', borderRadius: '8px', fontSize: '10px', padding: '0 4px', minWidth: '14px', textAlign: 'center' }}>{newOrderCount}</span>}
           </button>
+          <button onClick={() => setShowCalendar(true)} title="行事曆"
+            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }}>📅 行事曆</button>
           <button onClick={() => setShowBroadcast(true)} title="群發訊息"
             style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }}>群發</button>
           <button onClick={() => setShowSettings(true)} title="系統設定"
@@ -318,6 +324,7 @@ function App() {
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {showBroadcast && <BroadcastModal onClose={() => setShowBroadcast(false)} />}
       {showOrders && <OrdersModal onClose={() => setShowOrders(false)} />}
+      {showCalendar && <CalendarModal onClose={() => setShowCalendar(false)} />}
 
       {/* Main layout */}
       <div style={{ display: 'flex', marginTop: '48px', width: '100%' }}>

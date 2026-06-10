@@ -11,6 +11,7 @@ const adminRouter = require('./routes/admin');
 const { authMiddleware, createToken } = require('./middleware/auth');
 const dbService = require('./services/dbService');
 const sheetService = require('./services/sheetService');
+const { startNotifyJob } = require('./services/calendarService');
 
 if (!process.env.ADMIN_PASSWORD) {
   console.warn('[Auth] WARNING: ADMIN_PASSWORD is not set. Please set it in environment variables.');
@@ -95,6 +96,9 @@ cron.schedule('0 2 * * *', async () => {
     console.error('[Cron] Sync failed:', err.message);
   }
 }, { timezone: 'Asia/Taipei' });
+
+// Start calendar event LINE notification cron job (every minute)
+startNotifyJob();
 
 app.listen(PORT, () => {
   console.log(`[Server] Backend running on port ${PORT}`);

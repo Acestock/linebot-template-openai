@@ -1,7 +1,9 @@
 const Message = require('../models/Message');
 const BusinessProfile = require('../models/BusinessProfile');
 const FAQ = require('../models/FAQ');
+const CalendarEvent = require('../models/CalendarEvent');
 const { generateReplies } = require('./openaiService');
+const { buildScheduleContext, getUpcomingEvents } = require('./calendarService');
 const { pushMessage } = require('./lineService');
 const sseService = require('./sseService');
 
@@ -37,6 +39,13 @@ async function execute(lineUserId) {
     if (!bp || !bp.autoReply) return;
     const conversationSummary = setting?.conversationSummary || '';
 
+    // Build schedule context if appointment reply is enabled
+    let scheduleContext = '';
+    if (bp.appointmentReplyEnabled) {
+      const upcomingEvents = await getUpcomingEvents();
+      scheduleContext = buildScheduleContext(bp.workingHours, upcomingEvents);
+    }
+
     // Check still has pending messages (admin may have already replied)
     const pendingMsgs = await Message.find({ lineUserId, status: 'pending' })
       .sort({ createdAt: 1 })
@@ -46,7 +55,11 @@ async function execute(lineUserId) {
     // Join messages with a neutral separator — no [訊息N] tags that AI might echo back
     const combinedText = pendingMsgs.map(m => m.userMessage).join('\n---\n');
 
-    const replies = await generateReplies(combinedText, bp, 'none', faqs, conversationSummary);
+    // Detect scheduling intent from any pending message
+    const hasSchedulingIntent = pendingMsgs.some(m => m.intent === 'scheduling');
+    const effectiveIntent = hasSchedulingIntent ? 'scheduling' : 'none';
+
+    const replies = await generateReplies(combinedText, bp, effectiveIntent, faqs, conversationSummary, scheduleContext);
     // Use the 親切 (friendly) version as auto-reply
     const replyText = (replies[1] && replies[1].trim()) ? replies[1] : (replies[0] || '');
     if (!replyText) {
