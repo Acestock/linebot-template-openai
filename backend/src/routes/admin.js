@@ -866,13 +866,21 @@ router.get('/cards', async (req, res) => {
 router.post('/cards', async (req, res) => {
   try {
     const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
-            headerBgColor, titleColor, subtitleColor, buttonColor, isActive } = req.body;
+            headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
+            template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
+            titleAlign, subtitleAlign, priceAlign, showDivider, isActive } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required' });
     const card = await ProductCard.create({
       title, subtitle: subtitle || '', imageUrl: imageUrl || '',
       priceItems: priceItems || [], buttonText: buttonText || '', buttonUrl: buttonUrl || '',
       headerBgColor: headerBgColor || '#ffffff', titleColor: titleColor || '#111111',
       subtitleColor: subtitleColor || '#888888', buttonColor: buttonColor || '#00B900',
+      bodyBgColor: bodyBgColor || '#ffffff',
+      template: template || 'classic',
+      titleFontSize: titleFontSize || 'xl', subtitleFontSize: subtitleFontSize || 'sm',
+      priceNameFontSize: priceNameFontSize || 'sm', priceFontSize: priceFontSize || 'sm',
+      titleAlign: titleAlign || 'center', subtitleAlign: subtitleAlign || 'center',
+      priceAlign: priceAlign || 'start', showDivider: showDivider !== false,
       isActive: isActive !== false
     });
     res.status(201).json(card);
@@ -883,12 +891,16 @@ router.post('/cards', async (req, res) => {
 router.put('/cards/:id', async (req, res) => {
   try {
     const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
-            headerBgColor, titleColor, subtitleColor, buttonColor, isActive } = req.body;
+            headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
+            template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
+            titleAlign, subtitleAlign, priceAlign, showDivider, isActive } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required' });
     const card = await ProductCard.findByIdAndUpdate(
       req.params.id,
       { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
-        headerBgColor, titleColor, subtitleColor, buttonColor, isActive },
+        headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
+        template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
+        titleAlign, subtitleAlign, priceAlign, showDivider, isActive },
       { new: true }
     );
     if (!card) return res.status(404).json({ error: 'Card not found' });

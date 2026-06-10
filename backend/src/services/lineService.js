@@ -27,46 +27,63 @@ async function pushMessage(lineUserId, text) {
 
 // Build LINE Flex Message bubble from a ProductCard document
 function buildFlexBubble(card) {
-  const headerBgColor = card.headerBgColor || '#ffffff';
-  const titleColor    = card.titleColor    || '#111111';
-  const subtitleColor = card.subtitleColor || '#888888';
-  const buttonColor   = card.buttonColor   || '#00B900';
+  const headerBgColor    = card.headerBgColor    || '#ffffff';
+  const titleColor       = card.titleColor       || '#111111';
+  const subtitleColor    = card.subtitleColor    || '#888888';
+  const buttonColor      = card.buttonColor      || '#00B900';
+  const bodyBgColor      = card.bodyBgColor      || '#ffffff';
+  const titleFontSize    = card.titleFontSize    || 'xl';
+  const subtitleFontSize = card.subtitleFontSize || 'sm';
+  const priceNameSize    = card.priceNameFontSize || 'sm';
+  const priceSize        = card.priceFontSize    || 'sm';
+  const titleAlign       = card.titleAlign       || 'center';
+  const subtitleAlign    = card.subtitleAlign    || 'center';
+  const priceAlign       = card.priceAlign       || 'start';
+  const showDivider      = card.showDivider !== false;
 
-  // Header section: title + subtitle with custom background
+  // Header section: title + subtitle
   const headerContents = [
-    { type: 'text', text: card.title, weight: 'bold', size: 'xl', wrap: true, color: titleColor }
+    { type: 'text', text: card.title, weight: 'bold', size: titleFontSize, wrap: true, color: titleColor, align: titleAlign }
   ];
   if (card.subtitle) {
     headerContents.push({
       type: 'text', text: card.subtitle,
-      size: 'sm', wrap: true, margin: 'sm', color: subtitleColor
+      size: subtitleFontSize, wrap: true, margin: 'sm', color: subtitleColor, align: subtitleAlign
     });
   }
 
-  // Body section: price items only
+  // Body section: optional divider + price items
   const bodyContents = [];
   if (card.priceItems && card.priceItems.length > 0) {
-    bodyContents.push({
-      type: 'box', layout: 'vertical', spacing: 'sm',
-      contents: card.priceItems.map(item => ({
-        type: 'box', layout: 'horizontal',
-        contents: [
-          { type: 'text', text: item.name,  color: '#555555', size: 'sm', flex: 3, wrap: true },
-          { type: 'text', text: item.price, color: '#111111', size: 'sm', flex: 2, align: 'end' }
-        ]
-      }))
-    });
+    if (showDivider) bodyContents.push({ type: 'separator', margin: 'none' });
+
+    const priceRows = priceAlign === 'center'
+      ? card.priceItems.map(item => ({
+          type: 'box', layout: 'vertical', alignItems: 'center', margin: 'sm',
+          contents: [
+            { type: 'text', text: item.name,  color: '#555555', size: priceNameSize, align: 'center', wrap: true },
+            { type: 'text', text: item.price, color: '#111111', size: priceSize, align: 'center', weight: 'bold', margin: 'xs' }
+          ]
+        }))
+      : card.priceItems.map(item => ({
+          type: 'box', layout: 'horizontal',
+          contents: [
+            { type: 'text', text: item.name,  color: '#555555', size: priceNameSize, flex: 3, wrap: true },
+            { type: 'text', text: item.price, color: '#111111', size: priceSize,     flex: 2, align: 'end', weight: 'bold' }
+          ]
+        }));
+
+    bodyContents.push({ type: 'box', layout: 'vertical', spacing: 'sm', contents: priceRows });
   }
 
   const bubble = {
     type: 'bubble',
     styles: {
       header: { backgroundColor: headerBgColor },
-      body:   { backgroundColor: '#ffffff' }
+      body:   { backgroundColor: bodyBgColor }
     },
     header: {
-      type: 'box', layout: 'vertical',
-      paddingAll: '16px',
+      type: 'box', layout: 'vertical', paddingAll: '16px',
       contents: headerContents
     }
   };
@@ -79,7 +96,7 @@ function buildFlexBubble(card) {
   }
 
   if (bodyContents.length > 0) {
-    bubble.body = { type: 'box', layout: 'vertical', contents: bodyContents };
+    bubble.body = { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '14px', contents: bodyContents };
   }
 
   if (card.buttonUrl && card.buttonText) {

@@ -263,50 +263,98 @@ function KeywordTab() {
 }
 
 // ─── LINE Flex Message 預覽元件 ───────────────────────────────────────────────
+// Font size px mapping for preview (LINE sizes → CSS px)
+const SIZE_PX = { xs: 10, sm: 11, md: 12, lg: 13, xl: 15, xxl: 18 };
+const ALIGN_CSS = { start: 'left', center: 'center', end: 'right' };
+
+// 5 built-in card templates
+const CARD_TEMPLATES = {
+  classic: {
+    name: '經典', desc: '白底居中',
+    headerBgColor: '#ffffff', titleColor: '#111111', subtitleColor: '#888888', buttonColor: '#00B900', bodyBgColor: '#ffffff',
+    titleFontSize: 'xl', subtitleFontSize: 'sm', priceNameFontSize: 'sm', priceFontSize: 'sm',
+    titleAlign: 'center', subtitleAlign: 'center', priceAlign: 'start', showDivider: true
+  },
+  minimal: {
+    name: '極簡', desc: '灰底靠左',
+    headerBgColor: '#f5f5f5', titleColor: '#222222', subtitleColor: '#777777', buttonColor: '#424242', bodyBgColor: '#ffffff',
+    titleFontSize: 'lg', subtitleFontSize: 'xs', priceNameFontSize: 'sm', priceFontSize: 'sm',
+    titleAlign: 'start', subtitleAlign: 'start', priceAlign: 'start', showDivider: false
+  },
+  bold: {
+    name: '粗體', desc: '深色大字',
+    headerBgColor: '#1a237e', titleColor: '#ffffff', subtitleColor: '#9fa8da', buttonColor: '#3949ab', bodyBgColor: '#ffffff',
+    titleFontSize: 'xxl', subtitleFontSize: 'md', priceNameFontSize: 'sm', priceFontSize: 'lg',
+    titleAlign: 'center', subtitleAlign: 'center', priceAlign: 'center', showDivider: true
+  },
+  priceFocus: {
+    name: '價格焦點', desc: '大字顯價格',
+    headerBgColor: '#fff8e1', titleColor: '#e65100', subtitleColor: '#999999', buttonColor: '#f57c00', bodyBgColor: '#ffffff',
+    titleFontSize: 'lg', subtitleFontSize: 'xs', priceNameFontSize: 'xs', priceFontSize: 'xxl',
+    titleAlign: 'center', subtitleAlign: 'center', priceAlign: 'center', showDivider: false
+  },
+  elegant: {
+    name: '優雅', desc: '紫色精緻風',
+    headerBgColor: '#f3e5f5', titleColor: '#4a148c', subtitleColor: '#7b1fa2', buttonColor: '#7b1fa2', bodyBgColor: '#fdf6ff',
+    titleFontSize: 'xl', subtitleFontSize: 'sm', priceNameFontSize: 'sm', priceFontSize: 'md',
+    titleAlign: 'start', subtitleAlign: 'start', priceAlign: 'start', showDivider: true
+  }
+};
+
 function LineCardPreview({ card }) {
   const hasPrices = card.priceItems && card.priceItems.length > 0;
   const hasButton = card.buttonText && card.buttonUrl;
   const headerBg  = card.headerBgColor || '#ffffff';
+  const bodyBg    = card.bodyBgColor   || '#ffffff';
   const titleCol  = card.titleColor    || '#111111';
   const subCol    = card.subtitleColor || '#888888';
   const btnCol    = card.buttonColor   || '#00B900';
+  const titlePx   = SIZE_PX[card.titleFontSize    || 'xl']  || 15;
+  const subPx     = SIZE_PX[card.subtitleFontSize  || 'sm']  || 11;
+  const priceNPx  = SIZE_PX[card.priceNameFontSize || 'sm']  || 11;
+  const pricePx   = SIZE_PX[card.priceFontSize     || 'sm']  || 11;
+  const titleAl   = ALIGN_CSS[card.titleAlign    || 'center'];
+  const subAl     = ALIGN_CSS[card.subtitleAlign || 'center'];
+  const priceAl   = card.priceAlign || 'start';
+  const divider   = card.showDivider !== false;
 
   return (
     <div style={{ width: '220px', borderRadius: '14px', overflow: 'hidden',
       boxShadow: '0 4px 18px rgba(0,0,0,0.18)', background: '#fff', flexShrink: 0 }}>
-      {/* Hero image */}
       {card.imageUrl && (
         <div style={{ width: '100%', paddingTop: '65%', position: 'relative', background: '#e8ecf0' }}>
           <img src={card.imageUrl} alt="" onError={e => { e.target.style.display='none'; }}
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
       )}
-      {/* Header: title + subtitle with custom background */}
       <div style={{ padding: '14px 14px 12px', background: headerBg }}>
-        <div style={{ fontWeight: '700', fontSize: '16px', color: titleCol, lineHeight: '1.3', wordBreak: 'break-word' }}>
+        <div style={{ fontWeight: '700', fontSize: titlePx, color: titleCol, lineHeight: '1.3', wordBreak: 'break-word', textAlign: titleAl }}>
           {card.title || <span style={{ opacity: 0.3 }}>卡片標題</span>}
         </div>
         {card.subtitle && (
-          <div style={{ fontSize: '12px', color: subCol, marginTop: '5px', lineHeight: '1.4', wordBreak: 'break-word' }}>{card.subtitle}</div>
+          <div style={{ fontSize: subPx, color: subCol, marginTop: '5px', lineHeight: '1.4', wordBreak: 'break-word', textAlign: subAl }}>{card.subtitle}</div>
         )}
       </div>
-      {/* Body: price items */}
       {hasPrices && (
-        <div style={{ padding: '10px 14px', background: '#fff' }}>
-          <div style={{ borderTop: '1px solid #f0f0f0', marginBottom: '8px' }} />
+        <div style={{ padding: '10px 14px', background: bodyBg }}>
+          {divider && <div style={{ borderTop: '1px solid #f0f0f0', marginBottom: '8px' }} />}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
             {card.priceItems.map((item, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
-                <span style={{ fontSize: '12px', color: '#555', flex: 1, wordBreak: 'break-word' }}>{item.name}</span>
-                <span style={{ fontSize: '12px', fontWeight: '700', color: '#111', flexShrink: 0 }}>{item.price}</span>
-              </div>
+              priceAl === 'center'
+                ? <div key={i} style={{ textAlign: 'center', padding: '2px 0' }}>
+                    <div style={{ fontSize: priceNPx, color: '#555' }}>{item.name}</div>
+                    <div style={{ fontSize: pricePx, fontWeight: '700', color: '#111' }}>{item.price}</div>
+                  </div>
+                : <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
+                    <span style={{ fontSize: priceNPx, color: '#555', flex: 1, wordBreak: 'break-word' }}>{item.name}</span>
+                    <span style={{ fontSize: pricePx, fontWeight: '700', color: '#111', flexShrink: 0 }}>{item.price}</span>
+                  </div>
             ))}
           </div>
         </div>
       )}
-      {/* Footer: button */}
       {hasButton && (
-        <div style={{ padding: hasPrices ? '0 10px 10px' : '0 10px 10px', background: '#fff' }}>
+        <div style={{ padding: '0 10px 10px', background: bodyBg }}>
           {!hasPrices && <div style={{ height: '4px' }} />}
           <div style={{ background: btnCol, color: '#fff', textAlign: 'center',
             padding: '9px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', letterSpacing: '0.3px' }}>
@@ -323,8 +371,15 @@ function CardTab() {
   const [cards, setCards] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const EMPTY_FORM = { title: '', subtitle: '', imageUrl: '', priceItems: [], buttonText: '', buttonUrl: '',
-    headerBgColor: '#ffffff', titleColor: '#111111', subtitleColor: '#888888', buttonColor: '#00B900', isActive: true };
+  const EMPTY_FORM = {
+    title: '', subtitle: '', imageUrl: '', priceItems: [], buttonText: '', buttonUrl: '',
+    headerBgColor: '#ffffff', titleColor: '#111111', subtitleColor: '#888888',
+    buttonColor: '#00B900', bodyBgColor: '#ffffff',
+    template: 'classic',
+    titleFontSize: 'xl', subtitleFontSize: 'sm', priceNameFontSize: 'sm', priceFontSize: 'sm',
+    titleAlign: 'center', subtitleAlign: 'center', priceAlign: 'start',
+    showDivider: true, isActive: true
+  };
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [priceInput, setPriceInput] = useState({ name: '', price: '' });
@@ -348,10 +403,30 @@ function CardTab() {
       priceItems: card.priceItems || [], buttonText: card.buttonText || '', buttonUrl: card.buttonUrl || '',
       headerBgColor: card.headerBgColor || '#ffffff', titleColor: card.titleColor || '#111111',
       subtitleColor: card.subtitleColor || '#888888', buttonColor: card.buttonColor || '#00B900',
+      bodyBgColor: card.bodyBgColor || '#ffffff',
+      template: card.template || 'classic',
+      titleFontSize: card.titleFontSize || 'xl', subtitleFontSize: card.subtitleFontSize || 'sm',
+      priceNameFontSize: card.priceNameFontSize || 'sm', priceFontSize: card.priceFontSize || 'sm',
+      titleAlign: card.titleAlign || 'center', subtitleAlign: card.subtitleAlign || 'center',
+      priceAlign: card.priceAlign || 'start', showDivider: card.showDivider !== false,
       isActive: card.isActive
     });
     setPriceInput({ name: '', price: '' });
     setShowForm(true);
+  }
+
+  function applyTemplate(key) {
+    const t = CARD_TEMPLATES[key];
+    if (!t) return;
+    setForm(p => ({
+      ...p, template: key,
+      headerBgColor: t.headerBgColor, titleColor: t.titleColor,
+      subtitleColor: t.subtitleColor, buttonColor: t.buttonColor, bodyBgColor: t.bodyBgColor,
+      titleFontSize: t.titleFontSize, subtitleFontSize: t.subtitleFontSize,
+      priceNameFontSize: t.priceNameFontSize, priceFontSize: t.priceFontSize,
+      titleAlign: t.titleAlign, subtitleAlign: t.subtitleAlign,
+      priceAlign: t.priceAlign, showDivider: t.showDivider
+    }));
   }
 
   function addPriceItem() {
@@ -443,24 +518,89 @@ function CardTab() {
             </div>
           </div>
 
+          {/* Template selector */}
+          <div style={{ background: '#f7f9fc', borderRadius: '10px', padding: '12px 14px', marginBottom: '12px' }}>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#555', marginBottom: '10px' }}>🎨 排版範本（點擊套用）</div>
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+              {Object.entries(CARD_TEMPLATES).map(([key, t]) => (
+                <div key={key} onClick={() => applyTemplate(key)}
+                  style={{ flexShrink: 0, width: '80px', borderRadius: '8px', overflow: 'hidden', cursor: 'pointer',
+                    border: form.template === key ? '2px solid #2196F3' : '2px solid #e0e0e0',
+                    boxShadow: form.template === key ? '0 0 0 2px #bbdefb' : 'none', transition: '0.15s' }}>
+                  <div style={{ background: t.headerBgColor, padding: '7px 6px' }}>
+                    <div style={{ fontSize: `${SIZE_PX[t.titleFontSize] - 2}px`, fontWeight: '700', color: t.titleColor, textAlign: ALIGN_CSS[t.titleAlign], whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>標題</div>
+                    <div style={{ fontSize: '9px', color: t.subtitleColor, textAlign: ALIGN_CSS[t.subtitleAlign] }}>副標題</div>
+                  </div>
+                  <div style={{ background: t.bodyBgColor, padding: '4px 6px' }}>
+                    <div style={{ fontSize: `${SIZE_PX[t.priceFontSize]}px`, color: '#333', textAlign: ALIGN_CSS[t.priceAlign], fontWeight: '600' }}>$100</div>
+                  </div>
+                  <div style={{ background: t.buttonColor, padding: '3px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '9px', color: '#fff' }}>按鈕</div>
+                  </div>
+                  <div style={{ padding: '3px', textAlign: 'center', background: form.template === key ? '#e3f2fd' : '#f5f5f5' }}>
+                    <span style={{ fontSize: '10px', color: form.template === key ? '#1565C0' : '#888', fontWeight: form.template === key ? '700' : '400' }}>{t.name}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Color customization */}
-          <div style={{ background: '#f7f9fc', borderRadius: '10px', padding: '12px 14px', marginBottom: '4px' }}>
-            <div style={{ fontSize: '12px', fontWeight: '700', color: '#555', marginBottom: '10px', letterSpacing: '0.3px' }}>🎨 配色設定</div>
+          <div style={{ background: '#f7f9fc', borderRadius: '10px', padding: '12px 14px', marginBottom: '12px' }}>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#555', marginBottom: '10px', letterSpacing: '0.3px' }}>🖌 配色設定</div>
             {[
               { key: 'headerBgColor', label: '標題區背景色' },
               { key: 'titleColor',    label: '標題文字色' },
               { key: 'subtitleColor', label: '副標題文字色' },
               { key: 'buttonColor',   label: '按鈕顏色' },
+              { key: 'bodyBgColor',   label: '內容區背景色' },
             ].map(({ key, label }) => (
               <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
                 <span style={{ fontSize: '12px', color: '#666', width: '90px', flexShrink: 0 }}>{label}</span>
-                <input type="color" value={form[key]}
-                  onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
+                <input type="color" value={form[key] || '#ffffff'}
+                  onChange={e => setForm(p => ({ ...p, [key]: e.target.value, template: 'custom' }))}
                   style={{ width: '32px', height: '32px', padding: '2px', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }} />
                 <span style={{ fontSize: '12px', color: '#999', fontFamily: 'monospace' }}>{form[key]}</span>
                 <div style={{ flex: 1, height: '24px', borderRadius: '6px', background: form[key], border: '1px solid #e0e0e0' }} />
               </div>
             ))}
+          </div>
+
+          {/* Typography & layout */}
+          <div style={{ background: '#f7f9fc', borderRadius: '10px', padding: '12px 14px', marginBottom: '4px' }}>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#555', marginBottom: '10px' }}>✏️ 文字大小 &amp; 對齊</div>
+            {[
+              { label: '標題', sizeKey: 'titleFontSize', alignKey: 'titleAlign' },
+              { label: '副標題', sizeKey: 'subtitleFontSize', alignKey: 'subtitleAlign' },
+              { label: '價格名稱', sizeKey: 'priceNameFontSize', alignKey: null },
+              { label: '價格數字', sizeKey: 'priceFontSize', alignKey: 'priceAlign' },
+            ].map(({ label, sizeKey, alignKey }) => (
+              <div key={sizeKey} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '12px', color: '#666', width: '58px', flexShrink: 0 }}>{label}</span>
+                <select value={form[sizeKey]} onChange={e => setForm(p => ({ ...p, [sizeKey]: e.target.value, template: 'custom' }))}
+                  style={{ padding: '4px 6px', borderRadius: '5px', border: '1px solid #e0e0e0', fontSize: '12px', background: '#fff' }}>
+                  {['xs','sm','md','lg','xl','xxl'].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                {alignKey && (
+                  <div style={{ display: 'flex', gap: '2px' }}>
+                    {[['start','◀'], ['center','■'], ['end','▶']].map(([val, icon]) => (
+                      <button key={val} onClick={() => setForm(p => ({ ...p, [alignKey]: val, template: 'custom' }))}
+                        style={{ padding: '3px 7px', borderRadius: '4px', border: '1px solid #e0e0e0', fontSize: '11px', cursor: 'pointer', background: form[alignKey] === val ? '#2196F3' : '#fff', color: form[alignKey] === val ? '#fff' : '#666' }}>
+                        {icon}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+              <span style={{ fontSize: '12px', color: '#666', width: '58px', flexShrink: 0 }}>分隔線</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px' }}>
+                <input type="checkbox" checked={!!form.showDivider}
+                  onChange={e => setForm(p => ({ ...p, showDivider: e.target.checked, template: 'custom' }))} />
+                顯示標題與品項間的分隔線
+              </label>
+            </div>
           </div>
         </div>
 
