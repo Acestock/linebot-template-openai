@@ -130,7 +130,15 @@ export default function RichMenuModal({ onClose }) {
     try {
       const res = await authFetch(`${API_BASE}/api/rich-menu/${id}/set-default`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `設定失敗 (HTTP ${res.status})`);
+      if (!res.ok) {
+        const msg = data.error || '';
+        if (msg.includes('must upload richmenu image') || msg.includes('image')) {
+          alert('⚠️ 請先上傳背景圖片，才能設為預設。\n\n步驟：在下方貼上圖片網址 → 點「上傳圖片」→ 再點「設為預設」');
+        } else {
+          alert('設定失敗：' + (msg || `HTTP ${res.status}`));
+        }
+        return;
+      }
       alert('✅ 已設為預設圖文選單');
       loadMenus();
     } catch (err) { alert('設定失敗：' + err.message); }
@@ -393,52 +401,61 @@ export default function RichMenuModal({ onClose }) {
 
               {menus.map(menu => (
                 <div key={menu.richMenuId} style={{ border: '1px solid #e8edf2', borderRadius: '10px', padding: '14px', marginBottom: '10px', backgroundColor: '#fafbfc' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                  {/* Menu info + delete */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
                     <div>
                       <div style={{ fontWeight: '700', fontSize: '14px', color: '#333' }}>{menu.name || '未命名選單'}</div>
                       <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>
-                        ID: <code style={{ backgroundColor: '#f0f0f0', padding: '1px 4px', borderRadius: '3px' }}>{menu.richMenuId}</code>
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>
                         {menu.size?.width}×{menu.size?.height}px · {(menu.areas || []).length} 個按鈕 · 列文字：{menu.chatBarText}
                       </div>
+                      <div style={{ fontSize: '11px', color: '#bbb', marginTop: '2px', fontFamily: 'monospace' }}>{menu.richMenuId}</div>
                     </div>
-                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                      <button onClick={() => handleSetDefault(menu.richMenuId)}
-                        style={{ padding: '5px 10px', borderRadius: '6px', border: 'none', background: '#00B900', color: '#fff', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}>
-                        設為預設
-                      </button>
-                      <button onClick={() => handleDelete(menu.richMenuId)}
-                        style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #ffcdd2', background: '#fff', color: '#f44336', fontSize: '12px', cursor: 'pointer' }}>
-                        刪除
+                    <button onClick={() => handleDelete(menu.richMenuId)}
+                      style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #ffcdd2', background: '#fff', color: '#f44336', fontSize: '12px', cursor: 'pointer', flexShrink: 0 }}>
+                      刪除
+                    </button>
+                  </div>
+
+                  {/* Step 1: upload image */}
+                  <div style={{ backgroundColor: '#fff', border: '1px solid #e3f2fd', borderRadius: '8px', padding: '10px 12px', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#1565c0', marginBottom: '6px' }}>① 上傳背景圖片（必須先完成）</div>
+                    <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>
+                      圖片需為 HTTPS 公開網址，尺寸：{menu.size?.width}×{menu.size?.height}px，格式：JPG 或 PNG，大小 ≤ 1MB
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <input
+                        value={imageUrl}
+                        onChange={e => setImageUrl(e.target.value)}
+                        placeholder="https://example.com/richmenu.jpg"
+                        style={{ flex: 1, padding: '7px 9px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '12px' }}
+                      />
+                      <button
+                        onClick={() => handleUploadImage(menu.richMenuId)}
+                        disabled={uploadingImg === menu.richMenuId}
+                        style={{ padding: '7px 14px', borderRadius: '6px', border: 'none', background: '#2196F3', color: '#fff', fontSize: '12px', cursor: uploadingImg === menu.richMenuId ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0, fontWeight: 'bold' }}>
+                        {uploadingImg === menu.richMenuId ? '上傳中...' : '上傳圖片'}
                       </button>
                     </div>
                   </div>
 
-                  {/* Image upload row */}
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #eee' }}>
-                    <input
-                      value={uploadingImg === menu.richMenuId ? imageUrl : imageUrl}
-                      onChange={e => setImageUrl(e.target.value)}
-                      placeholder="貼上圖片網址以上傳背景圖（須為 HTTPS 公開圖片）"
-                      style={{ flex: 1, padding: '6px 9px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '12px' }}
-                    />
-                    <button
-                      onClick={() => handleUploadImage(menu.richMenuId)}
-                      disabled={uploadingImg === menu.richMenuId}
-                      style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', background: '#2196F3', color: '#fff', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      {uploadingImg === menu.richMenuId ? '上傳中...' : '上傳圖片'}
+                  {/* Step 2: set default */}
+                  <div style={{ backgroundColor: '#f1f8e9', border: '1px solid #c5e1a5', borderRadius: '8px', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '12px', color: '#558b2f', fontWeight: '700' }}>② 圖片上傳完成後，設為預設選單</span>
+                    <button onClick={() => handleSetDefault(menu.richMenuId)}
+                      style={{ padding: '7px 16px', borderRadius: '6px', border: 'none', background: '#00B900', color: '#fff', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold', flexShrink: 0 }}>
+                      設為預設
                     </button>
                   </div>
                 </div>
               ))}
 
-              <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#fff8e1', borderRadius: '8px', fontSize: '12px', color: '#795548', lineHeight: 1.6 }}>
-                <strong>💡 使用說明：</strong><br />
-                1. 在「建立選單」分頁設定按鈕後，系統會在 LINE 建立選單結構<br />
-                2. 在此頁面上傳背景圖片（建議用 Canva 設計，尺寸依版型）<br />
-                3. 點「設為預設」後，所有用戶開啟聊天視窗即可看到選單<br />
-                4. 最多可建立 10 個選單，但同時只能有 1 個預設
+              <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#fff8e1', borderRadius: '8px', fontSize: '12px', color: '#795548', lineHeight: 1.7 }}>
+                <strong>💡 操作流程（順序不能顛倒）：</strong><br />
+                ① 在「建立選單」分頁設定版型與按鈕動作<br />
+                ② 上傳背景圖片（建議用 Canva 設計，尺寸依版型規格）<br />
+                ③ 點「設為預設」→ 所有用戶開啟聊天視窗即看到選單<br /><br />
+                <strong>⚠️ LINE 規定：</strong>未上傳圖片的選單無法設為預設<br />
+                最多建立 10 個選單，同時只能有 1 個預設
               </div>
             </div>
           )}
