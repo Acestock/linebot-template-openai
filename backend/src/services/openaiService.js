@@ -1,6 +1,26 @@
 const OpenAI = require('openai');
+const AIUsageLog = require('../models/AIUsageLog');
 
 const FALLBACK_REPLIES = ['', '', ''];
+
+// GPT pricing per 1M tokens (USD): input / output
+const PRICING = {
+  'gpt-4o':      { input: 2.50,  output: 10.00 },
+  'gpt-4o-mini': { input: 0.15,  output:  0.60 },
+};
+
+function logUsage(type, model, usage) {
+  if (!usage) return;
+  const p = PRICING[model] || PRICING['gpt-4o'];
+  const cost = ((usage.prompt_tokens || 0) * p.input + (usage.completion_tokens || 0) * p.output) / 1_000_000;
+  AIUsageLog.create({
+    type, model,
+    promptTokens:     usage.prompt_tokens     || 0,
+    completionTokens: usage.completion_tokens || 0,
+    totalTokens:      usage.total_tokens      || 0,
+    estimatedCostUSD: cost
+  }).catch(() => {});
+}
 
 function buildBasePrompt(bp, faqs = []) {
   if (!bp || !bp.shopName) {
@@ -39,17 +59,18 @@ ${existingSummary ? `\n現有摘要（請在此基礎上更新）：\n${existing
 
   try {
     const response = await client.chat.completions.create({
-      model: 'gpt-4o-mini', // 用較便宜的模型做摘要
+      model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `客戶名稱：${displayName}\n\n對話記錄：\n${transcript}` }
       ],
       max_tokens: 200
     });
+    logUsage('summarize', 'gpt-4o-mini', response.usage);
     return response.choices[0].message.content.trim();
   } catch (err) {
     console.error('[OpenAI] Summary error:', err.message);
-    return existingSummary; // 失敗時保留舊摘要
+    return existingSummary;
   }
 }
 
@@ -84,6 +105,7 @@ async function generateReplies(userMessage, businessProfile, intent = 'none', fa
       ],
       response_format: { type: 'json_object' }
     });
+    logUsage('generate', 'gpt-4o', response.usage);
     const parsed = JSON.parse(response.choices[0].message.content);
     if (Array.isArray(parsed.replies) && parsed.replies.length === 3) return parsed.replies;
     return FALLBACK_REPLIES;
@@ -153,6 +175,7 @@ ${keywordSection}
       ],
       response_format: { type: 'json_object' }
     });
+    logUsage('analyze', 'gpt-4o', response.usage);
     const parsed = JSON.parse(response.choices[0].message.content);
     return {
       replies: Array.isArray(parsed.replies) && parsed.replies.length === 3

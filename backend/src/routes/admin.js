@@ -1,6 +1,11 @@
 const express = require('express');
 const dbService = require('../services/dbService');
-const { pushMessage } = require('../services/lineService');
+const {
+  pushMessage, pushOrderCard,
+  getRichMenuTemplates, createRichMenu, listRichMenus,
+  deleteRichMenuById, setDefaultRichMenuById, cancelDefaultRichMenuAll,
+  uploadRichMenuImageFromUrl
+} = require('../services/lineService');
 const sheetService = require('../services/sheetService');
 const BusinessProfile = require('../models/BusinessProfile');
 const Template = require('../models/Template');
@@ -12,9 +17,9 @@ const FAQ = require('../models/FAQ');
 const OrderItem = require('../models/OrderItem');
 const Order = require('../models/Order');
 const CalendarEvent = require('../models/CalendarEvent');
-const { pushOrderCard } = require('../services/lineService');
 const CustomerSetting = require('../models/CustomerSetting');
 const Message = require('../models/Message');
+const AIUsageLog = require('../models/AIUsageLog');
 const openaiService = require('../services/openaiService');
 const { summarizeConversation } = openaiService;
 const sseService = require('../services/sseService');
@@ -990,6 +995,105 @@ router.put('/calendar/working-hours', async (req, res) => {
       { $set: { workingHours, appointmentReplyEnabled } },
       { upsert: true }
     );
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── AI Usage Stats ──────────────────────────────────────────────────────────
+
+// GET /api/ai-usage?days=30
+router.get('/ai-usage', async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 30, 90);
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const logs = await AIUsageLog.find({ createdAt: { $gte: since } }).lean();
+
+    const totalCost   = logs.reduce((s, l) => s + l.estimatedCostUSD, 0);
+    const totalTokens = logs.reduce((s, l) => s + l.totalTokens, 0);
+    const totalCalls  = logs.length;
+
+    const byType = {};
+    for (const log of logs) {
+      if (!byType[log.type]) byType[log.type] = { calls: 0, tokens: 0, costUSD: 0 };
+      byType[log.type].calls++;
+      byType[log.type].tokens  += log.totalTokens;
+      byType[log.type].costUSD += log.estimatedCostUSD;
+    }
+
+    // Daily breakdown — last N days
+    const daily = {};
+    for (const log of logs) {
+      const day = log.createdAt.toISOString().slice(0, 10);
+      if (!daily[day]) daily[day] = { calls: 0, costUSD: 0 };
+      daily[day].calls++;
+      daily[day].costUSD += log.estimatedCostUSD;
+    }
+
+    // All-time totals
+    const allLogs = await AIUsageLog.find().lean();
+    const allTimeCost = allLogs.reduce((s, l) => s + l.estimatedCostUSD, 0);
+
+    res.json({ totalCalls, totalTokens, totalCost, byType, daily, days, allTimeCost });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Rich Menu ───────────────────────────────────────────────────────────────
+
+// GET /api/rich-menu/templates
+router.get('/rich-menu/templates', (req, res) => {
+  res.json(getRichMenuTemplates());
+});
+
+// GET /api/rich-menu/list
+router.get('/rich-menu/list', async (req, res) => {
+  try {
+    const menus = await listRichMenus();
+    res.json(menus);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/rich-menu/create
+router.post('/rich-menu/create', async (req, res) => {
+  try {
+    const { templateKey, buttons, chatBarText } = req.body;
+    if (!templateKey || !buttons) return res.status(400).json({ error: 'templateKey and buttons required' });
+    const richMenuId = await createRichMenu({ templateKey, buttons, chatBarText });
+    res.json({ richMenuId });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/rich-menu/:id/upload-image — upload image from URL
+router.post('/rich-menu/:id/upload-image', async (req, res) => {
+  try {
+    const { imageUrl } = req.body;
+    if (!imageUrl) return res.status(400).json({ error: 'imageUrl required' });
+    await uploadRichMenuImageFromUrl(req.params.id, imageUrl);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/rich-menu/:id/set-default
+router.post('/rich-menu/:id/set-default', async (req, res) => {
+  try {
+    await setDefaultRichMenuById(req.params.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/rich-menu/default
+router.delete('/rich-menu/default', async (req, res) => {
+  try {
+    await cancelDefaultRichMenuAll();
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/rich-menu/:id
+router.delete('/rich-menu/:id', async (req, res) => {
+  try {
+    await deleteRichMenuById(req.params.id);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

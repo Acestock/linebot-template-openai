@@ -34,6 +34,17 @@ function ProfileTab({ profile, onChange, onSave, saving, saved }) {
       </div>
       <div style={GROUP}><label style={LABEL}>回覆風格備注</label>
         <input name="toneNote" value={profile.toneNote} onChange={onChange} placeholder="例：親切友善、多用表情符號" style={FIELD} /></div>
+
+      <div style={{ ...GROUP, padding: '12px', backgroundColor: '#fff8e1', borderRadius: '8px', border: '1px solid #ffe082' }}>
+        <label style={{ ...LABEL, color: '#e65100' }}>⚡ 緊急訊息通知 LINE（管理員 User ID）</label>
+        <input name="adminLineUserId" value={profile.adminLineUserId} onChange={onChange}
+          placeholder="例：U1a2b3c4d5e6f7g8h9..." style={{ ...FIELD, marginTop: '6px' }} />
+        <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
+          填入後，當客戶發送「急迫」或「情緒激動」訊息時，系統將主動推播通知給此 LINE 帳號。
+          <br />取得方式：可請客戶傳訊給 Bot，後台聊天列表即可看到其 User ID。
+        </div>
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '4px' }}>
         {saved && <span style={{ color: '#4CAF50', fontSize: '13px', alignSelf: 'center' }}>✓ 已儲存</span>}
         <button onClick={onSave} disabled={saving} style={{
@@ -42,6 +53,126 @@ function ProfileTab({ profile, onChange, onSave, saving, saved }) {
           fontSize: '14px', fontWeight: 'bold', cursor: saving ? 'not-allowed' : 'pointer'
         }}>{saving ? '儲存中...' : '儲存'}</button>
       </div>
+    </div>
+  );
+}
+
+// ─── Tab 8: AI 使用量統計 ─────────────────────────────────────────────────────
+function AIStatsTab() {
+  const [stats, setStats] = useState(null);
+  const [days, setDays] = useState(7);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => { loadStats(); }, [days]);
+
+  async function loadStats() {
+    setLoading(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/ai-usage?days=${days}`);
+      setStats(await res.json());
+    } catch {}
+    setLoading(false);
+  }
+
+  const TYPE_LABELS = { analyze: '訊息分析', generate: '回覆建議', summarize: '對話摘要' };
+  const TYPE_COLORS = { analyze: '#2196F3', generate: '#4CAF50', summarize: '#FF9800' };
+
+  function fmtCost(usd) {
+    const twd = usd * 32; // approx exchange rate
+    return `$${usd.toFixed(4)} USD（約 NT$${twd.toFixed(1)}）`;
+  }
+
+  return (
+    <div>
+      <p style={{ margin: '0 0 16px', color: '#666', fontSize: '13px' }}>
+        追蹤 OpenAI API 使用量與估計費用。費用以 GPT-4o / GPT-4o-mini 官方定價換算。
+      </p>
+
+      {/* Period selector */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+        {[7, 14, 30].map(d => (
+          <button key={d} onClick={() => setDays(d)} style={{
+            padding: '6px 14px', borderRadius: '20px', border: '1.5px solid',
+            borderColor: days === d ? '#2196F3' : '#e0e0e0',
+            background: days === d ? '#e3f2fd' : '#fff',
+            color: days === d ? '#1565c0' : '#666',
+            fontSize: '13px', fontWeight: days === d ? '700' : '400', cursor: 'pointer'
+          }}>最近 {d} 天</button>
+        ))}
+        <button onClick={loadStats} style={{ marginLeft: 'auto', padding: '6px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', background: '#fff', color: '#666', fontSize: '13px', cursor: 'pointer' }}>
+          🔄 刷新
+        </button>
+      </div>
+
+      {loading && <div style={{ textAlign: 'center', padding: '32px', color: '#aaa' }}>載入中...</div>}
+
+      {!loading && stats && (
+        <>
+          {/* Overview cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+            {[
+              { label: '呼叫次數', value: stats.totalCalls, unit: '次', color: '#2196F3' },
+              { label: '總 Token 數', value: stats.totalTokens.toLocaleString(), unit: 'tokens', color: '#9C27B0' },
+              { label: `近 ${days} 天費用`, value: fmtCost(stats.totalCost), unit: '', color: '#FF5722', small: true }
+            ].map(c => (
+              <div key={c.label} style={{ border: `2px solid ${c.color}33`, borderRadius: '10px', padding: '12px', backgroundColor: c.color + '08', textAlign: 'center' }}>
+                <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>{c.label}</div>
+                <div style={{ fontSize: c.small ? '12px' : '22px', fontWeight: 'bold', color: c.color, lineHeight: 1.2 }}>{c.value}</div>
+                {c.unit && <div style={{ fontSize: '11px', color: '#aaa', marginTop: '2px' }}>{c.unit}</div>}
+              </div>
+            ))}
+          </div>
+
+          {/* All-time cost */}
+          <div style={{ padding: '10px 14px', backgroundColor: '#f3e5f5', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '13px', color: '#6a1b9a', fontWeight: '600' }}>累計總費用（自開始記錄）</span>
+            <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#6a1b9a' }}>{fmtCost(stats.allTimeCost || 0)}</span>
+          </div>
+
+          {/* By type breakdown */}
+          {Object.keys(stats.byType || {}).length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '13px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>按類型分析</div>
+              {Object.entries(stats.byType).map(([type, data]) => (
+                <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: TYPE_COLORS[type] || '#ccc', flexShrink: 0, display: 'inline-block' }} />
+                  <span style={{ flex: 1, fontSize: '13px', color: '#333' }}>{TYPE_LABELS[type] || type}</span>
+                  <span style={{ fontSize: '12px', color: '#777' }}>{data.calls} 次</span>
+                  <span style={{ fontSize: '12px', color: '#777' }}>{data.tokens.toLocaleString()} tokens</span>
+                  <span style={{ fontSize: '12px', color: '#888', minWidth: '100px', textAlign: 'right' }}>{fmtCost(data.costUSD)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Daily chart (simple bar) */}
+          {Object.keys(stats.daily || {}).length > 0 && (
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>每日呼叫次數</div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '80px', padding: '0 4px' }}>
+                {Object.entries(stats.daily).sort(([a], [b]) => a.localeCompare(b)).map(([day, d]) => {
+                  const maxCalls = Math.max(...Object.values(stats.daily).map(x => x.calls), 1);
+                  const h = Math.max((d.calls / maxCalls) * 70, 4);
+                  return (
+                    <div key={day} title={`${day}: ${d.calls} 次`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                      <div style={{ width: '100%', height: `${h}px`, backgroundColor: '#2196F3', borderRadius: '2px 2px 0 0', minHeight: '4px' }} />
+                      <div style={{ fontSize: '9px', color: '#bbb', transform: 'rotate(-40deg)', transformOrigin: 'top left', whiteSpace: 'nowrap', marginTop: '4px', marginLeft: '4px' }}>
+                        {day.slice(5)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {stats.totalCalls === 0 && (
+            <div style={{ textAlign: 'center', color: '#bbb', padding: '24px', fontSize: '14px' }}>
+              此期間尚無 AI 呼叫記錄
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -1120,7 +1251,8 @@ function SettingsModal({ onClose }) {
     { key: 'cards',      label: '商品卡片' },
     { key: 'keywords',   label: '關鍵字觸發' },
     { key: 'autoReply',  label: '自動回覆' },
-    { key: 'labels',     label: '標籤管理' }
+    { key: 'labels',     label: '標籤管理' },
+    { key: 'aiStats',    label: 'AI 用量' }
   ];
 
   return (
@@ -1154,6 +1286,7 @@ function SettingsModal({ onClose }) {
           {tab === 'keywords'   && <KeywordTab />}
           {tab === 'autoReply'  && <AutoReplyTab profile={profile} onChange={handleChange} onSave={handleSave} saving={saving} saved={saved} />}
           {tab === 'labels'     && <LabelTab />}
+          {tab === 'aiStats'    && <AIStatsTab />}
         </div>
       </div>
     </div>

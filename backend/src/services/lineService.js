@@ -1,8 +1,170 @@
 const line = require('@line/bot-sdk');
+const https = require('https');
 
 function getClient() {
   return new line.messagingApi.MessagingApiClient({
     channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN
+  });
+}
+
+// ─── Rich Menu ──────────────────────────────────────────────────────────────
+
+const RICH_MENU_TEMPLATES = {
+  grid3: {
+    name: '三欄選單',
+    desc: '橫向三等分，適合主要功能入口',
+    size: { width: 2500, height: 843 },
+    areas: [
+      { bounds: { x: 0,    y: 0, width: 833,  height: 843 } },
+      { bounds: { x: 833,  y: 0, width: 834,  height: 843 } },
+      { bounds: { x: 1667, y: 0, width: 833,  height: 843 } }
+    ]
+  },
+  grid6: {
+    name: '六宮格',
+    desc: '2 列 × 3 欄，功能最豐富',
+    size: { width: 2500, height: 1686 },
+    areas: [
+      { bounds: { x: 0,    y: 0,    width: 833,  height: 843 } },
+      { bounds: { x: 833,  y: 0,    width: 834,  height: 843 } },
+      { bounds: { x: 1667, y: 0,    width: 833,  height: 843 } },
+      { bounds: { x: 0,    y: 843,  width: 833,  height: 843 } },
+      { bounds: { x: 833,  y: 843,  width: 834,  height: 843 } },
+      { bounds: { x: 1667, y: 843,  width: 833,  height: 843 } }
+    ]
+  },
+  large2: {
+    name: '大圖 + 雙欄',
+    desc: '左側大圖 + 右側兩個按鈕',
+    size: { width: 2500, height: 843 },
+    areas: [
+      { bounds: { x: 0,    y: 0,   width: 1250, height: 843 } },
+      { bounds: { x: 1250, y: 0,   width: 1250, height: 422 } },
+      { bounds: { x: 1250, y: 422, width: 1250, height: 421 } }
+    ]
+  },
+  grid4: {
+    name: '四宮格',
+    desc: '2 列 × 2 欄，視覺清晰',
+    size: { width: 2500, height: 1686 },
+    areas: [
+      { bounds: { x: 0,    y: 0,    width: 1250, height: 843 } },
+      { bounds: { x: 1250, y: 0,    width: 1250, height: 843 } },
+      { bounds: { x: 0,    y: 843,  width: 1250, height: 843 } },
+      { bounds: { x: 1250, y: 843,  width: 1250, height: 843 } }
+    ]
+  }
+};
+
+function getRichMenuTemplates() {
+  return Object.entries(RICH_MENU_TEMPLATES).map(([key, t]) => ({
+    key, name: t.name, desc: t.desc,
+    buttonCount: t.areas.length,
+    size: t.size
+  }));
+}
+
+async function createRichMenu({ templateKey, buttons, chatBarText }) {
+  const client = getClient();
+  const tmpl = RICH_MENU_TEMPLATES[templateKey];
+  if (!tmpl) throw new Error('Unknown template: ' + templateKey);
+
+  const areas = tmpl.areas.map((area, i) => {
+    const btn = buttons[i] || {};
+    let action;
+    if (btn.actionType === 'message') {
+      action = { type: 'message', label: btn.label || `按鈕${i + 1}`, text: btn.text || btn.label || `按鈕${i + 1}` };
+    } else if (btn.actionType === 'postback') {
+      action = { type: 'postback', label: btn.label || `按鈕${i + 1}`, data: btn.data || 'action=none', displayText: btn.label || `按鈕${i + 1}` };
+    } else {
+      action = { type: 'uri', label: btn.label || `按鈕${i + 1}`, uri: btn.uri || 'https://line.me' };
+    }
+    return { bounds: area.bounds, action };
+  });
+
+  const richMenu = {
+    size: tmpl.size,
+    selected: true,
+    name: chatBarText || '選單',
+    chatBarText: chatBarText || '選單',
+    areas
+  };
+
+  const result = await client.createRichMenu(richMenu);
+  return result.richMenuId;
+}
+
+async function listRichMenus() {
+  const client = getClient();
+  try {
+    const result = await client.getRichMenuList();
+    return result.richmenus || [];
+  } catch {
+    return [];
+  }
+}
+
+async function deleteRichMenuById(richMenuId) {
+  const client = getClient();
+  await client.deleteRichMenu(richMenuId);
+}
+
+async function setDefaultRichMenuById(richMenuId) {
+  const client = getClient();
+  await client.setDefaultRichMenu(richMenuId);
+}
+
+async function cancelDefaultRichMenuAll() {
+  const client = getClient();
+  await client.cancelDefaultRichMenu();
+}
+
+// Upload image from a public URL → LINE rich menu image endpoint
+async function uploadRichMenuImageFromUrl(richMenuId, imageUrl) {
+  const imgData = await fetchUrlBuffer(imageUrl);
+  const contentType = imgData.contentType || 'image/jpeg';
+  return uploadRichMenuImageBuffer(richMenuId, imgData.buffer, contentType);
+}
+
+function fetchUrlBuffer(url) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? require('https') : require('http');
+    mod.get(url, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return fetchUrlBuffer(res.headers.location).then(resolve).catch(reject);
+      }
+      const chunks = [];
+      const contentType = res.headers['content-type'] || 'image/jpeg';
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => resolve({ buffer: Buffer.concat(chunks), contentType }));
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+function uploadRichMenuImageBuffer(richMenuId, buffer, contentType) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'api-data.line.me',
+      path: `/v2/bot/richmenu/${richMenuId}/content`,
+      method: 'POST',
+      headers: {
+        'Content-Type': contentType,
+        'Authorization': `Bearer ${token}`,
+        'Content-Length': buffer.length
+      }
+    }, (res) => {
+      let body = '';
+      res.on('data', d => body += d);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) resolve(body);
+        else reject(new Error(`LINE image upload failed: ${res.statusCode} ${body}`));
+      });
+    });
+    req.on('error', reject);
+    req.write(buffer);
+    req.end();
   });
 }
 
@@ -196,4 +358,9 @@ async function pushOrderCard(lineUserId, items, shopName) {
   });
 }
 
-module.exports = { getUserProfile, pushMessage, pushFlexCard, pushOrderCard };
+module.exports = {
+  getUserProfile, pushMessage, pushFlexCard, pushOrderCard,
+  getRichMenuTemplates, createRichMenu, listRichMenus,
+  deleteRichMenuById, setDefaultRichMenuById, cancelDefaultRichMenuAll,
+  uploadRichMenuImageFromUrl
+};

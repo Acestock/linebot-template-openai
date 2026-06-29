@@ -139,6 +139,17 @@ router.post('/', async (req, res) => {
       });
       console.log(`[Webhook] Saved [${urgency}] message from ${lineProfile.displayName || lineUserId}`);
 
+      // Notify admin via LINE for urgent/angry messages
+      if ((urgency === 'urgent' || urgency === 'angry') && businessProfile?.adminLineUserId) {
+        const tag = urgency === 'angry' ? '⚠️ 情緒激動' : '⏰ 急迫需求';
+        const name = lineProfile.displayName || lineUserId;
+        const preview = userMessage.length > 80 ? userMessage.slice(0, 80) + '...' : userMessage;
+        pushMessage(
+          businessProfile.adminLineUserId,
+          `${tag}！客戶需要立即回覆\n客戶：${name}\n訊息：「${preview}」\n\n請儘快前往後台回覆。`
+        ).catch(e => console.error('[Webhook] Admin notify failed:', e.message));
+      }
+
       // Schedule auto-reply if enabled globally AND not disabled for this user
       if (businessProfile?.autoReply) {
         const userSetting = await CustomerSetting.findOne({ lineUserId }).lean();
