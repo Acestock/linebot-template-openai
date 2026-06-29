@@ -129,10 +129,11 @@ export default function RichMenuModal({ onClose }) {
   async function handleSetDefault(id) {
     try {
       const res = await authFetch(`${API_BASE}/api/rich-menu/${id}/set-default`, { method: 'POST' });
-      if (!res.ok) throw new Error('設定失敗');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `設定失敗 (HTTP ${res.status})`);
       alert('✅ 已設為預設圖文選單');
       loadMenus();
-    } catch (err) { alert(err.message); }
+    } catch (err) { alert('設定失敗：' + err.message); }
   }
 
   async function handleCancelDefault() {

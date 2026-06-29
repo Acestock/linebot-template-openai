@@ -7,6 +7,44 @@ function getClient() {
   });
 }
 
+// ─── LINE API helper (bypasses SDK for rich menu operations) ─────────────────
+
+function lineApiJson(method, path, body = null) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const bodyStr = body ? JSON.stringify(body) : null;
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'api.line.me',
+      path,
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {})
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try { resolve(JSON.parse(data)); } catch { resolve({}); }
+        } else {
+          let msg = `LINE API ${res.statusCode}`;
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.message) msg += `: ${parsed.message}`;
+            else msg += `: ${data}`;
+          } catch { msg += `: ${data}`; }
+          reject(new Error(msg));
+        }
+      });
+    });
+    req.on('error', reject);
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
 // ─── Rich Menu ──────────────────────────────────────────────────────────────
 
 const RICH_MENU_TEMPLATES = {
@@ -65,7 +103,6 @@ function getRichMenuTemplates() {
 }
 
 async function createRichMenu({ templateKey, buttons, chatBarText }) {
-  const client = getClient();
   const tmpl = RICH_MENU_TEMPLATES[templateKey];
   if (!tmpl) throw new Error('Unknown template: ' + templateKey);
 
@@ -90,14 +127,13 @@ async function createRichMenu({ templateKey, buttons, chatBarText }) {
     areas
   };
 
-  const result = await client.createRichMenu(richMenu);
+  const result = await lineApiJson('POST', '/v2/bot/richmenu', richMenu);
   return result.richMenuId;
 }
 
 async function listRichMenus() {
-  const client = getClient();
   try {
-    const result = await client.getRichMenuList();
+    const result = await lineApiJson('GET', '/v2/bot/richmenu/list');
     return result.richmenus || [];
   } catch {
     return [];
@@ -105,18 +141,15 @@ async function listRichMenus() {
 }
 
 async function deleteRichMenuById(richMenuId) {
-  const client = getClient();
-  await client.deleteRichMenu(richMenuId);
+  await lineApiJson('DELETE', `/v2/bot/richmenu/${richMenuId}`);
 }
 
 async function setDefaultRichMenuById(richMenuId) {
-  const client = getClient();
-  await client.setDefaultRichMenu(richMenuId);
+  await lineApiJson('POST', `/v2/bot/user/all/richmenu/${richMenuId}`);
 }
 
 async function cancelDefaultRichMenuAll() {
-  const client = getClient();
-  await client.cancelDefaultRichMenu();
+  await lineApiJson('DELETE', '/v2/bot/user/all/richmenu');
 }
 
 // Upload image from a public URL → LINE rich menu image endpoint
