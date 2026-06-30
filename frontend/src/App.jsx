@@ -24,6 +24,46 @@ function useIsMobile() {
   return isMobile;
 }
 
+function DeskBtn({ onClick, title, children, badge = 0 }) {
+  return (
+    <button onClick={onClick} title={title} style={{
+      position: 'relative', background: 'rgba(255,255,255,0.15)', border: 'none',
+      borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer',
+      padding: '5px 10px', lineHeight: 1, whiteSpace: 'nowrap',
+      display: 'flex', alignItems: 'center', gap: '4px'
+    }}>
+      {children}
+      {badge > 0 && (
+        <span style={{
+          position: 'absolute', top: '-5px', right: '-5px',
+          backgroundColor: '#f44336', color: '#fff', borderRadius: '8px',
+          fontSize: '10px', padding: '0 4px', minWidth: '14px', textAlign: 'center', lineHeight: '14px'
+        }}>{badge}</span>
+      )}
+    </button>
+  );
+}
+
+function MobileIconBtn({ onClick, children, badge = 0 }) {
+  return (
+    <button onClick={onClick} style={{
+      position: 'relative', background: 'rgba(255,255,255,0.18)', border: 'none',
+      borderRadius: '8px', color: '#fff', fontSize: '18px', cursor: 'pointer',
+      padding: '6px', lineHeight: 1, minWidth: '36px', minHeight: '36px',
+      display: 'flex', alignItems: 'center', justifyContent: 'center'
+    }}>
+      {children}
+      {badge > 0 && (
+        <span style={{
+          position: 'absolute', top: '-3px', right: '-3px',
+          backgroundColor: '#f44336', color: '#fff', borderRadius: '8px',
+          fontSize: '10px', padding: '0 4px', minWidth: '14px', textAlign: 'center', lineHeight: '14px'
+        }}>{badge}</span>
+      )}
+    </button>
+  );
+}
+
 function App() {
   const isMobile = useIsMobile();
   const [token, setToken] = useState(() => localStorage.getItem('adminToken') || '');
@@ -241,12 +281,12 @@ function App() {
   // ─── Mobile layout ─────────────────────────────────────────────────────────
   if (isMobile) {
     return (
-      <div style={{ height: '100vh', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#333', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ height: '100dvh', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#333', display: 'flex', flexDirection: 'column' }}>
         {/* Mobile Header */}
         <div style={{ height: '48px', backgroundColor: '#00B900', color: '#fff', display: 'flex', alignItems: 'center', padding: '0 12px', flexShrink: 0, boxShadow: '0 2px 4px rgba(0,0,0,0.15)' }}>
           {mobileView === 'chat' ? (
             <>
-              <button onClick={handleBackToList} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '20px', cursor: 'pointer', padding: '4px 8px 4px 0', lineHeight: 1 }}>←</button>
+              <button onClick={handleBackToList} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '22px', cursor: 'pointer', padding: '4px 10px 4px 0', lineHeight: 1, minWidth: '36px' }}>←</button>
               <span style={{ fontWeight: 'bold', fontSize: '15px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {selectedConv?.displayName || selectedConv?.lineUserId || '對話'}
               </span>
@@ -254,18 +294,19 @@ function App() {
           ) : (
             <>
               <span style={{ fontWeight: 'bold', fontSize: '15px', flex: 1 }}>LINE AI 後台</span>
-              <span style={{ fontSize: '12px', opacity: 0.9, marginRight: '10px' }}>
+              <span style={{ fontSize: '11px', opacity: 0.85, backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: '10px', padding: '2px 8px', marginRight: '4px', whiteSpace: 'nowrap' }}>
                 待{stats.pending} 已{stats.replied}
               </span>
             </>
           )}
-          <button onClick={() => { setShowOrders(true); setNewOrderCount(0); }} style={{ position: 'relative', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 8px' }}>
-            訂單{newOrderCount > 0 && <span style={{ position: 'absolute', top: '-4px', right: '-4px', backgroundColor: '#f44336', color: '#fff', borderRadius: '8px', fontSize: '10px', padding: '0 4px', minWidth: '14px', textAlign: 'center' }}>{newOrderCount}</span>}
-          </button>
-          <button onClick={() => setShowCalendar(true)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 8px' }}>📅</button>
-          <button onClick={() => setShowRichMenu(true)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 8px' }}>選單</button>
-          <button onClick={() => setShowBroadcast(true)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 8px' }}>群發</button>
-          <button onClick={() => setShowSettings(true)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '16px', cursor: 'pointer', padding: '4px 8px' }}>⚙</button>
+          {/* Mobile icon-only action buttons */}
+          <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+            <MobileIconBtn onClick={() => { setShowOrders(true); setNewOrderCount(0); }} badge={newOrderCount}>📦</MobileIconBtn>
+            <MobileIconBtn onClick={() => setShowCalendar(true)}>📅</MobileIconBtn>
+            <MobileIconBtn onClick={() => setShowRichMenu(true)}>📋</MobileIconBtn>
+            <MobileIconBtn onClick={() => setShowBroadcast(true)}>📢</MobileIconBtn>
+            <MobileIconBtn onClick={() => setShowSettings(true)}>⚙</MobileIconBtn>
+          </div>
         </div>
 
         {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
@@ -308,22 +349,20 @@ function App() {
         zIndex: 100, boxShadow: '0 2px 4px rgba(0,0,0,0.15)'
       }}>
         <span style={{ fontWeight: 'bold', fontSize: '16px' }}>LINE AI 聊天輔助系統</span>
-        <span style={{ marginLeft: 'auto', fontSize: '13px', opacity: 0.9, display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <span>今日待回覆：{stats.pending} | 已回覆：{stats.replied}</span>
-          <button onClick={() => { setShowOrders(true); setNewOrderCount(0); }} title="訂單管理"
-            style={{ position: 'relative', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }}>
-            訂單{newOrderCount > 0 && <span style={{ position: 'absolute', top: '-6px', right: '-6px', backgroundColor: '#f44336', color: '#fff', borderRadius: '8px', fontSize: '10px', padding: '0 4px', minWidth: '14px', textAlign: 'center' }}>{newOrderCount}</span>}
-          </button>
-          <button onClick={() => setShowCalendar(true)} title="行事曆"
-            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }}>📅 行事曆</button>
-          <button onClick={() => setShowRichMenu(true)} title="圖文選單"
-            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }}>📋 圖文選單</button>
-          <button onClick={() => setShowBroadcast(true)} title="群發訊息"
-            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }}>群發</button>
-          <button onClick={() => setShowSettings(true)} title="系統設定"
-            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '16px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>⚙</button>
-          <button onClick={handleLogout} title="登出"
-            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }}>登出</button>
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {/* Stats badge */}
+          <span style={{ fontSize: '12px', opacity: 0.85, backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: '10px', padding: '3px 10px', marginRight: '6px', whiteSpace: 'nowrap' }}>
+            待 {stats.pending} · 已 {stats.replied}
+          </span>
+          {/* Primary actions */}
+          <DeskBtn onClick={() => { setShowOrders(true); setNewOrderCount(0); }} title="訂單管理" badge={newOrderCount}>📦 訂單</DeskBtn>
+          <DeskBtn onClick={() => setShowCalendar(true)} title="行事曆">📅 行事曆</DeskBtn>
+          <DeskBtn onClick={() => setShowRichMenu(true)} title="圖文選單">📋 圖文選單</DeskBtn>
+          <DeskBtn onClick={() => setShowBroadcast(true)} title="群發訊息">📢 群發</DeskBtn>
+          {/* Divider */}
+          <span style={{ width: '1px', height: '20px', backgroundColor: 'rgba(255,255,255,0.3)', margin: '0 4px' }} />
+          <DeskBtn onClick={() => setShowSettings(true)} title="系統設定">⚙ 設定</DeskBtn>
+          <DeskBtn onClick={handleLogout} title="登出">登出</DeskBtn>
         </span>
       </div>
 

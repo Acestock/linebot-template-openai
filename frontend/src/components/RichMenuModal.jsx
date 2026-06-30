@@ -3,11 +3,12 @@ import API_BASE, { authFetch } from '../config';
 
 const OVERLAY = {
   position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
-  zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center'
+  zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  padding: '10px'
 };
 const MODAL = {
   backgroundColor: '#fff', borderRadius: '14px',
-  width: '700px', maxWidth: '96vw', maxHeight: '90vh',
+  width: '700px', maxWidth: '100%', maxHeight: 'calc(100dvh - 20px)',
   display: 'flex', flexDirection: 'column',
   boxShadow: '0 8px 40px rgba(0,0,0,0.25)'
 };

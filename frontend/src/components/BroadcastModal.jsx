@@ -47,10 +47,12 @@ function BroadcastModal({ onClose }) {
   return (
     <div style={{
       position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
-      zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center'
+      zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '10px'
     }} onClick={onClose}>
       <div style={{
-        backgroundColor: '#fff', borderRadius: '12px', width: '480px', maxWidth: '95vw',
+        backgroundColor: '#fff', borderRadius: '12px', width: '480px', maxWidth: '100%',
+        maxHeight: 'calc(100dvh - 20px)', overflowY: 'auto',
         boxShadow: '0 8px 32px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column'
       }} onClick={e => e.stopPropagation()}>
 

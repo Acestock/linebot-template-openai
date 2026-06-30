@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import API_BASE, { authFetch } from '../config';
 
 const FIELD = {
-  width: '100%', boxSizing: 'border-box', padding: '8px 10px',
-  borderRadius: '6px', border: '1px solid #e0e0e0',
-  fontSize: '14px', lineHeight: '1.5', outline: 'none', marginTop: '4px'
+  width: '100%', boxSizing: 'border-box', padding: '9px 11px',
+  borderRadius: '8px', border: '1px solid #e0e0e0',
+  fontSize: '16px', lineHeight: '1.5', outline: 'none', marginTop: '4px'
 };
 const LABEL = { display: 'block', fontSize: '13px', fontWeight: '600', color: '#555', marginBottom: '2px' };
 const GROUP = { marginBottom: '14px' };
@@ -1256,29 +1256,30 @@ function SettingsModal({ onClose }) {
   ];
 
   return (
-    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>
-      <div style={{ backgroundColor: '#fff', borderRadius: '12px', width: '580px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px' }} onClick={onClose}>
+      <div style={{ backgroundColor: '#fff', borderRadius: '14px', width: '640px', maxWidth: '100%', maxHeight: 'calc(100dvh - 20px)', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 40px rgba(0,0,0,0.25)' }} onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <span style={{ fontWeight: 'bold', fontSize: '16px' }}>⚙ 系統設定</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✕</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', color: '#bbb', lineHeight: 1, padding: '0 4px' }}>✕</button>
         </div>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', backgroundColor: '#fafafa' }}>
+        {/* Tabs — horizontally scrollable for mobile */}
+        <div style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', backgroundColor: '#fafafa', overflowX: 'auto', flexShrink: 0, scrollbarWidth: 'none' }}>
+          <style>{`.settings-tabs::-webkit-scrollbar { display: none; }`}</style>
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
-              flex: 1, padding: '10px 0', border: 'none', background: 'none', cursor: 'pointer',
+              flexShrink: 0, padding: '11px 16px', border: 'none', background: 'none', cursor: 'pointer',
               fontSize: '13px', fontWeight: tab === t.key ? '700' : '400',
               color: tab === t.key ? '#2196F3' : '#777',
               borderBottom: tab === t.key ? '2px solid #2196F3' : '2px solid transparent',
-              transition: 'all 0.15s'
+              whiteSpace: 'nowrap', transition: 'color 0.12s'
             }}>{t.label}</button>
           ))}
         </div>
 
         {/* Body */}
-        <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+        <div style={{ padding: '18px 20px', overflowY: 'auto', flex: 1 }}>
           {tab === 'profile'    && <ProfileTab profile={profile} onChange={handleChange} onSave={handleSave} saving={saving} saved={saved} />}
           {tab === 'faq'        && <FAQTab />}
           {tab === 'orderItems' && <OrderItemsTab />}

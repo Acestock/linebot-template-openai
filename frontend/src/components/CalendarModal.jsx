@@ -327,9 +327,9 @@ function CalendarModal({ onClose }) {
   const selectedEvents = selectedDate ? eventsOnDay(selectedDate) : [];
 
   return (
-    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px' }}
       onClick={onClose}>
-      <div style={{ backgroundColor: '#fff', borderRadius: '14px', width: '680px', maxWidth: '98vw', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}
+      <div style={{ backgroundColor: '#fff', borderRadius: '14px', width: '680px', maxWidth: '100%', maxHeight: 'calc(100dvh - 20px)', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}
@@ -339,10 +339,11 @@ function CalendarModal({ onClose }) {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', backgroundColor: '#fafafa' }}>
+        <div style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', backgroundColor: '#fafafa', overflowX: 'auto', flexShrink: 0, scrollbarWidth: 'none' }}>
           {[['calendar', '📅 行事曆'], ['working-hours', '🕐 上班時間設定']].map(([key, label]) => (
             <button key={key} onClick={() => setActiveTab(key)} style={{
               padding: '10px 20px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '13px',
+              flexShrink: 0, whiteSpace: 'nowrap',
               borderBottom: activeTab === key ? '2px solid #2196F3' : '2px solid transparent',
               color: activeTab === key ? '#2196F3' : '#888', fontWeight: activeTab === key ? '700' : '400'
             }}>{label}</button>

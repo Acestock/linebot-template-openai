@@ -72,7 +72,7 @@ function SendPanel({ conversation, draftReply, onDraftChange, onSent, onSkipped 
           isSkipped ? '已略過此客戶訊息' :
           '輸入或選擇回覆內容...'
         }
-        rows={5}
+        rows={4}
         style={{
           width: '100%',
           boxSizing: 'border-box',

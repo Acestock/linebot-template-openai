@@ -382,7 +382,7 @@ function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsCh
           <span style={{ fontWeight: 'bold', color: '#333', fontSize: '15px' }}>
             {displayName || lineUserId}
           </span>
-          <span style={{ fontSize: '12px', color: '#bbb' }}>{lineUserId}</span>
+          <span style={{ fontSize: '11px', color: '#bbb', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lineUserId}</span>
           <button onClick={() => setShowHistory(true)} style={{
             padding: '2px 10px', borderRadius: '12px',
             border: '1px solid #2196F3', background: '#fff', color: '#2196F3',
