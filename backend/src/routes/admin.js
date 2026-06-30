@@ -4,7 +4,7 @@ const {
   pushMessage, pushOrderCard,
   getRichMenuTemplates, createRichMenu, listRichMenus,
   deleteRichMenuById, setDefaultRichMenuById, cancelDefaultRichMenuAll,
-  uploadRichMenuImageFromUrl
+  uploadRichMenuImageFromUrl, getRichMenuImageBuffer
 } = require('../services/lineService');
 const sheetService = require('../services/sheetService');
 const BusinessProfile = require('../models/BusinessProfile');
@@ -1062,6 +1062,18 @@ router.post('/rich-menu/create', async (req, res) => {
     const richMenuId = await createRichMenu({ templateKey, buttons, chatBarText });
     res.json({ richMenuId });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/rich-menu/:id/image — proxy LINE rich menu image (requires auth via token query param for <img> tags)
+router.get('/rich-menu/:id/image', async (req, res) => {
+  try {
+    const { buffer, contentType } = await getRichMenuImageBuffer(req.params.id);
+    res.set('Content-Type', contentType);
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(buffer);
+  } catch (err) {
+    res.status(404).json({ error: 'Image not found' });
+  }
 });
 
 // POST /api/rich-menu/:id/upload-image — upload image from URL

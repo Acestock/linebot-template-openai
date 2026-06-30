@@ -50,6 +50,94 @@ function TemplatePreview({ template, size = 'large' }) {
   );
 }
 
+// Preview of an existing rich menu — shows background image + button zones overlay
+function MenuPreview({ menu }) {
+  const [imgState, setImgState] = useState('loading'); // 'loading' | 'ok' | 'error'
+  const token = localStorage.getItem('adminToken') || '';
+  const imgSrc = `${API_BASE}/api/rich-menu/${menu.richMenuId}/image?token=${encodeURIComponent(token)}`;
+
+  const W = 300;
+  const scale = W / (menu.size?.width || 2500);
+  const H = (menu.size?.height || 843) * scale;
+  const COLORS = ['#4fc3f7', '#81c784', '#ffb74d', '#f06292', '#ce93d8', '#80cbc4'];
+
+  const ACTION_ICON = { uri: '🔗', message: '💬', postback: '⚡' };
+
+  return (
+    <div style={{ padding: '10px 0 4px' }}>
+      {/* Visual preview */}
+      <div style={{ position: 'relative', width: W, height: H, margin: '0 auto', borderRadius: '8px', overflow: 'hidden', border: '1px solid #ddd', backgroundColor: '#f0f0f0', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+        {/* Background image */}
+        <img
+          src={imgSrc}
+          alt=""
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: imgState === 'ok' ? 'block' : 'none' }}
+          onLoad={() => setImgState('ok')}
+          onError={() => setImgState('error')}
+        />
+        {imgState === 'error' && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '28px' }}>🖼</span>
+            <span style={{ fontSize: '11px', color: '#bbb' }}>尚未上傳圖片</span>
+          </div>
+        )}
+        {imgState === 'loading' && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: '11px', color: '#bbb' }}>載入圖片...</span>
+          </div>
+        )}
+
+        {/* Button zone overlays */}
+        {(menu.areas || []).map((area, i) => (
+          <div key={i} style={{
+            position: 'absolute',
+            left:   area.bounds.x * scale,
+            top:    area.bounds.y * scale,
+            width:  area.bounds.width  * scale,
+            height: area.bounds.height * scale,
+            boxSizing: 'border-box',
+            border: imgState === 'ok' ? '1.5px solid rgba(255,255,255,0.55)' : `2px solid ${COLORS[i % COLORS.length]}`,
+            backgroundColor: imgState === 'ok' ? 'rgba(0,0,0,0.12)' : COLORS[i % COLORS.length] + '55',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
+            transition: 'background-color 0.3s'
+          }}>
+            <span style={{
+              fontSize: Math.max(8, H / ((menu.areas || []).length > 3 ? 14 : 10)) + 'px',
+              fontWeight: 'bold',
+              color: imgState === 'ok' ? '#fff' : '#333',
+              textShadow: imgState === 'ok' ? '0 1px 3px rgba(0,0,0,0.9)' : 'none',
+              textAlign: 'center', padding: '0 4px', lineHeight: 1.3,
+              maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+            }}>
+              {area.action?.label || `按鈕 ${i + 1}`}
+            </span>
+            <span style={{ fontSize: '9px', color: imgState === 'ok' ? 'rgba(255,255,255,0.75)' : '#666', textShadow: imgState === 'ok' ? '0 1px 2px rgba(0,0,0,0.8)' : 'none' }}>
+              {ACTION_ICON[area.action?.type] || ''} {area.action?.type}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Button detail list */}
+      {(menu.areas || []).length > 0 && (
+        <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {menu.areas.map((area, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '12px', padding: '5px 8px', backgroundColor: '#f8f8f8', borderRadius: '5px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: COLORS[i % COLORS.length], flexShrink: 0, marginTop: '3px' }} />
+              <span style={{ fontWeight: '600', minWidth: '60px', color: '#333' }}>{area.action?.label || `按鈕 ${i + 1}`}</span>
+              <span style={{ color: '#888', fontSize: '11px', wordBreak: 'break-all' }}>
+                {area.action?.type === 'uri'      && `🔗 ${area.action.uri}`}
+                {area.action?.type === 'message'  && `💬 「${area.action.text}」`}
+                {area.action?.type === 'postback' && `⚡ ${area.action.data}`}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const ACTION_TYPES = [
   { value: 'uri',      label: '🔗 連結網址' },
   { value: 'message',  label: '💬 傳送文字' },
@@ -69,6 +157,7 @@ export default function RichMenuModal({ onClose }) {
   const [imageUrl, setImageUrl] = useState('');
   const [uploadingImg, setUploadingImg] = useState(null); // richMenuId or null
   const [step, setStep] = useState(1); // 1 = pick template, 2 = configure buttons
+  const [previewId, setPreviewId] = useState(null); // richMenuId of expanded preview
 
   useEffect(() => {
     loadTemplates();
@@ -400,22 +489,44 @@ export default function RichMenuModal({ onClose }) {
                 </div>
               )}
 
-              {menus.map(menu => (
-                <div key={menu.richMenuId} style={{ border: '1px solid #e8edf2', borderRadius: '10px', padding: '14px', marginBottom: '10px', backgroundColor: '#fafbfc' }}>
-                  {/* Menu info + delete */}
+              {menus.map(menu => {
+                const isExpanded = previewId === menu.richMenuId;
+                return (
+                <div key={menu.richMenuId} style={{ border: `1px solid ${isExpanded ? '#90caf9' : '#e8edf2'}`, borderRadius: '10px', padding: '14px', marginBottom: '10px', backgroundColor: '#fafbfc', transition: 'border-color 0.15s' }}>
+                  {/* Menu info + action buttons */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                    <div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontWeight: '700', fontSize: '14px', color: '#333' }}>{menu.name || '未命名選單'}</div>
                       <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>
                         {menu.size?.width}×{menu.size?.height}px · {(menu.areas || []).length} 個按鈕 · 列文字：{menu.chatBarText}
                       </div>
-                      <div style={{ fontSize: '11px', color: '#bbb', marginTop: '2px', fontFamily: 'monospace' }}>{menu.richMenuId}</div>
+                      <div style={{ fontSize: '11px', color: '#bbb', marginTop: '2px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{menu.richMenuId}</div>
                     </div>
-                    <button onClick={() => handleDelete(menu.richMenuId)}
-                      style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #ffcdd2', background: '#fff', color: '#f44336', fontSize: '12px', cursor: 'pointer', flexShrink: 0 }}>
-                      刪除
-                    </button>
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0, marginLeft: '8px' }}>
+                      <button
+                        onClick={() => setPreviewId(isExpanded ? null : menu.richMenuId)}
+                        style={{
+                          padding: '5px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer',
+                          border: isExpanded ? '1px solid #2196F3' : '1px solid #e0e0e0',
+                          background: isExpanded ? '#e3f2fd' : '#fff',
+                          color: isExpanded ? '#2196F3' : '#555', fontWeight: isExpanded ? '700' : '400'
+                        }}>
+                        {isExpanded ? '▲ 收合' : '👁 預覽'}
+                      </button>
+                      <button onClick={() => handleDelete(menu.richMenuId)}
+                        style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #ffcdd2', background: '#fff', color: '#f44336', fontSize: '12px', cursor: 'pointer' }}>
+                        刪除
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Expandable preview */}
+                  {isExpanded && (
+                    <div style={{ marginBottom: '12px', padding: '12px', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e3f2fd' }}>
+                      <div style={{ fontSize: '12px', fontWeight: '700', color: '#1565c0', marginBottom: '8px' }}>選單預覽</div>
+                      <MenuPreview menu={menu} />
+                    </div>
+                  )}
 
                   {/* Step 1: upload image */}
                   <div style={{ backgroundColor: '#fff', border: '1px solid #e3f2fd', borderRadius: '8px', padding: '10px 12px', marginBottom: '8px' }}>
@@ -448,7 +559,8 @@ export default function RichMenuModal({ onClose }) {
                     </button>
                   </div>
                 </div>
-              ))}
+              );
+              })}
 
               <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#fff8e1', borderRadius: '8px', fontSize: '12px', color: '#795548', lineHeight: 1.7 }}>
                 <strong>💡 操作流程（順序不能顛倒）：</strong><br />

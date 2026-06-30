@@ -201,6 +201,32 @@ function uploadRichMenuImageBuffer(richMenuId, buffer, contentType) {
   });
 }
 
+// Fetch rich menu image buffer from LINE (requires auth)
+function getRichMenuImageBuffer(richMenuId) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'api-data.line.me',
+      path: `/v2/bot/richmenu/${richMenuId}/content`,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }, (res) => {
+      if (res.statusCode === 404 || res.statusCode === 400) {
+        reject(new Error('No image uploaded for this rich menu'));
+        res.resume();
+        return;
+      }
+      const chunks = [];
+      const contentType = res.headers['content-type'] || 'image/jpeg';
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => resolve({ buffer: Buffer.concat(chunks), contentType }));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 async function getUserProfile(userId) {
   try {
     const client = getClient();
@@ -395,5 +421,5 @@ module.exports = {
   getUserProfile, pushMessage, pushFlexCard, pushOrderCard,
   getRichMenuTemplates, createRichMenu, listRichMenus,
   deleteRichMenuById, setDefaultRichMenuById, cancelDefaultRichMenuAll,
-  uploadRichMenuImageFromUrl
+  uploadRichMenuImageFromUrl, getRichMenuImageBuffer
 };
