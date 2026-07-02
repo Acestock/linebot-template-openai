@@ -83,7 +83,7 @@ function BroadcastModal({ onClose }) {
               onChange={e => { setSelectedLabelId(e.target.value); setResult(null); }}
               style={{
                 width: '100%', padding: '9px 10px', borderRadius: '8px',
-                border: '1px solid #e0e0e0', fontSize: '14px', outline: 'none',
+                border: '1px solid #e0e0e0', fontSize: '16px', outline: 'none',
                 backgroundColor: '#fff', cursor: 'pointer'
               }}
             >
@@ -121,7 +121,7 @@ function BroadcastModal({ onClose }) {
               style={{
                 width: '100%', boxSizing: 'border-box', padding: '10px',
                 borderRadius: '8px', border: '1px solid #e0e0e0',
-                fontSize: '14px', lineHeight: '1.6', resize: 'vertical', outline: 'none'
+                fontSize: '16px', lineHeight: '1.6', resize: 'vertical', outline: 'none'
               }}
             />
             <div style={{ textAlign: 'right', fontSize: '12px', color: '#bbb', marginTop: '2px' }}>

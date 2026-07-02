@@ -66,11 +66,12 @@ function SendPanel({ conversation, draftReply, onDraftChange, onSent, onSkipped 
       <textarea
         value={draftReply}
         onChange={(e) => onDraftChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !disabled) handleSend(); }}
         disabled={disabled}
         placeholder={
           isReplied ? '已回覆此客戶' :
           isSkipped ? '已略過此客戶訊息' :
-          '輸入或選擇回覆內容...'
+          '輸入或選擇回覆內容... (Ctrl+Enter 發送)'
         }
         rows={4}
         style={{
@@ -79,7 +80,7 @@ function SendPanel({ conversation, draftReply, onDraftChange, onSent, onSkipped 
           padding: '10px',
           borderRadius: '8px',
           border: '1px solid #e0e0e0',
-          fontSize: '14px',
+          fontSize: '16px',
           lineHeight: '1.6',
           resize: 'vertical',
           backgroundColor: disabled ? '#f5f5f5' : '#fff',

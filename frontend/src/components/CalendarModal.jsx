@@ -50,7 +50,7 @@ function EventForm({ initial, onSave, onCancel, saving }) {
     });
   }, [initial]);
 
-  const field = { width: '100%', boxSizing: 'border-box', padding: '7px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px', outline: 'none', marginTop: '3px' };
+  const field = { width: '100%', boxSizing: 'border-box', padding: '7px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '16px', outline: 'none', marginTop: '3px' };
 
   return (
     <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1 }}>

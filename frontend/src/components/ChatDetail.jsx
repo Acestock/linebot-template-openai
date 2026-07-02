@@ -228,7 +228,7 @@ function ProactiveSend({ lineUserId, displayName, onSent }) {
             rows={3}
             style={{
               width: '100%', padding: '10px 12px', border: 'none', resize: 'vertical',
-              fontSize: '14px', lineHeight: '1.6', outline: 'none', boxSizing: 'border-box'
+              fontSize: '16px', lineHeight: '1.6', outline: 'none', boxSizing: 'border-box'
             }}
           />
           {error && (

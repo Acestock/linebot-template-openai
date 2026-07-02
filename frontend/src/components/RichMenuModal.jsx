@@ -154,7 +154,7 @@ export default function RichMenuModal({ onClose }) {
   const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [createdId, setCreatedId] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
+  const [imageUrls, setImageUrls] = useState({}); // { [richMenuId]: url }
   const [uploadingImg, setUploadingImg] = useState(null); // richMenuId or null
   const [step, setStep] = useState(1); // 1 = pick template, 2 = configure buttons
   const [previewId, setPreviewId] = useState(null); // richMenuId of expanded preview
@@ -253,17 +253,20 @@ export default function RichMenuModal({ onClose }) {
   }
 
   async function handleUploadImage(richMenuId) {
-    if (!imageUrl.trim()) { alert('請輸入圖片網址'); return; }
+    const url = (imageUrls[richMenuId] || '').trim();
+    if (!url) { alert('請輸入圖片網址'); return; }
     setUploadingImg(richMenuId);
     try {
       const res = await authFetch(`${API_BASE}/api/rich-menu/${richMenuId}/upload-image`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: imageUrl.trim() })
+        body: JSON.stringify({ imageUrl: url })
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || '上傳失敗'); }
       alert('✅ 圖片上傳成功！');
-      setImageUrl('');
+      setImageUrls(prev => ({ ...prev, [richMenuId]: '' }));
+      // Reset preview to reload image
+      setPreviewId(null);
     } catch (err) { alert('圖片上傳失敗：' + err.message); }
     setUploadingImg(null);
   }
@@ -536,8 +539,8 @@ export default function RichMenuModal({ onClose }) {
                     </div>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                       <input
-                        value={imageUrl}
-                        onChange={e => setImageUrl(e.target.value)}
+                        value={imageUrls[menu.richMenuId] || ''}
+                        onChange={e => setImageUrls(prev => ({ ...prev, [menu.richMenuId]: e.target.value }))}
                         placeholder="https://example.com/richmenu.jpg"
                         style={{ flex: 1, padding: '7px 9px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '12px' }}
                       />
