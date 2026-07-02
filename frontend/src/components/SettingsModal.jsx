@@ -1245,14 +1245,14 @@ function SettingsModal({ onClose }) {
   }
 
   const TABS = [
-    { key: 'profile',    label: '商家知識庫' },
-    { key: 'faq',        label: 'FAQ 知識庫' },
+    { key: 'profile',    label: '知識庫' },
+    { key: 'faq',        label: 'FAQ' },
     { key: 'orderItems', label: '訂購品項' },
     { key: 'cards',      label: '商品卡片' },
-    { key: 'keywords',   label: '關鍵字觸發' },
+    { key: 'keywords',   label: '關鍵字' },
     { key: 'autoReply',  label: '自動回覆' },
-    { key: 'labels',     label: '標籤管理' },
-    { key: 'aiStats',    label: 'AI 用量' }
+    { key: 'labels',     label: '標籤' },
+    { key: 'aiStats',    label: '📊 AI 用量' }
   ];
 
   return (
@@ -1265,12 +1265,12 @@ function SettingsModal({ onClose }) {
         </div>
 
         {/* Tabs — horizontally scrollable for mobile */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', backgroundColor: '#fafafa', overflowX: 'auto', flexShrink: 0, scrollbarWidth: 'none' }}>
-          <style>{`.settings-tabs::-webkit-scrollbar { display: none; }`}</style>
+        <style>{`.settings-tabs::-webkit-scrollbar { display: none; }`}</style>
+        <div className="settings-tabs" style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', backgroundColor: '#fafafa', overflowX: 'auto', flexShrink: 0, scrollbarWidth: 'none' }}>
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
-              flexShrink: 0, padding: '11px 16px', border: 'none', background: 'none', cursor: 'pointer',
-              fontSize: '13px', fontWeight: tab === t.key ? '700' : '400',
+              flexShrink: 0, padding: '10px 12px', border: 'none', background: 'none', cursor: 'pointer',
+              fontSize: '12px', fontWeight: tab === t.key ? '700' : '400',
               color: tab === t.key ? '#2196F3' : '#777',
               borderBottom: tab === t.key ? '2px solid #2196F3' : '2px solid transparent',
               whiteSpace: 'nowrap', transition: 'color 0.12s'
