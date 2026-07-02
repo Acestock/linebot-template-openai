@@ -322,8 +322,8 @@ export default function RichMenuModal({ onClose }) {
     : null;
 
   return (
-    <div style={OVERLAY} onClick={onClose}>
-      <div style={MODAL} onClick={e => e.stopPropagation()}>
+    <div style={OVERLAY}>
+      <div style={MODAL}>
         {/* Header */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontWeight: 'bold', fontSize: '16px' }}>📋 圖文選單管理</span>

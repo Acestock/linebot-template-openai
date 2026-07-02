@@ -327,10 +327,8 @@ function CalendarModal({ onClose }) {
   const selectedEvents = selectedDate ? eventsOnDay(selectedDate) : [];
 
   return (
-    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px' }}
-      onClick={onClose}>
-      <div style={{ backgroundColor: '#fff', borderRadius: '14px', width: '680px', maxWidth: '100%', maxHeight: 'calc(100dvh - 20px)', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}
-        onClick={e => e.stopPropagation()}>
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px' }}>
+      <div style={{ backgroundColor: '#fff', borderRadius: '14px', width: '680px', maxWidth: '100%', maxHeight: 'calc(100dvh - 20px)', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
 
         {/* Header */}
         <div style={{ padding: '14px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff' }}>

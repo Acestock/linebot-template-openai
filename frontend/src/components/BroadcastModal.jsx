@@ -49,7 +49,7 @@ function BroadcastModal({ onClose }) {
       position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
       zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: '10px'
-    }} onClick={onClose}>
+    }}>
       <div style={{
         backgroundColor: '#fff', borderRadius: '12px', width: '480px', maxWidth: '100%',
         maxHeight: 'calc(100dvh - 20px)', overflowY: 'auto',

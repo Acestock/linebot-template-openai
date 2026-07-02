@@ -169,12 +169,12 @@ function TemplateManager({ templates, onClose, onRefresh }) {
       position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
       zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: '10px'
-    }} onClick={onClose}>
+    }}>
       <div style={{
         backgroundColor: '#fff', borderRadius: '12px', width: '520px', maxWidth: '100%',
         maxHeight: 'calc(100dvh - 20px)', display: 'flex', flexDirection: 'column',
         boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
-      }} onClick={e => e.stopPropagation()}>
+      }}>
         {/* Header */}
         <div style={{
           padding: '16px 20px', borderBottom: '1px solid #f0f0f0',
