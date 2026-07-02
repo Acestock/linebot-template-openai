@@ -149,20 +149,37 @@ function AIStatsTab() {
           {Object.keys(stats.daily || {}).length > 0 && (
             <div>
               <div style={{ fontSize: '13px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>每日呼叫次數</div>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '80px', padding: '0 4px' }}>
-                {Object.entries(stats.daily).sort(([a], [b]) => a.localeCompare(b)).map(([day, d]) => {
-                  const maxCalls = Math.max(...Object.values(stats.daily).map(x => x.calls), 1);
-                  const h = Math.max((d.calls / maxCalls) * 70, 4);
-                  return (
-                    <div key={day} title={`${day}: ${d.calls} 次`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                      <div style={{ width: '100%', height: `${h}px`, backgroundColor: '#2196F3', borderRadius: '2px 2px 0 0', minHeight: '4px' }} />
-                      <div style={{ fontSize: '9px', color: '#bbb', transform: 'rotate(-40deg)', transformOrigin: 'top left', whiteSpace: 'nowrap', marginTop: '4px', marginLeft: '4px' }}>
-                        {day.slice(5)}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              {(() => {
+                const entries = Object.entries(stats.daily).sort(([a], [b]) => a.localeCompare(b));
+                const maxCalls = Math.max(...entries.map(([, d]) => d.calls), 1);
+                return (
+                  <div style={{ display: 'flex', gap: '3px' }}>
+                    {entries.map(([day, d]) => {
+                      const pct = Math.max(d.calls / maxCalls, 0.05);
+                      return (
+                        <div key={day} title={`${day}: ${d.calls} 次`}
+                          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                          {/* Bar area — fixed height, bar grows from bottom */}
+                          <div style={{ height: '60px', display: 'flex', alignItems: 'flex-end', width: '100%' }}>
+                            <div style={{
+                              width: '100%', height: `${pct * 100}%`,
+                              backgroundColor: '#2196F3', borderRadius: '2px 2px 0 0', minHeight: '3px'
+                            }} />
+                          </div>
+                          {/* Count */}
+                          <div style={{ fontSize: '10px', color: '#2196F3', fontWeight: '600', lineHeight: 1 }}>
+                            {d.calls}
+                          </div>
+                          {/* Date label */}
+                          <div style={{ fontSize: '9px', color: '#bbb', whiteSpace: 'nowrap', lineHeight: 1 }}>
+                            {day.slice(5)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
