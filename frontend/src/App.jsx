@@ -293,7 +293,7 @@ function App() {
             </>
           ) : (
             <>
-              <span style={{ fontWeight: 'bold', fontSize: '15px', flex: 1 }}>LINE AI 後台</span>
+              <span style={{ fontWeight: 'bold', fontSize: '15px', flex: 1 }}>LINE 後台</span>
               <span style={{ fontSize: '11px', opacity: 0.85, backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: '10px', padding: '2px 8px', marginRight: '4px', whiteSpace: 'nowrap' }}>
                 待{stats.pending} 已{stats.replied}
               </span>
@@ -348,7 +348,7 @@ function App() {
         display: 'flex', alignItems: 'center', padding: '0 20px',
         zIndex: 100, boxShadow: '0 2px 4px rgba(0,0,0,0.15)'
       }}>
-        <span style={{ fontWeight: 'bold', fontSize: '16px' }}>LINE AI 聊天輔助系統</span>
+        <span style={{ fontWeight: 'bold', fontSize: '16px' }}>LINE 後台</span>
         <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
           {/* Stats badge */}
           <span style={{ fontSize: '12px', opacity: 0.85, backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: '10px', padding: '3px 10px', marginRight: '6px', whiteSpace: 'nowrap' }}>

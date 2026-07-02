@@ -117,7 +117,7 @@ function AIStatsTab() {
             ].map(c => (
               <div key={c.label} style={{ border: `2px solid ${c.color}33`, borderRadius: '10px', padding: '12px', backgroundColor: c.color + '08', textAlign: 'center' }}>
                 <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>{c.label}</div>
-                <div style={{ fontSize: c.small ? '12px' : '22px', fontWeight: 'bold', color: c.color, lineHeight: 1.2 }}>{c.value}</div>
+                <div style={{ fontSize: c.small ? '13px' : '30px', fontWeight: 'bold', color: c.color, lineHeight: 1.2 }}>{c.value}</div>
                 {c.unit && <div style={{ fontSize: '11px', color: '#aaa', marginTop: '2px' }}>{c.unit}</div>}
               </div>
             ))}
@@ -142,44 +142,6 @@ function AIStatsTab() {
                   <span style={{ fontSize: '12px', color: '#888', minWidth: '100px', textAlign: 'right' }}>{fmtCost(data.costUSD)}</span>
                 </div>
               ))}
-            </div>
-          )}
-
-          {/* Daily chart (simple bar) */}
-          {Object.keys(stats.daily || {}).length > 0 && (
-            <div>
-              <div style={{ fontSize: '13px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>每日呼叫次數</div>
-              {(() => {
-                const entries = Object.entries(stats.daily).sort(([a], [b]) => a.localeCompare(b));
-                const maxCalls = Math.max(...entries.map(([, d]) => d.calls), 1);
-                return (
-                  <div style={{ display: 'flex', gap: '3px' }}>
-                    {entries.map(([day, d]) => {
-                      const pct = Math.max(d.calls / maxCalls, 0.05);
-                      return (
-                        <div key={day} title={`${day}: ${d.calls} 次`}
-                          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                          {/* Bar area — fixed height, bar grows from bottom */}
-                          <div style={{ height: '60px', display: 'flex', alignItems: 'flex-end', width: '100%' }}>
-                            <div style={{
-                              width: '100%', height: `${pct * 100}%`,
-                              backgroundColor: '#2196F3', borderRadius: '2px 2px 0 0', minHeight: '3px'
-                            }} />
-                          </div>
-                          {/* Count */}
-                          <div style={{ fontSize: '10px', color: '#2196F3', fontWeight: '600', lineHeight: 1 }}>
-                            {d.calls}
-                          </div>
-                          {/* Date label */}
-                          <div style={{ fontSize: '9px', color: '#bbb', whiteSpace: 'nowrap', lineHeight: 1 }}>
-                            {day.slice(5)}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
             </div>
           )}
 
