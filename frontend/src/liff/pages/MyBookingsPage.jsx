@@ -26,13 +26,7 @@ function fmtDate(dateStr) {
 }
 
 function canShowQr(r) {
-  if (r.status === 'checked_in') return true;
-  if (r.status !== 'confirmed') return false;
-  if (!r.expectedCheckIn) return false;
-  const now = Date.now();
-  const validFrom  = new Date(r.expectedCheckIn).getTime() - 10 * 60 * 1000;
-  const validUntil = new Date(r.expectedCheckIn).getTime() + 30 * 60 * 1000;
-  return now >= validFrom && now <= validUntil;
+  return r.status === 'confirmed' || r.status === 'checked_in';
 }
 
 // ── Detail View ───────────────────────────────────────────────────────────────
@@ -129,9 +123,14 @@ function DetailView({ r, onBack, onCancelled }) {
           {qrImg ? (
             <>
               <img src={qrImg} alt="QR Code" style={{ width: '220px', height: '220px' }} />
-              {qrValidUntil && (
-                <div style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
-                  有效至 {new Date(qrValidUntil).toLocaleTimeString('zh-TW')}
+              {qrValidUntil && r.expectedCheckIn && (
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '8px', lineHeight: '1.6' }}>
+                  入場有效時間<br />
+                  <span style={{ color: '#444', fontWeight: '600' }}>
+                    {new Date(new Date(r.expectedCheckIn).getTime() - 10 * 60 * 1000).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}
+                    {' ～ '}
+                    {new Date(qrValidUntil).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
                 </div>
               )}
             </>
@@ -149,14 +148,6 @@ function DetailView({ r, onBack, onCancelled }) {
               {qrLoading ? '產生中...' : '顯示入場 QR'}
             </button>
           )}
-        </div>
-      ) : localStatus === 'confirmed' && r.expectedCheckIn ? (
-        <div style={{
-          background: '#fff8e1', borderRadius: '10px', padding: '14px',
-          textAlign: 'center', color: '#8d6e63', fontSize: '13px'
-        }}>
-          QR Code 將於入場前 10 分鐘開放<br />
-          <span style={{ color: '#555', fontWeight: '600' }}>（{fmt(new Date(new Date(r.expectedCheckIn).getTime() - 10 * 60 * 1000))} 後可顯示）</span>
         </div>
       ) : null}
 
