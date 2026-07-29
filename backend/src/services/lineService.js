@@ -152,6 +152,24 @@ async function cancelDefaultRichMenuAll() {
   await lineApiJson('DELETE', '/v2/bot/user/all/richmenu');
 }
 
+async function getRichMenu(richMenuId) {
+  return lineApiJson('GET', `/v2/bot/richmenu/${richMenuId}`);
+}
+
+async function getDefaultRichMenuId() {
+  try {
+    const result = await lineApiJson('GET', '/v2/bot/user/all/richmenu');
+    return result.richMenuId || null;
+  } catch {
+    return null;
+  }
+}
+
+async function createRichMenuRaw(definition) {
+  const result = await lineApiJson('POST', '/v2/bot/richmenu', definition);
+  return result.richMenuId;
+}
+
 // Upload image from a public URL → LINE rich menu image endpoint
 async function uploadRichMenuImageFromUrl(richMenuId, imageUrl) {
   const imgData = await fetchUrlBuffer(imageUrl);
@@ -419,7 +437,8 @@ async function pushOrderCard(lineUserId, items, shopName) {
 
 module.exports = {
   getUserProfile, pushMessage, pushFlexCard, pushOrderCard,
-  getRichMenuTemplates, createRichMenu, listRichMenus,
+  getRichMenuTemplates, createRichMenu, createRichMenuRaw, listRichMenus,
   deleteRichMenuById, setDefaultRichMenuById, cancelDefaultRichMenuAll,
+  getRichMenu, getDefaultRichMenuId,
   uploadRichMenuImageFromUrl, getRichMenuImageBuffer
 };

@@ -2,8 +2,9 @@ const express = require('express');
 const dbService = require('../services/dbService');
 const {
   pushMessage, pushOrderCard,
-  getRichMenuTemplates, createRichMenu, listRichMenus,
+  getRichMenuTemplates, createRichMenu, createRichMenuRaw, listRichMenus,
   deleteRichMenuById, setDefaultRichMenuById, cancelDefaultRichMenuAll,
+  getRichMenu, getDefaultRichMenuId,
   uploadRichMenuImageFromUrl, getRichMenuImageBuffer
 } = require('../services/lineService');
 const sheetService = require('../services/sheetService');
@@ -1107,6 +1108,55 @@ router.delete('/rich-menu/:id', async (req, res) => {
   try {
     await deleteRichMenuById(req.params.id);
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/rich-menu/:id/detail — fetch single rich menu definition
+router.get('/rich-menu/:id/detail', async (req, res) => {
+  try {
+    const menu = await getRichMenu(req.params.id);
+    res.json(menu);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/rich-menu/:id — update button actions (delete old → recreate with same layout)
+router.put('/rich-menu/:id', async (req, res) => {
+  try {
+    const { buttons, chatBarText } = req.body;
+    if (!buttons || !Array.isArray(buttons)) return res.status(400).json({ error: 'buttons array required' });
+
+    const existing = await getRichMenu(req.params.id);
+    const defaultId = await getDefaultRichMenuId();
+    const wasDefault = defaultId === req.params.id;
+
+    const newAreas = existing.areas.map((area, i) => {
+      const btn = buttons[i] || {};
+      let action;
+      if (btn.actionType === 'message') {
+        action = { type: 'message', label: btn.label || `按鈕${i + 1}`, text: btn.text || btn.label || `按鈕${i + 1}` };
+      } else if (btn.actionType === 'postback') {
+        action = { type: 'postback', label: btn.label || `按鈕${i + 1}`, data: btn.data || 'action=none', displayText: btn.label || `按鈕${i + 1}` };
+      } else {
+        action = { type: 'uri', label: btn.label || `按鈕${i + 1}`, uri: btn.uri || 'https://line.me' };
+      }
+      return { bounds: area.bounds, action };
+    });
+
+    await deleteRichMenuById(req.params.id);
+
+    const newId = await createRichMenuRaw({
+      size: existing.size,
+      selected: true,
+      name: chatBarText || existing.chatBarText || '選單',
+      chatBarText: chatBarText || existing.chatBarText || '選單',
+      areas: newAreas
+    });
+
+    if (wasDefault) {
+      try { await setDefaultRichMenuById(newId); } catch {}
+    }
+
+    res.json({ richMenuId: newId, wasDefault });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
