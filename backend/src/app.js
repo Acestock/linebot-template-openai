@@ -60,6 +60,10 @@ app.post('/api/auth/login', (req, res) => {
 // GET /api/auth/verify — check if current token is still valid
 app.get('/api/auth/verify', authMiddleware, (req, res) => res.json({ ok: true }));
 
+// LIFF public API (LINE user auth, not admin auth — must be before authMiddleware)
+const liffRouter = require('./routes/liff');
+app.use('/api/liff', liffRouter);
+
 // All other /api/* routes require auth
 app.use('/api', authMiddleware);
 app.use('/api', adminRouter);

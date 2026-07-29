@@ -1110,4 +1110,124 @@ router.delete('/rich-menu/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── Venues ──────────────────────────────────────────────────────────────────
+const Venue        = require('../models/Venue');
+const VenuePlan    = require('../models/VenuePlan');
+const Announcement = require('../models/Announcement');
+const Reservation  = require('../models/Reservation');
+
+router.get('/venues', async (req, res) => {
+  try {
+    const venues = await Venue.find().sort({ order: 1, createdAt: 1 }).lean();
+    res.json(venues);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/venues', async (req, res) => {
+  try {
+    const venue = await Venue.create(req.body);
+    res.json(venue);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.patch('/venues/:id', async (req, res) => {
+  try {
+    const venue = await Venue.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!venue) return res.status(404).json({ error: 'Not found' });
+    res.json(venue);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/venues/:id', async (req, res) => {
+  try {
+    await Venue.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Venue Plans ──────────────────────────────────────────────────────────────
+router.get('/venues/:venueId/plans', async (req, res) => {
+  try {
+    const plans = await VenuePlan.find({ venueId: req.params.venueId }).sort({ order: 1 }).lean();
+    res.json(plans);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/venues/:venueId/plans', async (req, res) => {
+  try {
+    const plan = await VenuePlan.create({ ...req.body, venueId: req.params.venueId });
+    res.json(plan);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.patch('/venues/:venueId/plans/:planId', async (req, res) => {
+  try {
+    const plan = await VenuePlan.findOneAndUpdate(
+      { _id: req.params.planId, venueId: req.params.venueId }, req.body, { new: true }
+    );
+    if (!plan) return res.status(404).json({ error: 'Not found' });
+    res.json(plan);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/venues/:venueId/plans/:planId', async (req, res) => {
+  try {
+    await VenuePlan.findOneAndDelete({ _id: req.params.planId, venueId: req.params.venueId });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Announcements ────────────────────────────────────────────────────────────
+router.get('/announcements', async (req, res) => {
+  try {
+    const items = await Announcement.find().sort({ createdAt: -1 }).lean();
+    res.json(items);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/announcements', async (req, res) => {
+  try {
+    const item = await Announcement.create(req.body);
+    res.json(item);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.patch('/announcements/:id', async (req, res) => {
+  try {
+    const item = await Announcement.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    res.json(item);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/announcements/:id', async (req, res) => {
+  try {
+    await Announcement.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Reservation Admin ────────────────────────────────────────────────────────
+router.get('/reservations', async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.venue)  filter.venueId = req.query.venue;
+    if (req.query.status) filter.status  = req.query.status;
+    if (req.query.date) {
+      const d = new Date(req.query.date);
+      filter.date = { $gte: d, $lt: new Date(d.getTime() + 24 * 60 * 60 * 1000) };
+    }
+    const items = await Reservation.find(filter).sort({ date: -1, createdAt: -1 }).lean();
+    res.json(items);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.patch('/reservations/:id', async (req, res) => {
+  try {
+    const item = await Reservation.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    res.json(item);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;
