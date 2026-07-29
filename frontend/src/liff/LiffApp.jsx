@@ -16,6 +16,13 @@ export default function LiffApp() {
   const [initing, setIniting]     = useState(true);
 
   useEffect(() => {
+    fetch('/api/liff/config')
+      .then(r => r.json())
+      .then(cfg => { if (cfg.liffTitle) document.title = cfg.liffTitle; })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     async function init() {
       try {
         if (!LIFF_ID) {

@@ -5,6 +5,7 @@ const Venue = require('../models/Venue');
 const VenuePlan = require('../models/VenuePlan');
 const Reservation = require('../models/Reservation');
 const Announcement = require('../models/Announcement');
+const BusinessProfile = require('../models/BusinessProfile');
 
 const router = express.Router();
 
@@ -106,6 +107,17 @@ async function getSlotAvailability(venueId, maxCapacity, dateStr) {
   }
   return result;
 }
+
+// ── GET /api/liff/config ───────────────────────────────────────────────────────
+// 公開端點：LIFF 初始化時取得系統設定（不需 auth）
+router.get('/config', async (req, res) => {
+  try {
+    const profile = await BusinessProfile.findOne().lean();
+    res.json({ liffTitle: profile?.liffTitle || '預約入場系統' });
+  } catch (err) {
+    res.json({ liffTitle: '預約入場系統' });
+  }
+});
 
 // ── POST /api/liff/auth ────────────────────────────────────────────────────────
 router.post('/auth', async (req, res) => {

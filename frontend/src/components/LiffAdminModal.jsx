@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import API_BASE, { authFetch } from '../config';
 
-const TABS = ['場地管理', '時段方案', '公告管理', '預約列表'];
+const TABS = ['場地管理', '時段方案', '公告管理', '預約列表', '系統設定'];
 const SLOT_OPTIONS = [
   { key: 'morning',   label: '早上 (07–12)' },
   { key: 'afternoon', label: '下午 (12–18)' },
@@ -382,6 +382,73 @@ function ReservationsTab() {
   );
 }
 
+// ── Tab 5: 系統設定 ──────────────────────────────────────────────────────────
+function SystemSettingsTab() {
+  const [liffTitle, setLiffTitle] = useState('');
+  const [loading, setLoading]     = useState(true);
+  const [saving, setSaving]       = useState(false);
+  const [saved, setSaved]         = useState(false);
+
+  useEffect(() => {
+    authFetch(`${API_BASE}/api/settings`)
+      .then(r => r.json())
+      .then(d => { setLiffTitle(d.liffTitle || ''); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave(e) {
+    e.preventDefault();
+    setSaving(true);
+    setSaved(false);
+    try {
+      await authFetch(`${API_BASE}/api/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ liffTitle })
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      alert('儲存失敗：' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <div style={{ color: '#aaa', textAlign: 'center', padding: '40px' }}>載入中...</div>;
+
+  return (
+    <form onSubmit={handleSave}>
+      <div style={{ marginBottom: '20px' }}>
+        <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>
+          LIFF 頁面標題（顯示於 LINE 瀏覽器頂部）
+        </label>
+        <input
+          value={liffTitle}
+          onChange={e => setLiffTitle(e.target.value)}
+          placeholder="例：OO 運動場地預約系統"
+          style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
+        />
+        <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>
+          若留空則顯示預設：「預約入場系統」
+        </div>
+      </div>
+      <button type="submit" disabled={saving} style={{
+        background: '#111', color: '#fff', border: 'none', borderRadius: '8px',
+        padding: '10px 24px', fontSize: '14px', fontWeight: '600', cursor: 'pointer'
+      }}>
+        {saving ? '儲存中...' : '儲存設定'}
+      </button>
+      {saved && (
+        <span style={{ marginLeft: '12px', color: '#2e7d32', fontSize: '13px' }}>
+          ✓ 已儲存，重新整理 LIFF 頁面後生效
+        </span>
+      )}
+    </form>
+  );
+}
+
 // ── Main Modal ────────────────────────────────────────────────────────────────
 export default function LiffAdminModal({ onClose }) {
   const [tab, setTab] = useState(0);
@@ -418,6 +485,7 @@ export default function LiffAdminModal({ onClose }) {
           {tab === 1 && <PlansTab />}
           {tab === 2 && <AnnouncementsTab />}
           {tab === 3 && <ReservationsTab />}
+          {tab === 4 && <SystemSettingsTab />}
         </div>
       </div>
     </div>
