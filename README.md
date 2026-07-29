@@ -1,275 +1,638 @@
-# LINE AI 客服系統
+# LINE 智慧客服後台系統
 
-一套完整的 LINE 客服後台系統，整合 OpenAI GPT-4o 進行智慧回覆建議、情緒分析、語意關鍵字觸發，並支援即時推播、自動回覆、客戶標籤管理等進階功能。
+> 專為中小型商家設計的 LINE 客服後台，將 AI 能力內嵌進人工客服流程，而非取代它。
 
-## 功能總覽
+---
 
-| 功能 | 說明 |
+## 這是什麼？解決什麼問題？
+
+台灣中小商家日常幾乎都靠 LINE 官方帳號接單、回覆客戶。但當訊息量一多，就會面臨幾個共同痛點：
+
+| 痛點 | 場景 |
 |------|------|
-| 📨 對話分組管理 | 依用戶分組，多則分段訊息合併給 AI 分析，一鍵統一回覆 |
-| ⚡ 即時訊息推播 | SSE（Server-Sent Events）即時更新，無需手動重整 |
-| 🤖 AI 回覆建議 | OpenAI GPT-4o 根據商家知識庫生成 3 則回覆建議 |
-| 🔑 智慧關鍵字觸發 | 語意匹配關鍵字，命中時自動即時回覆，不進待回覆佇列 |
-| 🚨 緊急訊息偵測 | 情緒分析標記 normal / urgent / angry，顏色提示客服人員 |
-| ⏱️ AI 自動回覆 | 可開關的自動回覆，60 秒防抖確保分段訊息齊全後才回覆 |
-| 🏷️ 客戶標籤系統 | 自訂標籤名稱與顏色，快速分類客戶 |
-| 📝 隨手記事 | 右下角浮動便條，LocalStorage 儲存，Ctrl+Enter 快速儲存 |
-| 📱 行動版介面 | 響應式設計，手機上全螢幕切換列表/對話視圖 |
-| 📊 Google Sheets 備份 | 每筆回覆自動同步至 Google Sheet |
+| **回不完** | 一個人管多個詢問，同時開著 N 個對話視窗 |
+| **重複問題太多** | 「幾點開？」「有無外送？」每天回幾十次一樣的問題 |
+| **情緒漏接** | 客人抱怨的訊息淹沒在一般詢問裡沒有被優先處理 |
+| **客服品質不穩** | 不同時段、不同人回覆語氣不一致，新手容易說錯話 |
+| **沒有紀錄** | 對話散落在手機，無法追蹤誰何時問了什麼、回了什麼 |
+| **菜單推銷費時** | 客人問有什麼，還要手動複製貼上菜單或截圖傳送 |
+| **接單靠打字** | 客人問「可以訂嗎」，要手動收集品項、確認數量、記錄資料 |
+| **記不住老客戶** | 輪班換人，完全沒有上次溝通的背景，重新從頭問 |
+| **無法分眾溝通** | 想對 VIP 客戶推播促銷，只能全部一起發，騷擾非目標客群 |
+| **後台安全性低** | 任何人開後台網址就能看到所有客戶對話資料 |
+| **預約管理混亂** | 預約資訊散落在 LINE 訊息，無法集中追蹤與提醒 |
+
+本系統將 OpenAI GPT-4o 接入 LINE 後台，讓客服人員可以在網頁後台查看所有訊息、取得 AI 建議、一鍵回覆，並讓常見問題和商品介紹完全自動處理。
+
+---
+
+## 核心功能亮點
+
+### 🔐 後台登入驗證 — 解決：安全性低
+
+**痛點**：後台掌握所有客戶對話、商家資料，卻任何人打開網址就能進入。
+
+**解法**：帳號密碼登入機制，7 天 Token 驗證。所有 API 均需 Bearer Token，後台資料完全保護。
+
+```
+後台 → 輸入帳號/密碼 → 取得 Token → localStorage 保存 → 自動帶入每次 API 請求
+```
+
+---
+
+### 🧠 AI 回覆建議（Human-in-the-Loop）— 解決：客服品質不穩
+
+```
+客人訊息 → GPT-4o 生成 3 則建議（正式版 / 親切版 / 簡潔版）
+                         ↓
+            客服人員選擇或修改其中一則
+                         ↓
+                      發送至 LINE
+```
+
+AI 說什麼，人類決定要不要送出。有效避免 AI 幻覺造成客訴。
+
+- 偵測到**購買意圖**時，切換為促成交易模式（引導下單、安心保證、促成成交）
+- 購買意圖對話以綠色邊框 + 🛒 標記，讓客服優先處理
+
+---
+
+### 🤖 AI 對話記憶摘要 — 解決：記不住老客戶
+
+**痛點**：客服換班或多人共管，根本不知道上次跟這個客人聊到哪，要從頭看幾百則記錄。
+
+**解法**：每次回覆後，系統以 GPT-4o-mini 自動更新「對話摘要」（~100字），儲存在後台；下次開啟對話，AI 回覆建議已將此客戶背景納入考量。
+
+```
+每次回覆後（非同步，不影響回覆速度）：
+    取最近 20 則訊息 → GPT-4o-mini 摘要 → 存入 CustomerSetting
+    
+下次生成 AI 建議時：
+    【此客戶對話背景摘要】：上次詢問過夏季款式，有意購買但等打折...
+                ↓
+    AI 建議更貼合此客戶脈絡，而非完全重頭分析
+```
+
+- 後台可展開查看摘要（含最後更新時間）
+- 支援手動編輯摘要（客服人工備注）
+- 使用 GPT-4o-mini，成本約為 GPT-4o 的 1/10
+
+---
+
+### 📋 訂單下定系統 — 解決：接單靠打字
+
+**痛點**：客人問「我要訂兩份A餐一份B餐」，客服要手動整理品項、回覆確認、建立訂單，容易出錯且費時。
+
+**解法**：後台設定品項清單 → 一鍵傳送「訂購單 Flex Message 卡片」 → 客人點「我想下單」確認 → 系統自動建立訂單 → 通知指定管理員 LINE → 後台即時收到推播通知。
+
+```
+客服後台                    LINE 用戶端
+    │                           │
+    ├── 點「傳送訂購單」 ───────→ 收到商品卡片（含品項/價格/按鈕）
+    │                           │
+    │                    客人點「我想下單」
+    │                           │
+    ←── SSE 即時更新 ←── 系統自動建立訂單 + 通知管理員
+    │
+    └── 後台可查看/更新訂單狀態（新訂單/處理中/已完成/已取消）
+```
+
+- 品項管理：名稱、說明、價格（支援「面議」「報價」等彈性格式）、單位
+- 訂單管理：狀態追蹤、備注、刪除、分頁篩選
+- 新訂單角標：App 標題即時顯示未處理訂單數
+
+---
+
+### 📢 標籤群發 — 解決：無法分眾溝通
+
+**痛點**：想對「VIP 客戶」推播促銷訊息，或對「待跟進」客戶發送提醒，LINE 官方只能全體發送，浪費費用且騷擾其他客戶。
+
+**解法**：自訂標籤（如 VIP、潛在客戶、已購買），貼給對應客戶後，透過「群發」功能選擇標籤 → 預覽人數 → 發送專屬訊息。
+
+- 即時顯示「此標籤共 N 位客戶」
+- 發送前確認人數，避免誤操作
+- 發送結果回報（成功/失敗筆數）
+
+---
+
+### 📚 FAQ 知識庫 — 解決：重複問題太多
+
+**痛點**：「幾點開？」「有無外送？」每天同樣問題要回幾十次。雖有關鍵字觸發，但每個小問題都設定一條規則太麻煩，而且問法稍有不同就觸發不到。
+
+**解法**：建立結構化 FAQ（問題/答案對），AI 分析訊息時會參考所有 FAQ，即使客人問法不同也能正確回答。
+
+```
+FAQ 設定：
+  Q: 幾點開門？
+  A: 每天早上 10 點到晚上 9 點，週二公休。
+
+客人傳：「你們星期三有開嗎」
+GPT-4o：根據 FAQ 回答「我們週二公休，其他時間含週三都有營業...」
+```
+
+- 後台 FAQ 管理介面（新增/編輯/刪除/啟用停用）
+- 排序功能，控制 AI 回覆時的參考優先級
+- 與商家知識庫並行，結構更清晰、易維護
+
+---
+
+### 🔍 智慧關鍵字觸發 + 商品卡片
+
+不是死板的字串比對，而是透過 GPT-4o 做語意理解：
+
+- 設定觸發主題「菜單」→ 客人說「有啥可以吃的」也會命中
+- 每個觸發主題可回傳：文字 or **LINE Flex Message 卡片**（支援圖片、價目表、按鈕）
+- 可複選多張卡片，自動以 **Carousel 輪播**方式發送
+- 卡片支援自訂：標題背景色、標題顏色、副標題顏色、按鈕顏色
+- 設定介面提供**即時 LINE 預覽**，所見即所得
+
+---
+
+### 🖼 圖文選單管理 — 解決：選單設定複雜
+
+**痛點**：LINE 官方後台設定圖文選單步驟繁瑣，需要在不同頁面間切換上傳圖片、設定按鈕、套用帳號，操作不直覺。
+
+**解法**：後台直接管理所有圖文選單，支援建立、套用、刪除，並可即時**視覺化預覽**每個選單的按鈕區域配置。
+
+- 顯示選單名稱、按鈕數量、尺寸和套用狀態
+- 選單預覽：疊加背景圖片 + 按鈕區域方框 + 按鈕文字標示
+- URL 上傳或直接指定背景圖片
+- 一鍵套用 / 取消套用至帳號
+
+---
+
+### 📅 行事曆預約管理 — 解決：預約管理混亂
+
+**痛點**：客人透過 LINE 預約，訊息雜亂難追蹤，也無法自動提醒。
+
+**解法**：後台內建行事曆，與 Google Calendar 雙向同步。可直接在後台建立、編輯、刪除預約事件，客人查詢預約時亦可即時確認。
+
+- 月曆視圖（可切換月/週/日）
+- 建立事件：標題、說明、開始/結束時間、地點、是否整天
+- Google Calendar OAuth 整合，事件雙向同步
+- 直接從後台管理所有預約，不需切換至 Google 日曆
+
+---
+
+### 💬 快捷回覆模板 — 解決：反覆輸入相同內容
+
+**痛點**：某些制式回覆（如「感謝您的詢問，請問方便留下聯絡方式嗎？」）每天要打好幾次，既費時又容易打錯。
+
+**解法**：後台建立快捷回覆模板清單，發送訊息時一鍵選用，支援新增/編輯/刪除模板。
+
+- 模板標題 + 內容管理
+- 發訊息面板直接呼叫（按一下插入到輸入框）
+- Ctrl+Enter 快捷鍵發送訊息
+
+---
+
+### 🚨 緊急訊息偵測
+
+| 標記 | 觸發條件 | 後台顯示 |
+|------|----------|----------|
+| `angry` | 語氣憤怒、強烈不滿、情緒激動 | 🔴 紅色邊框 |
+| `urgent` | 急迫需求、反覆追問、趕時間 | 🟡 黃色邊框 |
+| `normal` | 一般詢問 | 無特別標示 |
+
+---
+
+### ⏱ 自動回覆防抖機制
+
+```
+客人：「你好」              ← 計時器啟動（60s）
+客人：「我想問一下」        ← 計時器重置
+客人：「你們幾點關？」      ← 計時器重置
+（60 秒後，3 則合併分析）  ← 統一回覆一次，不打擾客人
+```
+
+---
+
+### 📊 AI 用量統計
+
+後台「設定 → AI 用量」分頁可即時查看：
+
+- 本月總呼叫次數（大字顯示）
+- 分析訊息用量 vs. 生成建議用量
+- 過去 30 天每日呼叫統計
+- 有效控管 OpenAI API 成本
+
+---
+
+## 與 LINE 官方功能的比較
+
+| 功能面向 | LINE 官方帳號 | 本系統 |
+|----------|--------------|--------|
+| 後台安全性 | ❌ 無登入機制 | ✅ **帳號密碼 + Token 驗證** |
+| 關鍵字觸發 | ✅ 精準字串比對 | ✅ **語意匹配**（「幾點開門」→「營業時間」） |
+| 自動回覆 | ✅ 固定文字 | ✅ **AI 動態生成**，符合商家知識庫語氣 |
+| FAQ 知識庫 | ❌ 無結構化 Q&A | ✅ **結構化 FAQ 管理**，AI 參考作答 |
+| 訂單管理 | ❌ 無 | ✅ **完整訂單流程**：發卡→確認→追蹤→通知 |
+| 對話記憶 | ❌ 無 | ✅ **AI 自動摘要**，客服切換時不失去脈絡 |
+| 群發分眾 | ✅ 有但依訊息費計費 | ✅ **依標籤群發**，自訂目標客群 |
+| 商品介紹卡片 | ✅ 需在官方後台逐張設定 | ✅ **即時預覽，支援自訂配色**，觸發詞一鍵發送 |
+| 多卡片輪播 | ✅ 有但設定繁瑣 | ✅ 勾選多張卡片即自動 Carousel |
+| 圖文選單管理 | ✅ 在 LINE Manager 後台 | ✅ **整合於本後台，含視覺預覽** |
+| 客服人員介入 | ❌ 需切換「聊天」模式 | ✅ **網頁後台集中管理**，AI 建議 + 人工確認 |
+| 情緒/緊急偵測 | ❌ 無 | ✅ **GPT-4o 情緒分析**，憤怒/緊急訊息自動標紅 |
+| 對話分組 | ❌ 逐則訊息顯示 | ✅ **依用戶分組**，多則分段訊息合併分析 |
+| 防抖自動回覆 | ❌ 每則觸發 | ✅ **60 秒防抖**，確保客人說完再統一回覆 |
+| 客戶標籤分類 | ✅ 基礎分眾功能 | ✅ **自訂名稱與顏色**，即時貼標 |
+| 預約管理 | ❌ 無 | ✅ **Google Calendar 雙向同步** |
+| 快捷回覆模板 | ❌ 無 | ✅ **後台模板管理，一鍵插入** |
+| 後台行動版 | ❌ 官方 App 操作，無自訂後台 | ✅ **響應式 Web 後台**，手機也能用 |
+| 資料備份 | ❌ 無法匯出對話 | ✅ **自動同步 Google Sheets** |
+| AI 用量追蹤 | ❌ 無 | ✅ **後台即時查看每日呼叫次數** |
+
+---
+
+## 與 ACT 艾客互動的比較
+
+[ACT 艾客互動](https://www.wecanstrategy.com.tw)（帷可策略股份有限公司）是台灣市場主打「LINE 社群電商 + 行銷自動化 + AI 客服」的 SaaS 平台，功能完整、定位在中型品牌，與本系統有不同的使用情境。
+
+### 功能對照表
+
+| 功能面向 | ACT 艾客互動 | 本系統 |
+|----------|-------------|--------|
+| **定位** | 社群電商 + 行銷自動化 | 人工 + AI 混合客服後台 |
+| **AI 回覆機制** | 全自動 AI 回覆，支援真人接手 | **AI 建議，人工審核後才發送** |
+| **AI 對話記憶** | 依行為標籤累積用戶輪廓 | **GPT-4o-mini 自動生成文字摘要，可手動編輯** |
+| **社群電商** | ✅ LINE 內完整購物車 + LINE Pay 結帳 | ✅ 訂購單 Flex Card + 訂單狀態追蹤 |
+| **會員積點/等級** | ✅ 積點、等級、優惠券管理 | ❌ 無（僅標籤分類） |
+| **多渠道** | ✅ LINE / FB / IG / WhatsApp / Email | ❌ 僅 LINE |
+| **Chatbot 流程** | ✅ 多步驟視覺化流程設計 | ✅ 語意關鍵字觸發（GPT-4o 理解）|
+| **標籤/分眾** | ✅ 行為自動貼標（加入來源、瀏覽、購買、棄車等） | ✅ 手動貼標 + 依標籤群發 |
+| **圖文選單** | ✅ 進階客製，含A/B測試 | ✅ 管理 + 視覺預覽（含按鈕區域疊圖）|
+| **圖文選單預覽** | ❌ 無直接預覽 | ✅ **背景圖 + 按鈕區域即時預覽** |
+| **行事曆/預約** | ❌ 需另外整合 | ✅ **Google Calendar 雙向同步** |
+| **快捷回覆模板** | ❌ 無明確功能 | ✅ **後台管理，發訊息時一鍵選用** |
+| **訂單管理** | ✅ 完整電商訂單（含物流/金流） | ✅ 輕量訂單追蹤（適合服務業/餐飲）|
+| **FAQ 知識庫** | ✅ 以知識庫訓練 AI | ✅ **結構化 FAQ + 商家知識庫** |
+| **緊急訊息偵測** | ❌ 無情緒分類 | ✅ **GPT-4o 情緒分析，自動紅/黃色警示** |
+| **AI 用量追蹤** | ❌ 含在訂閱費中不透明 | ✅ **後台即時查看每日 API 呼叫次數** |
+| **Google Sheets 備份** | ❌ 無 | ✅ **對話自動同步試算表** |
+| **部署方式** | SaaS 雲端，帷可管理 | **自部署，資料完全自主** |
+| **原始碼** | ❌ 封閉原始碼 | ✅ **完全開源，可任意客製** |
+| **費用** | 訂閱制，約 NT$50,000/年（NT$4,000+/月）| **~$5–8/月**（Railway + OpenAI API）|
+| **適合規模** | 中型品牌、行銷團隊 | **個人工作室、小商家、單人客服** |
+
+### 選擇建議
+
+**選擇 ACT 艾客互動，如果你需要：**
+- LINE 內完整電商體驗（瀏覽商品 → 加入購物車 → LINE Pay 結帳）
+- 會員積點、等級、優惠券等完整忠誠度方案
+- 跨渠道整合（LINE + FB + IG + WhatsApp 一個後台管理）
+- 行為自動化貼標（用戶點擊/購買後自動觸發行銷流程）
+- 有專屬行銷人員負責操作平台
+
+**選擇本系統，如果你需要：**
+- 每則 AI 建議都由人確認後才發出，不希望 AI 完全自動回覆
+- 極低月費（只需 Railway 主機費 + OpenAI API 費用）
+- 完全掌控原始碼和資料，不想被 SaaS 平台綁定
+- Google Calendar 整合預約管理
+- 清楚追蹤每日 AI API 用量與成本
+- 30 分鐘部署上線，無學習曲線
+
+---
+
+## 與市場競品的比較
+
+目前市面上針對 LINE 的客服/行銷工具主要分幾類：
+
+### 行銷自動化平台（如 Omnichat、MAAC、AccuNIX、Crescendo Lab）
+
+這類平台功能完整、適合有專職行銷團隊的中大型電商，但：
+- 月費通常 NT$ 3,000–30,000+，依訊息量計費
+- 功能複雜，需要學習曲線，小商家用不到 80% 的功能
+- AI 回覆為附加模組，須額外付費
+- 無法自行客製邏輯
+- 對話記憶、訂單整合通常需要搭配 CRM 另購
+
+### ACT 艾客互動（社群電商 + AI 客服）
+
+- 適合需要 LINE 內購物的品牌電商
+- 月費約 NT$4,000+，年費約 NT$50,000 以內
+- AI 自動回覆但品牌控制度相對低
+- 封閉原始碼，無法自訂核心邏輯
+
+### LINE 官方 AI 客服（beta）
+
+- 回覆品質無法調整（不了解自家商品知識）
+- 無人工審核機制，AI 說錯話無法即時攔截
+- 不開放 API，無法與其他系統整合
+
+### 本系統的定位
+
+```
+LINE 官方後台 ── 本系統 ── ACT 艾客互動 ── Omnichat / MAAC
+（免費但功能弱）  （輕量 AI 客服）  （社群電商 SaaS）  （企業級但昂貴）
+```
+
+**核心優勢：**
+- 🔓 **開源可自部署**，無月費、無訊息量限制
+- 🧠 **AI 是輔助，不是替代**：每則回覆仍由人確認，降低 AI 說錯話的風險
+- ⚙️ **可完整客製化**：任何邏輯都可以修改，商家知識庫完全掌控
+- 📦 **訂單全程數位化**：從詢問到確認到追蹤，不再靠紙本或口頭記錄
+- 🧠 **不失憶的客服**：摘要功能讓每位客服都能立即掌握客戶背景
+- 📅 **預約無縫整合**：Google Calendar 雙向同步，行事曆一目瞭然
+- 💰 **成本極低**：僅需 Railway 主機費（約 \$5/月）+ OpenAI API 用量費（一般小商家約 \$1–5/月）
+- 🚀 **部署快速**：30 分鐘內從 clone 到上線
+
+---
+
+## 系統架構
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      LINE 用戶端                         │
+└──────────────────────┬──────────────────────────────────┘
+                       │ 傳送訊息 / 點擊按鈕（postback）
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│                  LINE Messaging API                      │
+│              (Webhook → 本系統後端)                       │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+         ┌─────────────▼─────────────┐
+         │        Express 後端         │
+         │  ┌─────────────────────┐   │
+         │  │   webhook.js        │   │  ← 簽名驗證、postback 事件、訂單建立
+         │  └────────┬────────────┘   │
+         │           │                │
+         │  ┌────────▼────────────┐   │
+         │  │  openaiService.js   │   │  ← GPT-4o 情緒分析 + 語意匹配
+         │  │                     │   │     + 建議回覆 + FAQ 參考
+         │  │  summarize()        │   │  ← GPT-4o-mini 對話摘要
+         │  └────────┬────────────┘   │
+         │           │                │
+         │  ┌────────▼────────────┐   │
+         │  │   MongoDB           │   │  ← 訊息、設定、標籤、FAQ
+         │  │   (9 個 Collection) │   │     卡片、關鍵字、訂單儲存
+         │  └────────┬────────────┘   │
+         │           │                │
+         │  ┌────────▼────────────┐   │
+         │  │   sseService.js     │   │  ← 即時推播至後台（新訊息/新訂單）
+         │  └─────────────────────┘   │
+         │                            │
+         │  admin.js (REST API)        │  ← 後台所有操作（Token 驗證）
+         └─────────────┬──────────────┘
+                       │ /api/*
+         ┌─────────────▼──────────────┐
+         │      React 前端後台         │
+         │  - 後台登入（Token 驗證）   │
+         │  - 對話列表（urgency 標示） │
+         │  - AI 建議 + 人工發送       │
+         │  - 快捷回覆模板             │
+         │  - 對話摘要（可編輯）       │
+         │  - 訂單下定 + 訂單管理      │
+         │  - 標籤群發                 │
+         │  - FAQ 知識庫管理           │
+         │  - 商品卡片 / 訂購品項      │
+         │  - 圖文選單管理 + 預覽      │
+         │  - 行事曆（Google Calendar）│
+         │  - AI 用量統計              │
+         │  - 設定、標籤、關鍵字       │
+         └────────────────────────────┘
+```
+
+### 訊息處理流程
+
+```
+LINE 用戶傳訊
+    │
+    ▼
+POST /webhook（HMAC-SHA256 簽名驗證）
+    │
+    ├─ postback 事件（action=order_confirm）？
+    │     └─ 是 → 建立 Order → 回覆客戶確認 → 通知管理員 → SSE broadcast
+    │
+    ├─ 並行取得：用戶資料 + 商家設定 + 關鍵字 + FAQ + 對話摘要 + CustomerSetting
+    │
+    ▼
+analyzeMessage(text, bp, keywords, faqs, conversationSummary)
+    ├─ 語意匹配關鍵字？
+    │     └─ 是 → 立即 pushMessage / pushFlexCard → 結束
+    │
+    ├─ 情緒分析 → urgency: normal / urgent / angry
+    ├─ 購買意圖 → intent: none / purchase
+    │
+    └─ 儲存 Message（pending） → SSE broadcast → 前台即時更新
+         │
+         ▼（若開啟自動回覆）
+    autoReplyService.schedule()  ← 60s 防抖計時器
+         │
+         ▼（計時器到期）
+    generateReplies(text, bp, intent, faqs, conversationSummary)
+         │
+         ▼
+    pushMessage → updateMany(pending → replied)
+         │
+         ▼（非同步，不阻塞回覆）
+    Google Sheets 同步 + 更新對話摘要（GPT-4o-mini）
+```
+
+---
+
+## 功能詳覽
+
+### 訂購品項設定
+
+後台「設定 → 訂購品項」可管理商家可供訂購的品項：
+
+| 欄位 | 說明 |
+|------|------|
+| 名稱 | 品項名稱（必填） |
+| 說明 | 簡短描述（選填） |
+| 價格 | 支援 `$60`、`NT$100`、`面議`、`報價` 等彈性格式 |
+| 單位 | 杯、份、個、盒（選填） |
+| 啟用 | 關閉後不出現在訂購單卡片 |
+
+### 訂單管理後台
+
+右側滑入面板，支援：
+- 依狀態篩選（新訂單 / 處理中 / 已完成 / 已取消）
+- 每筆訂單顯示：客戶名稱、時間、品項清單、備注
+- 狀態流轉按鈕（新訂單→處理中→已完成 or 取消）
+- 備注編輯、訂單刪除
+
+### 對話摘要
+
+每位客戶的對話詳情頁頂端可展開「對話摘要」區塊：
+- 藍色卡片顯示 AI 自動更新的摘要
+- 顯示最後更新時間
+- 支援客服人工點擊「編輯」直接修改
+- 未有摘要時顯示「＋ 新增對話摘要」提示
+
+### 圖文選單管理
+
+圖文選單後台整合直接操作：
+- 列出所有圖文選單（名稱、按鈕區域數、尺寸、套用狀態）
+- 點擊「👁 預覽」展開視覺化預覽（背景圖 + 按鈕區域疊加）
+- URL 上傳背景圖片
+- 一鍵套用 / 取消套用至 LINE 帳號
+
+### 行事曆預約
+
+後台行事曆功能整合 Google Calendar：
+- 月曆視圖（可切換月/週/日）
+- 建立 / 編輯 / 刪除事件
+- 與 Google Calendar 雙向同步
+- 可於後台直接查詢客戶預約情況
+
+---
 
 ## 技術架構
 
-| 層級 | 技術 |
-|------|------|
-| 後端 | Node.js + Express |
-| 前端 | React + Vite |
-| 資料庫 | MongoDB |
-| AI | OpenAI GPT-4o |
-| 訊息平台 | LINE Messaging API |
-| 即時推播 | Server-Sent Events (SSE) |
-| 備份 | Google Sheets API |
-| 部署 | Railway（npm workspaces 單服務） |
+| 層級 | 技術 | 選用原因 |
+|------|------|----------|
+| 後端 | Node.js + Express | 輕量、非同步 I/O 適合即時推播 |
+| 前端 | React + Vite | 元件化，快速開發互動介面 |
+| 資料庫 | MongoDB | Schema 彈性，訊息結構易於演進 |
+| AI（主） | OpenAI GPT-4o | 繁中理解能力優，支援結構化輸出 |
+| AI（摘要） | OpenAI GPT-4o-mini | 成本 1/10，適合高頻的摘要任務 |
+| 即時推播 | SSE（非 WebSocket） | 單向推播即可，零依賴，自動重連 |
+| 訊息平台 | LINE Messaging API | Webhook + Push Message + Flex Message + Rich Menu |
+| 預約管理 | Google Calendar API | OAuth 整合，雙向同步 |
+| 備份 | Google Sheets API | 非技術人員也能查看歷史紀錄 |
+| 部署 | Railway | 單一服務，npm workspaces，5 分鐘部署 |
+
+---
 
 ## 專案結構
 
 ```
 ├── backend/
 │   ├── src/
-│   │   ├── app.js                      # Express 主程式、CORS、靜態檔案
+│   │   ├── app.js                      # Express 主程式、CORS、靜態服務前端
+│   │   ├── middleware/
+│   │   │   └── auth.js                 # Bearer Token 驗證、會話管理
 │   │   ├── routes/
-│   │   │   ├── webhook.js              # LINE Webhook（簽名驗證、訊息處理）
-│   │   │   └── admin.js                # 後台 REST API（對話、標籤、設定等）
+│   │   │   ├── webhook.js              # LINE Webhook 入口（含 postback 訂單確認）
+│   │   │   └── admin.js                # 後台所有 REST API
 │   │   ├── services/
-│   │   │   ├── openaiService.js        # GPT-4o 回覆生成 & 訊息分析
-│   │   │   ├── lineService.js          # LINE Push/Reply API
+│   │   │   ├── openaiService.js        # analyzeMessage() / generateReplies() / summarizeConversation()
+│   │   │   ├── lineService.js          # pushMessage() / pushFlexCard() / pushOrderCard() / getRichMenuImageBuffer()
 │   │   │   ├── dbService.js            # MongoDB CRUD 封裝
 │   │   │   ├── sheetService.js         # Google Sheets 同步
 │   │   │   ├── sseService.js           # SSE 客戶端管理 & 廣播
-│   │   │   └── autoReplyService.js     # 自動回覆防抖排程
+│   │   │   └── autoReplyService.js     # 防抖計時器 + 自動回覆 + 摘要更新
 │   │   └── models/
-│   │       ├── Message.js              # 訊息（含 urgency 欄位）
-│   │       ├── BusinessProfile.js      # 商家知識庫（含 autoReply 設定）
-│   │       ├── Keyword.js              # 關鍵字觸發規則
+│   │       ├── Message.js              # 訊息（urgency、intent、status、isProactive）
+│   │       ├── BusinessProfile.js      # 商家知識庫 + autoReply 設定 + adminLineUserId
+│   │       ├── Keyword.js              # 關鍵字規則（replyType: text/card）
+│   │       ├── ProductCard.js          # 商品卡片（含自訂配色）
 │   │       ├── Label.js                # 標籤定義
-│   │       └── CustomerLabel.js        # 客戶-標籤對應
-│   ├── package.json
+│   │       ├── CustomerLabel.js        # 客戶-標籤對應
+│   │       ├── CustomerSetting.js      # 個人自動回覆開關 + 對話摘要
+│   │       ├── FAQ.js                  # FAQ 知識庫（Q&A 對）
+│   │       ├── OrderItem.js            # 訂購品項定義
+│   │       └── Order.js                # 訂單（status / items / note）
 │   └── .env.example
 ├── frontend/
-│   ├── src/
-│   │   ├── App.jsx                     # 主應用（SSE、狀態管理、響應式）
-│   │   ├── main.jsx
-│   │   └── components/
-│   │       ├── ChatList.jsx            # 對話列表（urgency 標示、標籤顯示）
-│   │       ├── ChatDetail.jsx          # 訊息詳情（標籤管理、多訊息泡泡）
-│   │       ├── ReplyPicker.jsx         # AI 回覆選擇器（含載入動畫）
-│   │       ├── SendPanel.jsx           # 發送/略過面板
-│   │       ├── SettingsModal.jsx       # 設定視窗（4 分頁）
-│   │       └── StickyNotes.jsx         # 隨手記事浮動插件
-│   ├── package.json
-│   └── vite.config.js
+│   └── src/
+│       ├── App.jsx                     # 全域狀態、SSE、響應式、訂單角標
+│       ├── config.js                   # authFetch() Bearer Token 封裝
+│       └── components/
+│           ├── ChatList.jsx            # 對話列表（urgency 色彩、購買意圖標記）
+│           ├── ChatDetail.jsx          # 訊息詳情 + ConversationSummary + SendOrderCard
+│           ├── ReplyPicker.jsx         # AI 建議選擇器（purchase intent 綠色模式）
+│           ├── SendPanel.jsx           # 發送 / 略過（Ctrl+Enter 快捷鍵）
+│           ├── TemplatePanel.jsx       # 快捷回覆模板選擇器
+│           ├── SettingsModal.jsx       # 8 分頁設定（知識庫/FAQ/訂購品項/商品卡片/關鍵字/自動回覆/標籤/AI用量）
+│           ├── BroadcastModal.jsx      # 標籤群發介面
+│           ├── CalendarModal.jsx       # 行事曆（Google Calendar 整合）
+│           ├── RichMenuModal.jsx       # 圖文選單管理 + 視覺化預覽
+│           ├── OrdersModal.jsx         # 訂單管理面板
+│           └── StickyNotes.jsx         # 浮動隨手記事
 ├── package.json                        # npm workspaces 根設定
-├── railway.toml                        # Railway 部署設定
-├── CLAUDE.md                           # AI 開發指南
-└── README.md
+└── railway.toml                        # 部署設定
 ```
+
+---
 
 ## 本地開發
 
-### 環境需求
-
-- Node.js 18+
-- MongoDB（本地或 Atlas）
-
-### 安裝與啟動
+**環境需求**：Node.js 18+、MongoDB（本地或 Atlas）
 
 ```bash
-# 安裝所有相依套件（根目錄一次安裝）
+# 安裝全部相依套件
 npm install
 
 # 設定環境變數
 cp backend/.env.example backend/.env
-# 編輯 backend/.env 填入各項金鑰
+# 編輯 backend/.env
 
-# 同時啟動前後端（根目錄）
+# 同時啟動前後端
 npm run dev
+# 後台：http://localhost:5173
+# API：http://localhost:3000
 ```
 
-或分別啟動：
-
-```bash
-# 後端（port 3000）
-cd backend && npm run dev
-
-# 前端（port 5173，代理 /api 至後端）
-cd frontend && npm run dev
-```
-
-## 環境變數說明（`backend/.env`）
+## 環境變數（`backend/.env`）
 
 ```env
+# LINE
 LINE_CHANNEL_SECRET=            # LINE Channel Secret
 LINE_CHANNEL_ACCESS_TOKEN=      # LINE Channel Access Token
+
+# OpenAI
 OPENAI_API_KEY=                 # OpenAI API Key
+
+# MongoDB
 MONGODB_URL=                    # MongoDB 連線字串
+
+# 後台登入（必填，未設定則登入時回傳 500）
+ADMIN_USERNAME=admin            # 後台帳號（預設 admin）
+ADMIN_PASSWORD=                 # 後台密碼（必填，請自行設定強密碼）
+
+# Google Sheets（選填）
 GOOGLE_SERVICE_ACCOUNT_EMAIL=   # Google Service Account Email
-GOOGLE_PRIVATE_KEY=             # Google Service Account 私鑰（含換行 \n）
-GOOGLE_SHEET_ID=                # Google Sheet ID
-FRONTEND_URL=                   # 前端網址（CORS 用）
+GOOGLE_PRIVATE_KEY=             # Service Account 私鑰（\n 需為真正換行）
+GOOGLE_SHEET_ID=                # 備份用 Google Sheet ID
+
+# Google Calendar（選填）
+GOOGLE_CALENDAR_CLIENT_ID=      # OAuth 2.0 Client ID
+GOOGLE_CALENDAR_CLIENT_SECRET=  # OAuth 2.0 Client Secret
+
+# 其他
+FRONTEND_URL=                   # 前端網址（CORS 白名單）
 PORT=3000
 ```
 
-## API 端點
+### 後台帳號設定（重要）
 
-### Webhook
+後台登入憑證**完全由環境變數控制**，程式碼中無任何預設密碼：
 
-| 方法 | 路徑 | 說明 |
-|------|------|------|
-| POST | `/webhook` | LINE Webhook（簽名驗證） |
+- `ADMIN_USERNAME`：預設為 `admin`，可自訂
+- `ADMIN_PASSWORD`：**必填**，未設定則登入 API 回傳 500 錯誤
+- 在 Railway 部署時，於 Variables 頁面設定以上兩個變數
 
-### 即時推播
+### 訂單通知設定
 
-| 方法 | 路徑 | 說明 |
-|------|------|------|
-| GET | `/api/sse` | SSE 連線，25 秒心跳，推播 `new-message` 事件 |
-
-### 對話管理
-
-| 方法 | 路徑 | 說明 |
-|------|------|------|
-| GET | `/api/conversations` | 取得對話列表（依用戶分組，含 urgency） |
-| POST | `/api/conversations/:lineUserId/suggest` | 取得 AI 回覆建議 |
-| POST | `/api/conversations/:lineUserId/reply` | 發送回覆至 LINE |
-| PATCH | `/api/conversations/:lineUserId/skip` | 略過此對話 |
-
-### 標籤系統
-
-| 方法 | 路徑 | 說明 |
-|------|------|------|
-| GET | `/api/labels` | 取得所有標籤 |
-| POST | `/api/labels` | 建立標籤 |
-| PUT | `/api/labels/:id` | 更新標籤 |
-| DELETE | `/api/labels/:id` | 刪除標籤（連帶移除所有客戶的此標籤） |
-| GET | `/api/customers/labels` | 取得所有客戶標籤對應 `{ lineUserId: [...] }` |
-| PATCH | `/api/customers/:lineUserId/labels` | 更新指定客戶標籤 |
-
-### 關鍵字管理
-
-| 方法 | 路徑 | 說明 |
-|------|------|------|
-| GET | `/api/keywords` | 取得所有關鍵字規則 |
-| POST | `/api/keywords` | 建立關鍵字規則 |
-| PUT | `/api/keywords/:id` | 更新關鍵字規則 |
-| DELETE | `/api/keywords/:id` | 刪除關鍵字規則 |
-
-### 商家設定
-
-| 方法 | 路徑 | 說明 |
-|------|------|------|
-| GET | `/api/settings` | 取得商家知識庫設定 |
-| PUT | `/api/settings` | 更新設定（含 autoReply 開關、autoReplyDelay） |
-
-### 統計
-
-| 方法 | 路徑 | 說明 |
-|------|------|------|
-| GET | `/api/stats` | 今日統計數據 |
-
-## 資料模型
-
-### Message
-```js
-{
-  lineUserId: String,       // LINE 用戶 ID
-  displayName: String,      // 顯示名稱
-  userMessage: String,      // 用戶訊息內容
-  replyMessage: String,     // 發送的回覆內容
-  status: String,           // pending | replied | failed | processing
-  urgency: String,          // normal | urgent | angry
-  replyToken: String,       // LINE replyToken（5 分鐘有效）
-  createdAt: Date,
-  repliedAt: Date
-}
-```
-
-### BusinessProfile
-```js
-{
-  name: String,             // 商家名稱
-  description: String,      // 商家描述（供 AI 參考）
-  tone: String,             // 回覆語調
-  autoReply: Boolean,       // 是否啟用自動回覆
-  autoReplyDelay: Number    // 自動回覆防抖延遲（秒，預設 60）
-}
-```
-
-### Keyword
-```js
-{
-  trigger: String,          // 觸發關鍵字（語意匹配，非完全比對）
-  reply: String,            // 自動回覆內容
-  isActive: Boolean,        // 是否啟用
-  order: Number,            // 排序
-  createdAt: Date
-}
-```
-
-### Label
-```js
-{
-  name: String,             // 標籤名稱
-  color: String,            // 標籤顏色（hex，預設 #2196F3）
-  createdAt: Date
-}
-```
-
-### CustomerLabel
-```js
-{
-  lineUserId: String,       // LINE 用戶 ID（unique）
-  labelIds: [ObjectId]      // 關聯 Label IDs
-}
-```
-
-## 訊息處理流程
-
-```
-LINE 用戶傳訊
-    ↓
-POST /webhook（簽名驗證）
-    ↓
-並行取得：LINE 用戶資料 + 商家設定 + 關鍵字列表
-    ↓
-analyzeMessage()（GPT-4o）
-  → 語意匹配關鍵字？ → 是：立即回覆，結束
-  → 情緒分析（urgency: normal/urgent/angry）
-    ↓
-儲存 Message（status: pending, urgency）
-    ↓
-autoReply 開啟？ → 是：排程防抖計時器（60s）
-    ↓
-SSE broadcast（new-message）→ 前端即時更新
-    ↓
-客服人員查看 → 選擇 AI 建議回覆 → 發送
-```
-
-## Railway 部署
-
-1. 建立 Railway Project 並連結此 GitHub Repo
-2. 新增 MongoDB Database Plugin
-3. 設定環境變數（參考上方環境變數說明）
-4. Railway 會自動偵測 `railway.toml` 執行 build & start
-5. 部署完成後，將後端 URL 填入 LINE Developers Console Webhook URL
-
-> 本專案使用 npm workspaces，Railway 以單一服務部署：build 時同時建置前後端，Express 靜態服務前端檔案。
-
-## 注意事項
-
-- LINE `replyToken` 有 5 分鐘有效期，超時後標記為「發送失敗」
-- Google Sheets 私鑰中的換行符 `\n` 需正確填入環境變數
-- SSE 連線在 Railway 上需確保 `X-Accel-Buffering: no` header 已設定（已內建）
-- 自動回覆計時器儲存在記憶體中，服務重啟後尚未觸發的計時器會遺失
-- 所有 API 金鑰透過環境變數注入，請勿 hardcode 於程式碼中
+後台「設定 → 自動回覆」中的「管理員 LINE User ID」欄位（`adminLineUserId`），填入要接收訂單通知的 LINE 帳號 User ID。可透過 LINE Bot 傳訊後從 webhook log 取得。
 
 ---
 
-> 舊版 Python/FastAPI 單機 Bot 已保留於 `main.py`，僅供參考。
+## Railway 部署（5 分鐘上線）
+
+1. Fork 此 Repo → 建立 Railway Project → 連結 GitHub Repo
+2. 新增 MongoDB Database Plugin
+3. 填入環境變數（**包含 `ADMIN_PASSWORD`**）
+4. Push → 自動 build & deploy（`railway.toml` 已設定好）
+5. 將 Railway 服務網址填入 LINE Developers Console → Webhook URL
+
+**估計費用**：Railway Hobby Plan \$5/月 + OpenAI API（小商家約 \$1–3/月）
+
+---
+
+## 注意事項
+
+- LINE `replyToken` 有 **5 分鐘**有效期，超時後本系統改用 Push Message
+- 自動回覆計時器在記憶體中，服務重啟後尚未觸發的計時器會遺失（可接受的取捨）
+- SSE 在 Railway 需 `X-Accel-Buffering: no` header（已內建）
+- Google Sheets 私鑰 `\n` 必須為真正換行符，不能是字串 `\n`
+- 對話摘要使用非同步更新，回覆後約 2–3 秒完成，不影響回覆速度
+- 訂單通知需填寫 `adminLineUserId`，否則通知步驟會靜默跳過
+
+---
+
+> 舊版 Python/FastAPI 原型保留於 `main.py`，僅供參考。

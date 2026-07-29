@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import API_BASE from '../config';
+import API_BASE, { authFetch } from '../config';
 import TemplatePanel from './TemplatePanel';
 
 function SendPanel({ conversation, draftReply, onDraftChange, onSent, onSkipped }) {
@@ -20,7 +20,7 @@ function SendPanel({ conversation, draftReply, onDraftChange, onSent, onSkipped 
     }
     setSending(true);
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `${API_BASE}/api/conversations/${encodeURIComponent(lineUserId)}/reply`,
         {
           method: 'POST',
@@ -42,7 +42,7 @@ function SendPanel({ conversation, draftReply, onDraftChange, onSent, onSkipped 
     if (!confirm('確定略過此客戶所有未回覆訊息？')) return;
     setSkipping(true);
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `${API_BASE}/api/conversations/${encodeURIComponent(lineUserId)}/skip`,
         { method: 'PATCH' }
       );
@@ -66,20 +66,21 @@ function SendPanel({ conversation, draftReply, onDraftChange, onSent, onSkipped 
       <textarea
         value={draftReply}
         onChange={(e) => onDraftChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !disabled) handleSend(); }}
         disabled={disabled}
         placeholder={
           isReplied ? '已回覆此客戶' :
           isSkipped ? '已略過此客戶訊息' :
-          '輸入或選擇回覆內容...'
+          '輸入或選擇回覆內容... (Ctrl+Enter 發送)'
         }
-        rows={5}
+        rows={4}
         style={{
           width: '100%',
           boxSizing: 'border-box',
           padding: '10px',
           borderRadius: '8px',
           border: '1px solid #e0e0e0',
-          fontSize: '14px',
+          fontSize: '16px',
           lineHeight: '1.6',
           resize: 'vertical',
           backgroundColor: disabled ? '#f5f5f5' : '#fff',

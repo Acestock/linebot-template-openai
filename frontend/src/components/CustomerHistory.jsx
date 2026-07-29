@@ -1,5 +1,44 @@
 import React, { useState, useEffect } from 'react';
-import API_BASE from '../config';
+import API_BASE, { authFetch } from '../config';
+
+// Group messages that were replied to together (same repliedAt + same selectedReply)
+function groupHistory(messages) {
+  const groups = [];
+  const batchKey = (msg) => `${msg.repliedAt}__${msg.selectedReply}`;
+
+  for (const msg of messages) {
+    // Proactive messages are always shown as standalone entries
+    if (msg.isProactive) {
+      groups.push({ batchKey: null, messages: [msg], selectedReply: msg.selectedReply, repliedAt: msg.repliedAt, status: 'proactive' });
+      continue;
+    }
+    if (msg.status === 'replied' && msg.repliedAt && msg.selectedReply) {
+      const key = batchKey(msg);
+      const existing = groups.find(g => g.batchKey === key);
+      if (existing) {
+        existing.messages.push(msg);
+      } else {
+        groups.push({
+          batchKey: key,
+          messages: [msg],
+          selectedReply: msg.selectedReply,
+          repliedAt: msg.repliedAt,
+          status: 'replied'
+        });
+      }
+    } else {
+      groups.push({
+        batchKey: null,
+        messages: [msg],
+        selectedReply: msg.selectedReply,
+        repliedAt: msg.repliedAt,
+        status: msg.status
+      });
+    }
+  }
+
+  return groups;
+}
 
 function CustomerHistory({ lineUserId, displayName, onClose }) {
   const [history, setHistory] = useState([]);
@@ -8,14 +47,16 @@ function CustomerHistory({ lineUserId, displayName, onClose }) {
   useEffect(() => {
     if (!lineUserId) return;
     setLoading(true);
-    fetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/history`)
+    authFetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/history`)
       .then(r => r.json())
       .then(data => { setHistory(data); setLoading(false); })
       .catch(() => setLoading(false));
   }, [lineUserId]);
 
-  const statusLabel = { pending: '待回覆', processing: '處理中', replied: '已回覆', failed: '失敗' };
-  const statusColor = { pending: '#FF9800', processing: '#2196F3', replied: '#4CAF50', failed: '#f44336' };
+  const statusLabel = { pending: '待回覆', processing: '處理中', replied: '已回覆', failed: '失敗', proactive: '主動傳訊' };
+  const statusColor = { pending: '#FF9800', processing: '#2196F3', replied: '#4CAF50', failed: '#f44336', proactive: '#9c27b0' };
+
+  const groups = groupHistory(history);
 
   return (
     <div style={{
@@ -43,7 +84,7 @@ function CustomerHistory({ lineUserId, displayName, onClose }) {
             marginLeft: 'auto', fontSize: '12px', color: '#888',
             backgroundColor: '#f5f5f5', borderRadius: '12px', padding: '2px 10px'
           }}>
-            {history.length} 則
+            {groups.length} 筆對話
           </span>
         </div>
 
@@ -52,58 +93,104 @@ function CustomerHistory({ lineUserId, displayName, onClose }) {
           {loading && (
             <div style={{ textAlign: 'center', color: '#bbb', marginTop: '40px' }}>載入中...</div>
           )}
-          {!loading && history.length === 0 && (
+          {!loading && groups.length === 0 && (
             <div style={{ textAlign: 'center', color: '#bbb', marginTop: '40px' }}>無歷史紀錄</div>
           )}
-          {!loading && history.map((msg, i) => (
-            <div key={msg._id} style={{
+          {!loading && groups.map((group, i) => (
+            <div key={i} style={{
               marginBottom: '16px', borderRadius: '8px', border: '1px solid #f0f0f0',
               overflow: 'hidden', backgroundColor: '#fafafa'
             }}>
-              {/* Row header */}
+              {/* Group header */}
               <div style={{
                 padding: '8px 12px', backgroundColor: '#f5f5f5',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 fontSize: '12px', color: '#888'
               }}>
-                <span>#{i + 1} &nbsp; {new Date(msg.createdAt).toLocaleString('zh-TW')}</span>
+                <span>
+                  #{i + 1}
+                  {group.messages.length > 1 && (
+                    <span style={{
+                      marginLeft: '6px', backgroundColor: '#e3f2fd', color: '#1976d2',
+                      borderRadius: '10px', padding: '1px 7px', fontSize: '11px'
+                    }}>
+                      {group.messages.length} 則訊息
+                    </span>
+                  )}
+                  &nbsp;&nbsp;
+                  {new Date(group.messages[0].createdAt).toLocaleString('zh-TW')}
+                </span>
                 <span style={{
-                  backgroundColor: statusColor[msg.status] || '#bbb',
+                  backgroundColor: statusColor[group.status] || '#bbb',
                   color: '#fff', borderRadius: '4px', padding: '1px 7px', fontSize: '11px'
                 }}>
-                  {statusLabel[msg.status] || msg.status}
+                  {statusLabel[group.status] || group.status}
                 </span>
               </div>
 
-              {/* User message */}
-              <div style={{ padding: '10px 12px' }}>
-                <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '3px' }}>用戶訊息</div>
-                <div style={{ fontSize: '14px', color: '#333', lineHeight: 1.6 }}>{msg.userMessage}</div>
-              </div>
+              {/* Proactive outbound message */}
+              {group.status === 'proactive' && (
+                <div style={{ padding: '10px 12px', backgroundColor: '#f3e5f5', borderTop: '1px solid #f0f0f0' }}>
+                  <div style={{ fontSize: '12px', color: '#9c27b0', marginBottom: '3px' }}>客服主動傳送</div>
+                  <div style={{ fontSize: '14px', color: '#4a148c', lineHeight: 1.6 }}>{group.selectedReply}</div>
+                  {group.repliedAt && (
+                    <div style={{ fontSize: '11px', color: '#ce93d8', marginTop: '4px' }}>
+                      {new Date(group.repliedAt).toLocaleString('zh-TW')}
+                    </div>
+                  )}
+                </div>
+              )}
 
-              {/* Replied */}
-              {msg.status === 'replied' && msg.selectedReply && (
+              {/* All user messages in this batch */}
+              {group.status !== 'proactive' && (
+              <div style={{ padding: '10px 12px' }}>
+                <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '6px' }}>用戶訊息</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {group.messages.map((msg, j) => (
+                    <div key={msg._id} style={{
+                      fontSize: '14px', color: '#333', lineHeight: 1.6,
+                      ...(group.messages.length > 1 ? {
+                        backgroundColor: '#f0f7ff',
+                        borderRadius: '6px',
+                        padding: '6px 10px',
+                        borderLeft: '3px solid #90caf9'
+                      } : {})
+                    }}>
+                      {group.messages.length > 1 && (
+                        <span style={{ fontSize: '11px', color: '#90a4ae', marginRight: '6px' }}>
+                          {j + 1}.
+                        </span>
+                      )}
+                      {msg.userMessage}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              )}
+
+              {/* Reply (shown once per batch) */}
+              {group.status === 'replied' && group.selectedReply && (
                 <div style={{
                   padding: '10px 12px', backgroundColor: '#e8f5e9',
                   borderTop: '1px solid #f0f0f0'
                 }}>
                   <div style={{ fontSize: '12px', color: '#66bb6a', marginBottom: '3px' }}>已發送回覆</div>
-                  <div style={{ fontSize: '14px', color: '#2e7d32', lineHeight: 1.6 }}>{msg.selectedReply}</div>
-                  {msg.repliedAt && (
+                  <div style={{ fontSize: '14px', color: '#2e7d32', lineHeight: 1.6 }}>{group.selectedReply}</div>
+                  {group.repliedAt && (
                     <div style={{ fontSize: '11px', color: '#a5d6a7', marginTop: '4px' }}>
-                      {new Date(msg.repliedAt).toLocaleString('zh-TW')}
+                      {new Date(group.repliedAt).toLocaleString('zh-TW')}
                     </div>
                   )}
                 </div>
               )}
 
               {/* Error */}
-              {msg.status === 'failed' && msg.errorMessage && (
+              {group.status === 'failed' && group.messages[0].errorMessage && (
                 <div style={{
                   padding: '8px 12px', backgroundColor: '#ffebee',
                   borderTop: '1px solid #f0f0f0', fontSize: '12px', color: '#c62828'
                 }}>
-                  {msg.errorMessage}
+                  {group.messages[0].errorMessage}
                 </div>
               )}
             </div>

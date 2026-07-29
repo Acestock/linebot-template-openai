@@ -4,3 +4,15 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export default API_BASE;
+
+// Authenticated fetch — automatically adds Authorization header from localStorage
+export function authFetch(url, options = {}) {
+  const token = localStorage.getItem('adminToken') || '';
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+}

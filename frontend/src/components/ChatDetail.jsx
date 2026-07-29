@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import CustomerHistory from './CustomerHistory';
-import API_BASE from '../config';
+import API_BASE, { authFetch } from '../config';
 
 function LabelPicker({ lineUserId, labels, currentLabels, onLabelsChange }) {
   const [open, setOpen] = useState(false);
@@ -21,14 +21,17 @@ function LabelPicker({ lineUserId, labels, currentLabels, onLabelsChange }) {
       : [...currentIds, label._id];
 
     try {
-      const res = await fetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/labels`, {
+      const res = await authFetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/labels`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ labelIds: newIds })
       });
+      if (!res.ok) throw new Error('標籤更新失敗');
       const newLabels = await res.json();
       onLabelsChange(lineUserId, newLabels);
-    } catch {}
+    } catch (err) {
+      console.error('[LabelPicker] Failed to update labels:', err);
+    }
   }
 
   return (
@@ -74,7 +77,286 @@ function LabelPicker({ lineUserId, labels, currentLabels, onLabelsChange }) {
   );
 }
 
-function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsChange }) {
+function AutoReplyToggle({ lineUserId, enabled, onChange }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function toggle() {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await authFetch(`${API_BASE}/api/customers/autoreply`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lineUserId, enabled: !enabled })
+      });
+      if (!res.ok) throw new Error('切換失敗，請稍後再試');
+      onChange(!enabled);
+    } catch (err) {
+      setError(err.message);
+      setTimeout(() => setError(''), 3000);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+      <button
+        onClick={toggle}
+        disabled={loading}
+        title={enabled ? '此用戶 AI 自動回覆已啟用，點擊關閉' : '此用戶 AI 自動回覆已關閉，點擊啟用'}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '5px',
+          padding: '2px 10px', borderRadius: '12px', cursor: 'pointer',
+          border: `1px solid ${enabled ? '#00B900' : '#bbb'}`,
+          backgroundColor: enabled ? '#e8f5e9' : '#f5f5f5',
+          color: enabled ? '#2e7d32' : '#999',
+          fontSize: '12px', fontWeight: '500',
+          opacity: loading ? 0.6 : 1, transition: 'all 0.2s'
+        }}
+      >
+        <span style={{
+          width: '8px', height: '8px', borderRadius: '50%',
+          backgroundColor: enabled ? '#00B900' : '#bbb',
+          flexShrink: 0
+        }} />
+        {enabled ? 'AI 回覆開' : 'AI 回覆關'}
+      </button>
+      {error && <span style={{ fontSize: '11px', color: '#e53935', marginTop: '2px' }}>{error}</span>}
+    </div>
+  );
+}
+
+function SendOrderCard({ lineUserId }) {
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(''); // '' | 'ok' | error message
+
+  async function send() {
+    setSending(true);
+    setResult('');
+    try {
+      const res = await authFetch(`${API_BASE}/api/orders/send-card`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lineUserId })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '發送失敗');
+      setResult('ok');
+      setTimeout(() => setResult(''), 4000);
+    } catch (err) {
+      setResult(err.message);
+      setTimeout(() => setResult(''), 4000);
+    }
+    setSending(false);
+  }
+
+  return (
+    <div style={{ marginTop: '8px' }}>
+      <button onClick={send} disabled={sending} style={{
+        width: '100%', padding: '8px', borderRadius: '8px',
+        border: '1px dashed #00B900', background: '#f1fff1', color: '#2e7d32',
+        fontSize: '13px', cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.7 : 1
+      }}>
+        {sending ? '發送中...' : '📋 傳送訂購單給此客戶'}
+      </button>
+      {result === 'ok' && <div style={{ fontSize: '12px', color: '#4CAF50', marginTop: '4px', textAlign: 'center' }}>✓ 訂購單已發送</div>}
+      {result && result !== 'ok' && <div style={{ fontSize: '12px', color: '#e53935', marginTop: '4px', textAlign: 'center' }}>{result}</div>}
+    </div>
+  );
+}
+
+function ProactiveSend({ lineUserId, displayName, onSent }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+
+  async function send() {
+    if (!text.trim()) return;
+    setSending(true);
+    setError('');
+    try {
+      const res = await authFetch(`${API_BASE}/api/customers/push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lineUserId, displayName, message: text.trim() })
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        setError(d.error || '發送失敗');
+      } else {
+        setText('');
+        setOpen(false);
+        onSent && onSent();
+      }
+    } catch {
+      setError('網路錯誤，請稍後再試');
+    }
+    setSending(false);
+  }
+
+  return (
+    <div style={{ marginTop: '12px' }}>
+      {!open ? (
+        <button onClick={() => setOpen(true)} style={{
+          width: '100%', padding: '8px', borderRadius: '8px',
+          border: '1px dashed #bbb', background: '#fafafa', color: '#888',
+          fontSize: '13px', cursor: 'pointer'
+        }}>
+          ✉ 主動傳訊給此客戶
+        </button>
+      ) : (
+        <div style={{
+          borderRadius: '8px', border: '1px solid #e0e0e0',
+          overflow: 'hidden', backgroundColor: '#fff'
+        }}>
+          <div style={{
+            padding: '8px 12px', backgroundColor: '#f5f5f5',
+            fontSize: '12px', color: '#666', borderBottom: '1px solid #e0e0e0',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+          }}>
+            <span>主動傳訊</span>
+            <button onClick={() => { setOpen(false); setText(''); setError(''); }} style={{
+              background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '14px', padding: 0
+            }}>✕</button>
+          </div>
+          <textarea
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder="輸入要傳送給客戶的訊息..."
+            rows={3}
+            style={{
+              width: '100%', padding: '10px 12px', border: 'none', resize: 'vertical',
+              fontSize: '16px', lineHeight: '1.6', outline: 'none', boxSizing: 'border-box'
+            }}
+          />
+          {error && (
+            <div style={{ padding: '4px 12px', fontSize: '12px', color: '#e53935' }}>{error}</div>
+          )}
+          <div style={{
+            padding: '8px 12px', borderTop: '1px solid #f0f0f0',
+            display: 'flex', justifyContent: 'flex-end', gap: '8px'
+          }}>
+            <button onClick={() => { setOpen(false); setText(''); setError(''); }} style={{
+              padding: '5px 14px', borderRadius: '6px', border: '1px solid #ddd',
+              background: '#fff', color: '#666', fontSize: '13px', cursor: 'pointer'
+            }}>取消</button>
+            <button
+              onClick={send}
+              disabled={sending || !text.trim()}
+              style={{
+                padding: '5px 14px', borderRadius: '6px', border: 'none',
+                background: text.trim() ? '#00B900' : '#ccc',
+                color: '#fff', fontSize: '13px', cursor: text.trim() ? 'pointer' : 'default'
+              }}
+            >
+              {sending ? '傳送中...' : '傳送'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConversationSummary({ lineUserId }) {
+  const [summary, setSummary] = useState('');
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!lineUserId) return;
+    setSummary('');
+    setEditing(false);
+    authFetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/summary`)
+      .then(r => r.json())
+      .then(data => {
+        setSummary(data.conversationSummary || '');
+        setUpdatedAt(data.summaryUpdatedAt);
+      })
+      .catch(() => {});
+  }, [lineUserId]);
+
+  async function saveDraft() {
+    setSaving(true);
+    try {
+      await authFetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/summary`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationSummary: draft })
+      });
+      setSummary(draft);
+      setEditing(false);
+    } catch {}
+    setSaving(false);
+  }
+
+  if (!summary && !editing) {
+    return (
+      <div style={{ marginBottom: '10px' }}>
+        <button onClick={() => { setDraft(''); setEditing(true); setCollapsed(false); }} style={{
+          fontSize: '11px', color: '#bbb', background: 'none', border: 'none',
+          cursor: 'pointer', padding: 0, textDecoration: 'underline'
+        }}>＋ 新增對話摘要</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      marginBottom: '10px', borderRadius: '8px',
+      border: '1px solid #c5dcf5', backgroundColor: '#f0f7ff', overflow: 'hidden'
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '6px 10px', cursor: 'pointer', userSelect: 'none'
+      }} onClick={() => !editing && setCollapsed(p => !p)}>
+        <span style={{ fontSize: '12px', fontWeight: '700', color: '#1565c0' }}>
+          💡 對話摘要{updatedAt && <span style={{ fontWeight: 400, marginLeft: '6px', color: '#90a4ae', fontSize: '11px' }}>
+            {new Date(updatedAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </span>}
+        </span>
+        <span style={{ fontSize: '11px', color: '#90a4ae' }}>{collapsed ? '▼' : '▲'}</span>
+      </div>
+
+      {!collapsed && (
+        <div style={{ padding: '0 10px 8px' }}>
+          {editing ? (
+            <>
+              <textarea
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                rows={3}
+                autoFocus
+                style={{ width: '100%', boxSizing: 'border-box', padding: '6px 8px', borderRadius: '6px', border: '1px solid #90caf9', fontSize: '13px', lineHeight: 1.5, resize: 'vertical', outline: 'none', backgroundColor: '#fff' }}
+              />
+              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button onClick={() => setEditing(false)} style={{ padding: '3px 10px', borderRadius: '5px', border: '1px solid #ddd', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#666' }}>取消</button>
+                <button onClick={saveDraft} disabled={saving} style={{ padding: '3px 10px', borderRadius: '5px', border: 'none', background: '#1565c0', color: '#fff', fontSize: '12px', cursor: 'pointer' }}>
+                  {saving ? '儲存中' : '儲存'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+              <div style={{ flex: 1, fontSize: '13px', color: '#1a237e', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{summary}</div>
+              <button onClick={() => { setDraft(summary); setEditing(true); }} style={{
+                flexShrink: 0, padding: '2px 7px', borderRadius: '4px', border: '1px solid #90caf9',
+                background: '#fff', fontSize: '11px', cursor: 'pointer', color: '#1565c0'
+              }}>編輯</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsChange, onAutoReplyChange, onRefresh }) {
   const [showHistory, setShowHistory] = useState(false);
 
   if (!conversation) {
@@ -85,7 +367,7 @@ function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsCh
     );
   }
 
-  const { lineUserId, displayName, pendingMessages = [], pendingCount, status, lastRepliedMsg } = conversation;
+  const { lineUserId, displayName, pendingMessages = [], pendingCount, status, lastRepliedMsg, autoReplyEnabled = true } = conversation;
   const assignedLabels = customerLabels[lineUserId] || [];
 
   return (
@@ -100,12 +382,17 @@ function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsCh
           <span style={{ fontWeight: 'bold', color: '#333', fontSize: '15px' }}>
             {displayName || lineUserId}
           </span>
-          <span style={{ fontSize: '12px', color: '#bbb' }}>{lineUserId}</span>
+          <span style={{ fontSize: '11px', color: '#bbb', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lineUserId}</span>
           <button onClick={() => setShowHistory(true)} style={{
             padding: '2px 10px', borderRadius: '12px',
             border: '1px solid #2196F3', background: '#fff', color: '#2196F3',
             fontSize: '12px', cursor: 'pointer'
           }}>歷史紀錄</button>
+          <AutoReplyToggle
+            lineUserId={lineUserId}
+            enabled={autoReplyEnabled}
+            onChange={(val) => onAutoReplyChange && onAutoReplyChange(lineUserId, val)}
+          />
         </div>
 
         {/* Labels row */}
@@ -125,6 +412,8 @@ function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsCh
           />
         </div>
       </div>
+
+      <ConversationSummary lineUserId={lineUserId} />
 
       {/* Pending messages */}
       {pendingCount > 0 && (
@@ -160,6 +449,9 @@ function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsCh
           此客戶的訊息已略過
         </div>
       )}
+
+      <SendOrderCard lineUserId={lineUserId} />
+      <ProactiveSend lineUserId={lineUserId} displayName={displayName} onSent={onRefresh} />
     </div>
   );
 }

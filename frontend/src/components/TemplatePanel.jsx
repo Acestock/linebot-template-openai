@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import API_BASE from '../config';
+import API_BASE, { authFetch } from '../config';
 
 function TemplatePanel({ onInsert, disabled }) {
   const [templates, setTemplates] = useState([]);
@@ -23,7 +23,7 @@ function TemplatePanel({ onInsert, disabled }) {
 
   async function fetchTemplates() {
     try {
-      const res = await fetch(`${API_BASE}/api/templates`);
+      const res = await authFetch(`${API_BASE}/api/templates`);
       const data = await res.json();
       setTemplates(data);
     } catch {}
@@ -132,7 +132,7 @@ function TemplateManager({ templates, onClose, onRefresh }) {
         ? `${API_BASE}/api/templates/${editing._id}`
         : `${API_BASE}/api/templates`;
       const method = editing ? 'PUT' : 'POST';
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form)
@@ -150,7 +150,7 @@ function TemplateManager({ templates, onClose, onRefresh }) {
   async function handleDelete(id) {
     if (!confirm('確定刪除此模板？')) return;
     try {
-      const res = await fetch(`${API_BASE}/api/templates/${id}`, { method: 'DELETE' });
+      const res = await authFetch(`${API_BASE}/api/templates/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('刪除失敗');
       await onRefresh();
     } catch (err) {
@@ -167,13 +167,14 @@ function TemplateManager({ templates, onClose, onRefresh }) {
   return (
     <div style={{
       position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
-      zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center'
-    }} onClick={onClose}>
+      zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '10px'
+    }}>
       <div style={{
-        backgroundColor: '#fff', borderRadius: '12px', width: '520px', maxWidth: '95vw',
-        maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+        backgroundColor: '#fff', borderRadius: '12px', width: '520px', maxWidth: '100%',
+        maxHeight: 'calc(100dvh - 20px)', display: 'flex', flexDirection: 'column',
         boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
-      }} onClick={e => e.stopPropagation()}>
+      }}>
         {/* Header */}
         <div style={{
           padding: '16px 20px', borderBottom: '1px solid #f0f0f0',
