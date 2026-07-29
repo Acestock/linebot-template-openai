@@ -199,6 +199,18 @@ router.post('/reservations', liffAuth, async (req, res) => {
         return res.status(409).json({ error: `${slot} 時段已額滿` });
     }
 
+    // 重複預約防呆：同一用戶 + 同場地 + 同日 + 時段有交集
+    const dateStart = new Date(dateStr + 'T00:00:00+08:00');
+    const dateEnd   = new Date(dateStr + 'T23:59:59+08:00');
+    const dup = await Reservation.findOne({
+      lineUserId: req.liffUser.lineUserId,
+      venueId,
+      date: { $gte: dateStart, $lte: dateEnd },
+      slots: { $in: slots },
+      status: { $in: ['confirmed', 'checked_in'] }
+    });
+    if (dup) return res.status(409).json({ error: '您已預約此場地的相同時段，請勿重複預約' });
+
     let planName = '';
     let totalPrice = 0;
     if (planId) {

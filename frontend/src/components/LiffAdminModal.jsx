@@ -324,7 +324,7 @@ function ReservationsTab() {
     if (filterVenue)  params.set('venue', filterVenue);
     if (filterDate)   params.set('date', filterDate);
     if (filterStatus) params.set('status', filterStatus);
-    authFetch(`${API_BASE}/api/reservations?${params}`).then(r => r.json()).then(setItems).catch(() => {});
+    authFetch(`${API_BASE}/api/reservations?${params}`).then(r => r.json()).then(data => setItems(Array.isArray(data) ? data : [])).catch(() => {});
   }, [filterVenue, filterDate, filterStatus]);
 
   useEffect(loadReservations, [loadReservations]);
@@ -402,7 +402,7 @@ export default function LiffAdminModal({ onClose }) {
         {/* Tabs */}
         <div className="liff-tabs" style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', overflowX: 'auto', scrollbarWidth: 'none', flexShrink: 0 }}>
           {TABS.map((t, i) => (
-            <button key={t} onClick={() => setTab(i)} style={{
+            <button type="button" key={t} onClick={() => setTab(i)} style={{
               padding: '10px 16px', border: 'none', background: 'none', cursor: 'pointer',
               fontSize: '13px', fontWeight: tab === i ? '700' : '400',
               color: tab === i ? '#111' : '#888',
