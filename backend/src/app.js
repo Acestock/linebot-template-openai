@@ -12,6 +12,7 @@ const { authMiddleware, createToken } = require('./middleware/auth');
 const dbService = require('./services/dbService');
 const sheetService = require('./services/sheetService');
 const { startNotifyJob } = require('./services/calendarService');
+const { startReservationReminderJob } = require('./services/reservationCronService');
 
 if (!process.env.ADMIN_PASSWORD) {
   console.warn('[Auth] WARNING: ADMIN_PASSWORD is not set. Please set it in environment variables.');
@@ -103,6 +104,9 @@ cron.schedule('0 2 * * *', async () => {
 
 // Start calendar event LINE notification cron job (every minute)
 startNotifyJob();
+
+// Start reservation auto-cancel + checkout reminder cron job (every minute)
+startReservationReminderJob();
 
 app.listen(PORT, () => {
   console.log(`[Server] Backend running on port ${PORT}`);

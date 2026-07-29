@@ -17,6 +17,7 @@ const ReservationSchema = new mongoose.Schema({
   paymentRef:       { type: String, default: '' },
   qrToken:          { type: String, default: '' },
   note:             { type: String, default: '' },
+  reminderSentAt:   { type: Date, default: null },
   createdAt:        { type: Date, default: Date.now }
 });
 

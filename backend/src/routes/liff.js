@@ -232,7 +232,8 @@ router.post('/reservations', liffAuth, async (req, res) => {
       expectedCheckIn:  expectedCheckIn ? new Date(expectedCheckIn) : undefined,
       expectedCheckOut: expectedCheckOut ? new Date(expectedCheckOut) : undefined,
       note:            note || '',
-      status:          'confirmed'
+      status:          'confirmed',
+      qrToken:         crypto.randomUUID()
     });
     res.json(reservation);
   } catch (err) {
@@ -268,15 +269,62 @@ router.delete('/reservations/:id', liffAuth, async (req, res) => {
   }
 });
 
-// ── Stubs: payment, QR, checkin ───────────────────────────────────────────────
+// ── POST /api/liff/reservations/:id/payment ───────────────────────────────────
 router.post('/reservations/:id/payment', (req, res) => {
   res.status(501).json({ message: '金流接口預留，尚未實作' });
 });
-router.get('/reservations/:id/qr', (req, res) => {
-  res.status(501).json({ message: 'QR Code 生成接口預留，尚未實作' });
+
+// ── GET /api/liff/reservations/:id/qr ─────────────────────────────────────────
+router.get('/reservations/:id/qr', liffAuth, async (req, res) => {
+  try {
+    const r = await Reservation.findById(req.params.id).lean();
+    if (!r) return res.status(404).json({ error: 'Not found' });
+    if (r.lineUserId !== req.liffUser.lineUserId)
+      return res.status(403).json({ error: 'Forbidden' });
+    const validFrom  = r.expectedCheckIn
+      ? new Date(r.expectedCheckIn.getTime() - 10 * 60 * 1000)
+      : null;
+    const validUntil = r.expectedCheckIn
+      ? new Date(r.expectedCheckIn.getTime() + 30 * 60 * 1000)
+      : null;
+    res.json({ qrToken: r.qrToken, validFrom, validUntil, status: r.status });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
-router.post('/checkin', (req, res) => {
-  res.status(501).json({ message: '掃碼進場接口預留，尚未實作' });
+
+// ── POST /api/liff/checkin ─────────────────────────────────────────────────────
+// 供門閘機台呼叫（不需 LIFF 用戶 auth）
+router.post('/checkin', async (req, res) => {
+  try {
+    const { qrToken } = req.body;
+    if (!qrToken) return res.status(400).json({ error: 'qrToken required' });
+    const r = await Reservation.findOne({ qrToken });
+    if (!r) return res.status(404).json({ error: '無效的 QR Code' });
+    if (r.status === 'cancelled')
+      return res.status(409).json({ error: '此預約已取消' });
+    if (r.status === 'checked_in')
+      return res.json({ ok: true, status: 'checked_in', reservation: r });
+    if (r.status !== 'confirmed')
+      return res.status(409).json({ error: '此預約狀態不允許進場' });
+    const now = new Date();
+    if (r.expectedCheckIn) {
+      const validFrom  = new Date(r.expectedCheckIn.getTime() - 10 * 60 * 1000);
+      const validUntil = new Date(r.expectedCheckIn.getTime() + 30 * 60 * 1000);
+      if (now > validUntil) {
+        r.status = 'cancelled';
+        await r.save();
+        return res.status(409).json({ error: '進場時間已過，預約已自動取消' });
+      }
+      if (now < validFrom)
+        return res.status(409).json({ error: `進場時間尚未到，最早可於 ${validFrom.toLocaleTimeString('zh-TW')} 進場` });
+    }
+    r.status = 'checked_in';
+    await r.save();
+    res.json({ ok: true, status: 'checked_in', reservation: r });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

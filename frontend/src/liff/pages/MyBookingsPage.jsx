@@ -1,35 +1,219 @@
-import React, { useState, useEffect } from 'react';
-import { fetchMyReservations, cancelReservation } from '../api';
+import React, { useState, useEffect, useRef } from 'react';
+import QRCode from 'qrcode';
+import { fetchMyReservations, cancelReservation, fetchReservationQr } from '../api';
 
 const STATUS_MAP = {
   confirmed:  { label: '已確認', color: '#1976d2', bg: '#e3f2fd' },
-  checked_in: { label: '已入場', color: '#2e7d32', bg: '#e8f5e9' },
+  checked_in: { label: '進場中', color: '#2e7d32', bg: '#e8f5e9' },
   completed:  { label: '已完成', color: '#555',    bg: '#f5f5f5' },
   cancelled:  { label: '已取消', color: '#c62828', bg: '#ffebee' }
 };
 
 const SLOT_LABELS = { morning: '早上', afternoon: '下午', evening: '晚上' };
 
-export default function MyBookingsPage({ onBack }) {
-  const [list, setList]     = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [cancelling, setCancelling] = useState(null);
+function fmt(dateStr) {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleString('zh-TW', {
+    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+}
 
-  useEffect(() => {
-    fetchMyReservations().then(setList).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+function fmtDate(dateStr) {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleDateString('zh-TW', {
+    year: 'numeric', month: 'numeric', day: 'numeric', weekday: 'short'
+  });
+}
 
-  async function handleCancel(id) {
-    if (!confirm('確定要取消此預約嗎？')) return;
-    setCancelling(id);
+function canShowQr(r) {
+  if (r.status === 'checked_in') return true;
+  if (r.status !== 'confirmed') return false;
+  if (!r.expectedCheckIn) return false;
+  const now = Date.now();
+  const validFrom  = new Date(r.expectedCheckIn).getTime() - 10 * 60 * 1000;
+  const validUntil = new Date(r.expectedCheckIn).getTime() + 30 * 60 * 1000;
+  return now >= validFrom && now <= validUntil;
+}
+
+// ── Detail View ───────────────────────────────────────────────────────────────
+function DetailView({ r, onBack, onCancelled }) {
+  const [cancelling, setCancelling] = useState(false);
+  const [qrImg, setQrImg]           = useState('');
+  const [qrLoading, setQrLoading]   = useState(false);
+  const [qrValidUntil, setQrValidUntil] = useState(null);
+  const [localStatus, setLocalStatus]   = useState(r.status);
+  const canQr = canShowQr({ ...r, status: localStatus });
+
+  async function handleShowQr() {
+    setQrLoading(true);
     try {
-      await cancelReservation(id);
-      setList(l => l.map(r => r._id === id ? { ...r, status: 'cancelled' } : r));
+      const data = await fetchReservationQr(r._id);
+      setQrValidUntil(data.validUntil);
+      const img = await QRCode.toDataURL(data.qrToken, { width: 220, margin: 2 });
+      setQrImg(img);
     } catch (e) {
       alert(e.message);
     } finally {
-      setCancelling(null);
+      setQrLoading(false);
     }
+  }
+
+  async function handleCancel() {
+    if (!confirm('確定要取消此預約嗎？')) return;
+    setCancelling(true);
+    try {
+      await cancelReservation(r._id);
+      setLocalStatus('cancelled');
+      onCancelled(r._id);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  const st = STATUS_MAP[localStatus] || STATUS_MAP.confirmed;
+  const slotsStr = (r.slots || []).map(s => SLOT_LABELS[s] || s).join(' + ');
+
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+      {/* header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            background: 'none', border: '1px solid #ddd', borderRadius: '8px',
+            padding: '6px 12px', cursor: 'pointer', fontSize: '14px', color: '#444'
+          }}
+        >
+          ← 返回
+        </button>
+        <div style={{ fontWeight: '700', fontSize: '16px' }}>預約詳情</div>
+      </div>
+
+      {/* card */}
+      <div style={{
+        background: '#fff', borderRadius: '12px', padding: '16px',
+        boxShadow: '0 1px 6px rgba(0,0,0,0.08)', marginBottom: '16px'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div style={{ fontWeight: '700', fontSize: '16px' }}>{r.venueName}</div>
+          <span style={{ background: st.bg, color: st.color, padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' }}>
+            {st.label}
+          </span>
+        </div>
+
+        <InfoRow label="日期"     value={fmtDate(r.date)} />
+        <InfoRow label="時段"     value={slotsStr || '—'} />
+        {r.planName && <InfoRow label="方案" value={r.planName} />}
+        {r.totalPrice > 0 && <InfoRow label="費用" value={`$${r.totalPrice}`} />}
+        <InfoRow label="預計入場" value={fmt(r.expectedCheckIn)} />
+        <InfoRow label="預計離場" value={fmt(r.expectedCheckOut)} />
+        {r.note && <InfoRow label="備注"  value={r.note} />}
+      </div>
+
+      {/* QR section */}
+      {localStatus === 'cancelled' ? (
+        <div style={{
+          background: '#ffebee', borderRadius: '10px', padding: '16px',
+          textAlign: 'center', color: '#c62828', fontSize: '14px'
+        }}>
+          此預約已取消，無法顯示 QR Code
+        </div>
+      ) : canQr ? (
+        <div style={{
+          background: '#fff', borderRadius: '12px', padding: '16px',
+          boxShadow: '0 1px 6px rgba(0,0,0,0.08)', textAlign: 'center'
+        }}>
+          {qrImg ? (
+            <>
+              <img src={qrImg} alt="QR Code" style={{ width: '220px', height: '220px' }} />
+              {qrValidUntil && (
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
+                  有效至 {new Date(qrValidUntil).toLocaleTimeString('zh-TW')}
+                </div>
+              )}
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={handleShowQr}
+              disabled={qrLoading}
+              style={{
+                background: '#00b900', color: '#fff', border: 'none',
+                borderRadius: '10px', padding: '12px 28px',
+                fontSize: '15px', fontWeight: '600', cursor: 'pointer'
+              }}
+            >
+              {qrLoading ? '產生中...' : '顯示入場 QR'}
+            </button>
+          )}
+        </div>
+      ) : localStatus === 'confirmed' && r.expectedCheckIn ? (
+        <div style={{
+          background: '#fff8e1', borderRadius: '10px', padding: '14px',
+          textAlign: 'center', color: '#8d6e63', fontSize: '13px'
+        }}>
+          QR Code 將於入場前 10 分鐘開放<br />
+          <span style={{ color: '#555', fontWeight: '600' }}>（{fmt(new Date(new Date(r.expectedCheckIn).getTime() - 10 * 60 * 1000))} 後可顯示）</span>
+        </div>
+      ) : null}
+
+      {/* cancel button */}
+      {localStatus === 'confirmed' && (
+        <button
+          type="button"
+          onClick={handleCancel}
+          disabled={cancelling}
+          style={{
+            width: '100%', marginTop: '16px', padding: '12px',
+            border: '1px solid #e0e0e0', borderRadius: '10px',
+            background: '#fff', fontSize: '14px', color: '#666', cursor: 'pointer'
+          }}
+        >
+          {cancelling ? '取消中...' : '取消此預約'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px' }}>
+      <span style={{ color: '#888' }}>{label}</span>
+      <span style={{ color: '#222', fontWeight: '500', maxWidth: '60%', textAlign: 'right' }}>{value}</span>
+    </div>
+  );
+}
+
+// ── List View ─────────────────────────────────────────────────────────────────
+export default function MyBookingsPage({ onBack }) {
+  const [list, setList]         = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [selected, setSelected] = useState(null);
+
+  useEffect(() => {
+    fetchMyReservations()
+      .then(data => setList(Array.isArray(data) ? data : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  function handleCancelled(id) {
+    setList(l => l.map(r => r._id === id ? { ...r, status: 'cancelled' } : r));
+  }
+
+  if (selected) {
+    const fresh = list.find(r => r._id === selected._id) || selected;
+    return (
+      <DetailView
+        r={fresh}
+        onBack={() => setSelected(null)}
+        onCancelled={handleCancelled}
+      />
+    );
   }
 
   return (
@@ -43,10 +227,14 @@ export default function MyBookingsPage({ onBack }) {
         const dateStr = new Date(r.date).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'short' });
         const slotsStr = (r.slots || []).map(s => SLOT_LABELS[s] || s).join(' + ');
         return (
-          <div key={r._id} style={{
-            background: '#fff', borderRadius: '12px', padding: '14px 16px',
-            marginBottom: '10px', boxShadow: '0 1px 5px rgba(0,0,0,0.07)'
-          }}>
+          <div
+            key={r._id}
+            onClick={() => setSelected(r)}
+            style={{
+              background: '#fff', borderRadius: '12px', padding: '14px 16px',
+              marginBottom: '10px', boxShadow: '0 1px 5px rgba(0,0,0,0.07)', cursor: 'pointer'
+            }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <div style={{ fontWeight: '700', fontSize: '15px' }}>{r.venueName}</div>
               <span style={{ background: st.bg, color: st.color, padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' }}>
@@ -55,19 +243,10 @@ export default function MyBookingsPage({ onBack }) {
             </div>
             <div style={{ fontSize: '13px', color: '#666', marginBottom: '4px' }}>{dateStr} · {r.planName || slotsStr}</div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: '14px', fontWeight: '600', color: '#c0392b' }}>${r.totalPrice}</div>
-              {r.status === 'confirmed' && (
-                <button
-                  onClick={() => handleCancel(r._id)}
-                  disabled={cancelling === r._id}
-                  style={{
-                    padding: '5px 14px', borderRadius: '6px', border: '1px solid #e0e0e0',
-                    background: '#fff', fontSize: '13px', cursor: 'pointer', color: '#666'
-                  }}
-                >
-                  {cancelling === r._id ? '取消中...' : '取消預約'}
-                </button>
-              )}
+              <div style={{ fontSize: '14px', fontWeight: '600', color: '#c0392b' }}>
+                {r.totalPrice > 0 ? `$${r.totalPrice}` : ''}
+              </div>
+              <div style={{ fontSize: '12px', color: '#aaa' }}>點擊查看詳情 ›</div>
             </div>
           </div>
         );
