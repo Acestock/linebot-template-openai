@@ -293,16 +293,47 @@ router.get('/reservations/:id/qr', liffAuth, async (req, res) => {
   }
 });
 
+// ── POST /api/liff/reservations/:id/checkout ──────────────────────────────────
+router.post('/reservations/:id/checkout', liffAuth, async (req, res) => {
+  try {
+    const r = await Reservation.findById(req.params.id);
+    if (!r) return res.status(404).json({ error: 'Not found' });
+    if (r.lineUserId !== req.liffUser.lineUserId)
+      return res.status(403).json({ error: 'Forbidden' });
+    if (r.status !== 'checked_in')
+      return res.status(400).json({ error: '只有進場中的預約可以出場' });
+    r.status = 'completed';
+    await r.save();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/liff/checkin ─────────────────────────────────────────────────────
 // 供門閘機台呼叫（不需 LIFF 用戶 auth）
+// body: { qrToken, action?: 'enter'|'exit' }
 router.post('/checkin', async (req, res) => {
   try {
-    const { qrToken } = req.body;
+    const { qrToken, action } = req.body;
     if (!qrToken) return res.status(400).json({ error: 'qrToken required' });
     const r = await Reservation.findOne({ qrToken });
     if (!r) return res.status(404).json({ error: '無效的 QR Code' });
     if (r.status === 'cancelled')
       return res.status(409).json({ error: '此預約已取消' });
+    if (r.status === 'completed')
+      return res.status(409).json({ error: '此預約已完成' });
+
+    // 出場掃碼：checked_in → completed
+    if (action === 'exit') {
+      if (r.status !== 'checked_in')
+        return res.status(409).json({ error: '尚未入場，無法出場' });
+      r.status = 'completed';
+      await r.save();
+      return res.json({ ok: true, status: 'completed', reservation: r });
+    }
+
+    // 入場或臨時再入場
     if (r.status === 'checked_in')
       return res.json({ ok: true, status: 'checked_in', reservation: r });
     if (r.status !== 'confirmed')

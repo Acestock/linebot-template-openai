@@ -73,3 +73,13 @@ export async function fetchReservationQr(id) {
   if (!r.ok) throw new Error(json.error || '無法取得 QR Code');
   return json;
 }
+
+export async function checkoutReservation(id) {
+  const r = await fetch(`${BASE}/reservations/${id}/checkout`, {
+    method: 'POST',
+    headers: authHeaders()
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '出場失敗');
+  return json;
+}

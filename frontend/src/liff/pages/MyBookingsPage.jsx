@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
-import { fetchMyReservations, cancelReservation, fetchReservationQr } from '../api';
+import { fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation } from '../api';
 
 const STATUS_MAP = {
   confirmed:  { label: '已確認', color: '#1976d2', bg: '#e3f2fd' },
@@ -30,10 +30,11 @@ function canShowQr(r) {
 }
 
 // ── Detail View ───────────────────────────────────────────────────────────────
-function DetailView({ r, onBack, onCancelled }) {
-  const [cancelling, setCancelling] = useState(false);
-  const [qrImg, setQrImg]           = useState('');
-  const [qrLoading, setQrLoading]   = useState(false);
+function DetailView({ r, onBack, onCancelled, onCompleted }) {
+  const [cancelling, setCancelling]     = useState(false);
+  const [checkingOut, setCheckingOut]   = useState(false);
+  const [qrImg, setQrImg]               = useState('');
+  const [qrLoading, setQrLoading]       = useState(false);
   const [qrValidUntil, setQrValidUntil] = useState(null);
   const [localStatus, setLocalStatus]   = useState(r.status);
   const canQr = canShowQr({ ...r, status: localStatus });
@@ -63,6 +64,20 @@ function DetailView({ r, onBack, onCancelled }) {
       alert(e.message);
     } finally {
       setCancelling(false);
+    }
+  }
+
+  async function handleCheckout() {
+    if (!confirm('確認完成使用並出場？出場後此時段容量將自動釋放。')) return;
+    setCheckingOut(true);
+    try {
+      await checkoutReservation(r._id);
+      setLocalStatus('completed');
+      onCompleted(r._id);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setCheckingOut(false);
     }
   }
 
@@ -145,13 +160,30 @@ function DetailView({ r, onBack, onCancelled }) {
                 fontSize: '15px', fontWeight: '600', cursor: 'pointer'
               }}
             >
-              {qrLoading ? '產生中...' : '顯示入場 QR'}
+              {qrLoading ? '產生中...' : localStatus === 'checked_in' ? '顯示 QR（離場 / 再入場）' : '顯示入場 QR'}
             </button>
           )}
         </div>
       ) : null}
 
-      {/* cancel button */}
+      {/* checkout button — only when checked_in */}
+      {localStatus === 'checked_in' && (
+        <button
+          type="button"
+          onClick={handleCheckout}
+          disabled={checkingOut}
+          style={{
+            width: '100%', marginTop: '16px', padding: '13px',
+            border: 'none', borderRadius: '10px',
+            background: '#e53935', color: '#fff',
+            fontSize: '15px', fontWeight: '600', cursor: 'pointer'
+          }}
+        >
+          {checkingOut ? '處理中...' : '確認出場（結束使用）'}
+        </button>
+      )}
+
+      {/* cancel button — only when confirmed */}
       {localStatus === 'confirmed' && (
         <button
           type="button"
@@ -192,8 +224,8 @@ export default function MyBookingsPage({ onBack }) {
       .finally(() => setLoading(false));
   }, []);
 
-  function handleCancelled(id) {
-    setList(l => l.map(r => r._id === id ? { ...r, status: 'cancelled' } : r));
+  function handleStatusChanged(id, newStatus) {
+    setList(l => l.map(r => r._id === id ? { ...r, status: newStatus } : r));
   }
 
   if (selected) {
@@ -202,7 +234,8 @@ export default function MyBookingsPage({ onBack }) {
       <DetailView
         r={fresh}
         onBack={() => setSelected(null)}
-        onCancelled={handleCancelled}
+        onCancelled={(id) => handleStatusChanged(id, 'cancelled')}
+        onCompleted={(id) => handleStatusChanged(id, 'completed')}
       />
     );
   }
