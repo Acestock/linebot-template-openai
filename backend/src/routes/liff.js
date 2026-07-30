@@ -7,6 +7,7 @@ const Reservation = require('../models/Reservation');
 const Announcement = require('../models/Announcement');
 const BusinessProfile = require('../models/BusinessProfile');
 const BlockedSlot = require('../models/BlockedSlot');
+const { createOrderParams } = require('../services/ecpayService');
 
 const router = express.Router();
 
@@ -258,6 +259,7 @@ router.post('/reservations', liffAuth, async (req, res) => {
       expectedCheckOut: expectedCheckOut ? new Date(expectedCheckOut) : undefined,
       note:            note || '',
       status:          'confirmed',
+      paymentStatus:   totalPrice > 0 ? 'unpaid' : 'free',
       qrToken:         crypto.randomUUID()
     });
     res.json(reservation);
@@ -295,8 +297,34 @@ router.delete('/reservations/:id', liffAuth, async (req, res) => {
 });
 
 // ── POST /api/liff/reservations/:id/payment ───────────────────────────────────
-router.post('/reservations/:id/payment', (req, res) => {
-  res.status(501).json({ message: '金流接口預留，尚未實作' });
+// Initiate ECPay payment; returns form data for client to submit
+router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
+  try {
+    const r = await Reservation.findById(req.params.id);
+    if (!r) return res.status(404).json({ error: 'Not found' });
+    if (r.lineUserId !== req.liffUser.lineUserId)
+      return res.status(403).json({ error: 'Forbidden' });
+    if (r.status !== 'checked_in')
+      return res.status(400).json({ error: '只有進場中的預約才能付款' });
+    if (r.paymentStatus === 'paid')
+      return res.status(400).json({ error: '此預約已完成付款' });
+
+    // Free reservation — skip payment, auto checkout
+    if (r.totalPrice <= 0) {
+      r.paymentStatus = 'free';
+      r.status = 'completed';
+      await r.save();
+      return res.json({ skip: true });
+    }
+
+    const { params, apiUrl, tradeNo } = createOrderParams(r);
+    r.paymentRef = tradeNo;
+    await r.save();
+
+    res.json({ form: { action: apiUrl, fields: params } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── GET /api/liff/reservations/:id/qr ─────────────────────────────────────────
@@ -327,7 +355,14 @@ router.post('/reservations/:id/checkout', liffAuth, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     if (r.status !== 'checked_in')
       return res.status(400).json({ error: '只有進場中的預約可以出場' });
+
+    // Require payment when there is a non-zero charge
+    if (r.totalPrice > 0 && r.paymentStatus !== 'paid') {
+      return res.status(402).json({ error: '請先完成付款才能出場', requiresPayment: true });
+    }
+
     r.status = 'completed';
+    if (r.totalPrice <= 0) r.paymentStatus = 'free';
     await r.save();
     res.json({ ok: true });
   } catch (err) {
@@ -349,13 +384,16 @@ router.post('/checkin', async (req, res) => {
     if (r.status === 'completed')
       return res.status(409).json({ error: '此預約已完成' });
 
-    // 出場掃碼：checked_in → completed
+    // 出場掃碼：checked_in → completed（未付款則標記 unpaidExit）
     if (action === 'exit') {
       if (r.status !== 'checked_in')
         return res.status(409).json({ error: '尚未入場，無法出場' });
+      if (r.totalPrice > 0 && r.paymentStatus !== 'paid') {
+        r.unpaidExit = true;
+      }
       r.status = 'completed';
       await r.save();
-      return res.json({ ok: true, status: 'completed', reservation: r });
+      return res.json({ ok: true, status: 'completed', unpaidExit: r.unpaidExit, reservation: r });
     }
 
     // 入場或臨時再入場

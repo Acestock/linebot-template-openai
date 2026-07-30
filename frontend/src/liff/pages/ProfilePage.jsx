@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation } from '../api';
+import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitEcpayForm } from '../api';
 
 const STATUS_MAP = {
   confirmed:  { label: '已確認', color: '#1976d2', bg: '#e3f2fd' },
@@ -38,11 +38,14 @@ function InfoRow({ label, value }) {
 function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const [cancelling, setCancelling]     = useState(false);
   const [checkingOut, setCheckingOut]   = useState(false);
+  const [paying, setPaying]             = useState(false);
   const [qrImg, setQrImg]               = useState('');
   const [qrLoading, setQrLoading]       = useState(false);
   const [qrValidUntil, setQrValidUntil] = useState(null);
   const [localStatus, setLocalStatus]   = useState(r.status);
+  const [localPayStatus, setLocalPayStatus] = useState(r.paymentStatus || 'unpaid');
   const canQr = !readOnly && (localStatus === 'confirmed' || localStatus === 'checked_in');
+  const needsPayment = !readOnly && localStatus === 'checked_in' && r.totalPrice > 0 && localPayStatus !== 'paid';
 
   async function handleShowQr() {
     setQrLoading(true);
@@ -67,6 +70,10 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   }
 
   async function handleCheckout() {
+    if (needsPayment) {
+      alert('請先完成付款才能出場');
+      return;
+    }
     if (!confirm('確認完成使用並出場？出場後此時段容量將自動釋放。')) return;
     setCheckingOut(true);
     try {
@@ -75,6 +82,27 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
       onCompleted?.(r._id);
     } catch (e) { alert(e.message); }
     finally { setCheckingOut(false); }
+  }
+
+  async function handlePay() {
+    if (!confirm('確認前往付款？將跳轉至綠界付款頁面。')) return;
+    setPaying(true);
+    try {
+      const data = await initiatePayment(r._id);
+      if (data.skip) {
+        // Free reservation — already checked out on backend
+        setLocalStatus('completed');
+        setLocalPayStatus('free');
+        onCompleted?.(r._id);
+        return;
+      }
+      // Submit form to ECPay (redirects browser)
+      const { form: { action, fields } } = data;
+      submitEcpayForm(action, fields);
+    } catch (e) {
+      alert(e.message);
+      setPaying(false);
+    }
   }
 
   const st = STATUS_MAP[localStatus] || STATUS_MAP.confirmed;
@@ -136,7 +164,16 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
         </div>
       ) : null}
 
-      {!readOnly && localStatus === 'checked_in' && (
+      {/* Payment button — shown when checked_in + has charge + not yet paid */}
+      {needsPayment && (
+        <button type="button" onClick={handlePay} disabled={paying}
+          style={{ width: '100%', marginTop: '16px', padding: '14px', border: 'none', borderRadius: '10px', background: paying ? '#ccc' : '#e65100', color: '#fff', fontSize: '15px', fontWeight: '700', cursor: paying ? 'not-allowed' : 'pointer' }}>
+          {paying ? '跳轉付款中...' : `付款並出場（$${r.totalPrice}）`}
+        </button>
+      )}
+
+      {/* Checkout button — only show for free reservations or after payment */}
+      {!readOnly && localStatus === 'checked_in' && !needsPayment && (
         <button type="button" onClick={handleCheckout} disabled={checkingOut}
           style={{ width: '100%', marginTop: '16px', padding: '13px', border: 'none', borderRadius: '10px', background: '#e53935', color: '#fff', fontSize: '15px', fontWeight: '600', cursor: 'pointer' }}>
           {checkingOut ? '處理中...' : '確認出場（結束使用）'}

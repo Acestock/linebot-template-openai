@@ -65,6 +65,11 @@ app.get('/api/auth/verify', authMiddleware, (req, res) => res.json({ ok: true })
 const liffRouter = require('./routes/liff');
 app.use('/api/liff', liffRouter);
 
+// ECPay callback (no admin auth — called by ECPay servers + user browser)
+const ecpayRouter = require('./routes/ecpay');
+app.use('/api/ecpay', ecpayRouter);   // POST /api/ecpay/callback
+app.use('/ecpay',     ecpayRouter);   // GET  /ecpay/result (user return page)
+
 // All other /api/* routes require auth
 app.use('/api', authMiddleware);
 app.use('/api', adminRouter);

@@ -540,7 +540,12 @@ function ReservationsTab() {
                   {r.venueName} · {dateStr} · {r.planName || slotsStr}
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                {r.unpaidExit && (
+                  <span style={{ background: '#fff3e0', color: '#e65100', padding: '3px 7px', borderRadius: '20px', fontSize: '10px', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                    未付款離場
+                  </span>
+                )}
                 <span style={{ background: `${STATUS_COLORS[st]}22`, color: STATUS_COLORS[st], padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '600' }}>
                   {STATUS_LABELS[st]}
                 </span>
@@ -553,6 +558,11 @@ function ReservationsTab() {
               <div style={{ padding: '0 14px 12px', borderTop: '1px solid #f5f5f5', background: '#fafafa' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', margin: '10px 0', fontSize: '13px' }}>
                   <DetailRow label="費用"     value={r.totalPrice > 0 ? `$${r.totalPrice}` : '免費'} />
+                  <DetailRow label="付款狀態"  value={
+                    r.paymentStatus === 'paid'   ? '已付款' :
+                    r.paymentStatus === 'free'   ? '免費'   :
+                    r.unpaidExit               ? '未付款（已離場）' : '待付款'
+                  } />
                   <DetailRow label="建立時間"  value={fmtDT(r.createdAt)} />
                   <DetailRow label="預計入場"  value={fmtDT(r.expectedCheckIn)} />
                   <DetailRow label="預計離場"  value={fmtDT(r.expectedCheckOut)} />

@@ -83,3 +83,28 @@ export async function checkoutReservation(id) {
   if (!r.ok) throw new Error(json.error || '出場失敗');
   return json;
 }
+
+export async function initiatePayment(id) {
+  const r = await fetch(`${BASE}/reservations/${id}/payment`, {
+    method: 'POST',
+    headers: authHeaders()
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '付款啟動失敗');
+  return json;
+}
+
+export function submitEcpayForm(action, fields) {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = action;
+  Object.entries(fields).forEach(([k, v]) => {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = k;
+    input.value = v;
+    form.appendChild(input);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}

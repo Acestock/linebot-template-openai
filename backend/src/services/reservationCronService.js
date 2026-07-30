@@ -34,6 +34,25 @@ function startReservationReminderJob() {
     } catch (err) {
       console.error('[ReservationCron] Reminder failed:', err.message);
     }
+
+    // ③ 超過 expectedCheckOut 30min 仍在 checked_in 且未付款 → 標記 unpaidExit 並完成
+    try {
+      const overdueCheckout = new Date(now.getTime() - 30 * 60 * 1000);
+      const overdue = await Reservation.find({
+        status: 'checked_in',
+        totalPrice: { $gt: 0 },
+        paymentStatus: { $ne: 'paid' },
+        expectedCheckOut: { $lt: overdueCheckout }
+      });
+      for (const r of overdue) {
+        r.unpaidExit = true;
+        r.status = 'completed';
+        await r.save();
+        console.log(`[ReservationCron] Marked unpaidExit for reservation ${r._id} (${r.displayName})`);
+      }
+    } catch (err) {
+      console.error('[ReservationCron] UnpaidExit detection failed:', err.message);
+    }
   }, { timezone: 'Asia/Taipei' });
 
   console.log('[ReservationCron] Reservation reminder job started.');

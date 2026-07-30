@@ -14,6 +14,8 @@ const ReservationSchema = new mongoose.Schema({
   expectedCheckIn:  { type: Date },
   expectedCheckOut: { type: Date },
   status:           { type: String, enum: ['confirmed', 'checked_in', 'completed', 'cancelled'], default: 'confirmed' },
+  paymentStatus:    { type: String, enum: ['free', 'unpaid', 'paid'], default: 'unpaid' },
+  unpaidExit:       { type: Boolean, default: false },
   paymentRef:       { type: String, default: '' },
   qrToken:          { type: String, default: '' },
   note:             { type: String, default: '' },
