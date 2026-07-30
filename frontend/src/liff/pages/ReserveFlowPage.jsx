@@ -112,8 +112,23 @@ export default function ReserveFlowPage({ venue: initialVenue, mode, onBack, onD
   const sortedSlots = ['morning', 'afternoon', 'evening'].filter(s => selectedSlots.includes(s));
   const firstSlot = sortedSlots[0];
   const lastSlot  = sortedSlots[sortedSlots.length - 1];
-  const checkIn   = firstSlot ? `${date}T${slotTimes[firstSlot].checkIn}:00+08:00` : null;
-  const checkOut  = lastSlot  ? `${date}T${slotTimes[lastSlot].checkOut}:00+08:00` : null;
+
+  // When checkOut hour < checkIn hour, the slot crosses midnight → use next calendar day
+  function resolveCheckoutDate(baseDate, firstKey, lastKey) {
+    if (!firstKey || !lastKey) return baseDate;
+    const inH  = parseInt(slotTimes[firstKey].checkIn.split(':')[0]);
+    const outH = parseInt(slotTimes[lastKey].checkOut.split(':')[0]);
+    if (outH >= inH) return baseDate;
+    const [y, m, d] = baseDate.split('-').map(Number);
+    const next = new Date(y, m - 1, d + 1);
+    return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
+  }
+
+  const crossesMidnight = firstSlot && lastSlot &&
+    parseInt(slotTimes[lastSlot].checkOut.split(':')[0]) < parseInt(slotTimes[firstSlot].checkIn.split(':')[0]);
+  const checkIn      = firstSlot ? `${date}T${slotTimes[firstSlot].checkIn}:00+08:00` : null;
+  const checkOutDate = resolveCheckoutDate(date, firstSlot, lastSlot);
+  const checkOut     = lastSlot  ? `${checkOutDate}T${slotTimes[lastSlot].checkOut}:00+08:00` : null;
 
   async function handleSubmit() {
     if (!getSessionToken()) { setError('請先登入 LINE'); return; }
@@ -277,7 +292,7 @@ export default function ReserveFlowPage({ venue: initialVenue, mode, onBack, onD
           </div>
           <div style={{ background: '#f8f8f8', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
             <Row label="預約入場" value={`${slotTimes[firstSlot]?.checkIn} （最晚入場 ${slotTimes[firstSlot]?.checkIn.replace('00', '59')}）`} />
-            <Row label="預計離場" value={slotTimes[lastSlot]?.checkOut} />
+            <Row label="預計離場" value={`${crossesMidnight ? '次日 ' : ''}${slotTimes[lastSlot]?.checkOut}`} />
           </div>
           <Notice />
           {error && <div style={{ color: '#c62828', textAlign: 'center', marginBottom: '12px', fontSize: '14px' }}>{error}</div>}
