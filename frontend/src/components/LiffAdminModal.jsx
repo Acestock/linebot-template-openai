@@ -23,6 +23,122 @@ const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '8px 10px'
 const textareaStyle = { ...inputStyle, resize: 'vertical', fontFamily: 'inherit' };
 const btn = (bg, color = '#fff') => ({ padding: '7px 16px', borderRadius: '8px', border: 'none', background: bg, color, fontSize: '13px', fontWeight: '600', cursor: 'pointer' });
 
+// ── Blocked Slots section (包場管理) ─────────────────────────────────────────
+const SLOT_OPTIONS_BLOCK = [
+  { key: 'morning', label: '早上 (07–12)' },
+  { key: 'afternoon', label: '下午 (12–18)' },
+  { key: 'evening', label: '晚上 (18–02)' }
+];
+
+function BlockedSlotsSection({ venues }) {
+  const [blocks, setBlocks]         = useState([]);
+  const [selVenue, setSelVenue]     = useState('');
+  const [date, setDate]             = useState('');
+  const [slots, setSlots]           = useState([]);
+  const [eventName, setEventName]   = useState('');
+  const [saving, setSaving]         = useState(false);
+  const [filterVenue, setFilterVenue] = useState('');
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const loadBlocks = useCallback(() => {
+    const qs = filterVenue ? `?venueId=${filterVenue}` : '';
+    authFetch(`${API_BASE}/api/blocked-slots${qs}`).then(r => r.json())
+      .then(d => setBlocks(Array.isArray(d) ? d : [])).catch(() => {});
+  }, [filterVenue]);
+  useEffect(loadBlocks, [loadBlocks]);
+
+  function toggleSlot(key) {
+    setSlots(s => s.includes(key) ? s.filter(x => x !== key) : [...s, key]);
+  }
+
+  async function handleAdd() {
+    if (!selVenue || !date || !slots.length) return alert('請選擇場地、日期和時段');
+    setSaving(true);
+    try {
+      await authFetch(`${API_BASE}/api/blocked-slots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venueId: selVenue, date, slots, eventName })
+      });
+      setDate(''); setSlots([]); setEventName('');
+      loadBlocks();
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('確定刪除此包場紀錄？')) return;
+    await authFetch(`${API_BASE}/api/blocked-slots/${id}`, { method: 'DELETE' });
+    loadBlocks();
+  }
+
+  const slotLabel = k => SLOT_OPTIONS_BLOCK.find(s => s.key === k)?.label || k;
+
+  return (
+    <div style={{ marginTop: '24px', borderTop: '2px solid #f0f0f0', paddingTop: '20px' }}>
+      <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '14px', color: '#333' }}>包場管理（全時段預約）</div>
+
+      {/* Add form */}
+      <div style={{ background: '#f9f9f9', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+        <Field label="場地">
+          <select style={inputStyle} value={selVenue} onChange={e => setSelVenue(e.target.value)}>
+            <option value="">請選擇場地</option>
+            {venues.map(v => <option key={v._id} value={v._id}>{v.name}</option>)}
+          </select>
+        </Field>
+        <Field label="日期">
+          <input type="date" style={inputStyle} value={date} min={today} onChange={e => setDate(e.target.value)} />
+        </Field>
+        <Field label="時段（可複選）">
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            {SLOT_OPTIONS_BLOCK.map(s => (
+              <label key={s.key} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '14px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={slots.includes(s.key)} onChange={() => toggleSlot(s.key)} />
+                {s.label}
+              </label>
+            ))}
+          </div>
+        </Field>
+        <Field label="活動名稱（選填）">
+          <input style={inputStyle} value={eventName} onChange={e => setEventName(e.target.value)} placeholder="例：VIP 包場、企業活動" />
+        </Field>
+        <button onClick={handleAdd} disabled={saving} style={{ ...btn('#111'), width: '100%', marginTop: '4px' }}>
+          {saving ? '新增中...' : '＋ 新增包場'}
+        </button>
+      </div>
+
+      {/* Existing blocks */}
+      <Field label="篩選場地">
+        <select style={inputStyle} value={filterVenue} onChange={e => setFilterVenue(e.target.value)}>
+          <option value="">全部場地</option>
+          {venues.map(v => <option key={v._id} value={v._id}>{v.name}</option>)}
+        </select>
+      </Field>
+
+      {blocks.length === 0
+        ? <div style={{ color: '#aaa', textAlign: 'center', padding: '16px' }}>尚無包場紀錄</div>
+        : blocks.map(b => {
+          const venueName = venues.find(v => v._id === (b.venueId?._id || b.venueId))?.name || '—';
+          const dateStr   = new Date(b.date).toLocaleDateString('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric' });
+          return (
+            <div key={b._id} style={{ border: '1px solid #eee', borderRadius: '10px', padding: '10px 14px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: '600', fontSize: '14px' }}>{venueName} — {dateStr}</div>
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>
+                  {(b.slots || []).map(slotLabel).join(' + ')}
+                  {b.eventName ? ` · 活動：${b.eventName}` : ''}
+                </div>
+              </div>
+              <button onClick={() => handleDelete(b._id)} style={btn('#ffebee', '#c62828')}>刪除</button>
+            </div>
+          );
+        })
+      }
+    </div>
+  );
+}
+
 // ── Tab 1: 場地管理 ──────────────────────────────────────────────────────────
 function VenueTab() {
   const [venues, setVenues]   = useState([]);
@@ -112,6 +228,8 @@ function VenueTab() {
           </div>
         </div>
       )}
+
+      <BlockedSlotsSection venues={venues} />
     </div>
   );
 }

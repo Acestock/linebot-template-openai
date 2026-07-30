@@ -5,6 +5,7 @@ import VenueListPage   from './pages/VenueListPage';
 import VenueDetailPage from './pages/VenueDetailPage';
 import ReserveFlowPage from './pages/ReserveFlowPage';
 import MyBookingsPage  from './pages/MyBookingsPage';
+import ProfilePage     from './pages/ProfilePage';
 
 // LIFF ID must be set in environment variable VITE_LIFF_ID
 const LIFF_ID = import.meta.env.VITE_LIFF_ID || '';
@@ -84,12 +85,13 @@ export default function LiffApp() {
     );
   }
 
-  const showBack  = page.name !== 'list';
-  const showMyBtn = page.name !== 'my' && !!user;
+  const showBack    = page.name !== 'list';
+  const showMyBtn   = page.name !== 'profile' && !!user;
 
   function handleBack() {
-    if (page.name === 'my')     return navigate('list');
-    if (page.name === 'detail') return navigate('list');
+    if (page.name === 'profile') return navigate('list');
+    if (page.name === 'my')      return navigate('list');
+    if (page.name === 'detail')  return navigate('list');
     if (page.name === 'reserve') return navigate('detail', { venueId: page.params.venue?._id });
     navigate('list');
   }
@@ -110,15 +112,16 @@ export default function LiffApp() {
             {page.name === 'list'    ? '預約入場'   : ''}
             {page.name === 'detail'  ? '場地詳情'   : ''}
             {page.name === 'reserve' ? (page.params.mode === 'walkin' ? '立即入場' : '預約入場') : ''}
-            {page.name === 'my'     ? '我的預約'   : ''}
+            {page.name === 'my'      ? '我的預約'   : ''}
+            {page.name === 'profile' ? '個人資料'   : ''}
           </div>
         </div>
         {showMyBtn && (
           <button
-            onClick={() => navigate('my')}
+            onClick={() => navigate('profile')}
             style={{ background: 'none', border: '1px solid #ddd', borderRadius: '20px', padding: '5px 14px', fontSize: '13px', cursor: 'pointer', color: '#555' }}
           >
-            我的預約
+            個人資料
           </button>
         )}
       </div>
@@ -147,6 +150,9 @@ export default function LiffApp() {
       )}
       {page.name === 'my' && (
         <MyBookingsPage onBack={() => navigate('list')} />
+      )}
+      {page.name === 'profile' && (
+        <ProfilePage user={user} />
       )}
     </div>
   );

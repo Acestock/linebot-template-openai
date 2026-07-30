@@ -216,7 +216,13 @@ export default function ReserveFlowPage({ venue: initialVenue, mode, onBack, onD
                   >
                     <span style={{ fontSize: '14px' }}>{s.icon} {plan.name || `${s.label} (${s.range})`}</span>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      {slotAvail && <span style={{ fontSize: '12px', color: full ? '#c62828' : '#2e7d32' }}>{full ? '已額滿' : `剩 ${slotAvail.remaining}`}</span>}
+                      {slotAvail && (
+                        <span style={{ fontSize: '12px', color: full ? '#c62828' : '#2e7d32' }}>
+                          {slotAvail.blocked
+                            ? (slotAvail.eventName ? `活動：${slotAvail.eventName}` : '已包場')
+                            : full ? '已額滿' : `剩 ${slotAvail.remaining}`}
+                        </span>
+                      )}
                       <span style={{ fontWeight: '700' }}>${plan.price}</span>
                     </div>
                   </div>

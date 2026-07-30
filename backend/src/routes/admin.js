@@ -1165,6 +1165,7 @@ const Venue        = require('../models/Venue');
 const VenuePlan    = require('../models/VenuePlan');
 const Announcement = require('../models/Announcement');
 const Reservation  = require('../models/Reservation');
+const BlockedSlot  = require('../models/BlockedSlot');
 
 router.get('/venues', async (req, res) => {
   try {
@@ -1287,6 +1288,34 @@ router.patch('/reservations/:id', async (req, res) => {
     const item = await Reservation.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!item) return res.status(404).json({ error: 'Not found' });
     res.json(item);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Blocked Slots (包場) ─────────────────────────────────────────────────────
+router.get('/blocked-slots', async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.venueId) filter.venueId = req.query.venueId;
+    const items = await BlockedSlot.find(filter).sort({ date: -1, createdAt: -1 }).lean();
+    res.json(items);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/blocked-slots', async (req, res) => {
+  try {
+    const { venueId, date, slots, eventName } = req.body;
+    if (!venueId || !date || !slots || !slots.length) {
+      return res.status(400).json({ error: 'venueId, date, slots 為必填' });
+    }
+    const item = await BlockedSlot.create({ venueId, date: new Date(date), slots, eventName: eventName || '' });
+    res.json(item);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.delete('/blocked-slots/:id', async (req, res) => {
+  try {
+    await BlockedSlot.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

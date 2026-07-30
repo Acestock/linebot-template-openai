@@ -6,6 +6,7 @@ const VenuePlan = require('../models/VenuePlan');
 const Reservation = require('../models/Reservation');
 const Announcement = require('../models/Announcement');
 const BusinessProfile = require('../models/BusinessProfile');
+const BlockedSlot = require('../models/BlockedSlot');
 
 const router = express.Router();
 
@@ -95,9 +96,21 @@ async function getSlotAvailability(venueId, maxCapacity, dateStr) {
   const date = new Date(dateStr);
   const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const dateEnd   = new Date(dateStart.getTime() + 24 * 60 * 60 * 1000);
-  const slots = ['morning', 'afternoon', 'evening'];
+  const slotKeys = ['morning', 'afternoon', 'evening'];
   const result = {};
-  for (const slot of slots) {
+
+  // Check for active blocked slots on this date
+  const blocks = await BlockedSlot.find({
+    venueId, isActive: true,
+    date: { $gte: dateStart, $lt: dateEnd }
+  }).lean();
+
+  for (const slot of slotKeys) {
+    const block = blocks.find(b => b.slots.includes(slot));
+    if (block) {
+      result[slot] = { remaining: 0, total: maxCapacity, blocked: true, eventName: block.eventName };
+      continue;
+    }
     const count = await Reservation.countDocuments({
       venueId, date: { $gte: dateStart, $lt: dateEnd },
       slots: slot,
@@ -141,21 +154,21 @@ router.post('/auth', async (req, res) => {
 });
 
 // ── GET /api/liff/venues ───────────────────────────────────────────────────────
-// Returns active venues with today + tomorrow slot availability
+// Returns active venues with 5-day slot availability (today + next 4 days)
 router.get('/venues', async (req, res) => {
   try {
     const venues = await Venue.find({ isActive: true }).sort({ order: 1, createdAt: 1 }).lean();
-    const today    = new Date(); today.setHours(0,0,0,0);
-    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
-    const todayStr    = today.toISOString().slice(0, 10);
-    const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const days = Array.from({ length: 5 }, (_, i) =>
+      new Date(today.getTime() + i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    );
 
     const result = await Promise.all(venues.map(async (v) => {
-      const [todayAvail, tomorrowAvail] = await Promise.all([
-        getSlotAvailability(v._id, v.maxCapacityPerSlot, todayStr),
-        getSlotAvailability(v._id, v.maxCapacityPerSlot, tomorrowStr)
-      ]);
-      return { ...v, availability: { today: todayAvail, tomorrow: tomorrowAvail } };
+      const availByDay = await Promise.all(
+        days.map(d => getSlotAvailability(v._id, v.maxCapacityPerSlot, d))
+      );
+      const availability = Object.fromEntries(days.map((d, i) => [d, availByDay[i]]));
+      return { ...v, availability };
     }));
     res.json(result);
   } catch (err) {
