@@ -1267,8 +1267,18 @@ router.get('/reservations', async (req, res) => {
       const d = new Date(req.query.date);
       filter.date = { $gte: d, $lt: new Date(d.getTime() + 24 * 60 * 60 * 1000) };
     }
-    const items = await Reservation.find(filter).sort({ date: -1, createdAt: -1 }).lean();
-    res.json(items);
+    if (req.query.search) {
+      filter.displayName = { $regex: req.query.search, $options: 'i' };
+    }
+    const page  = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, parseInt(req.query.limit) || 30);
+    const total = await Reservation.countDocuments(filter);
+    const items = await Reservation.find(filter)
+      .sort({ date: -1, createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+    res.json({ items, total, page, pages: Math.ceil(total / limit) || 1 });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

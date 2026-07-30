@@ -307,16 +307,28 @@ function AnnouncementsTab() {
 }
 
 // ── Tab 4: 預約列表 ──────────────────────────────────────────────────────────
+const SLOT_LABELS_ADMIN = { morning: '早上', afternoon: '下午', evening: '晚上' };
+
+function fmtDT(dt) {
+  if (!dt) return '—';
+  return new Date(dt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 function ReservationsTab() {
-  const [venues, setVenues]   = useState([]);
-  const [items, setItems]     = useState([]);
+  const [venues, setVenues]             = useState([]);
+  const [items, setItems]               = useState([]);
   const [filterVenue, setFilterVenue]   = useState('');
   const [filterDate, setFilterDate]     = useState('');
   const [filterStatus, setFilterStatus] = useState('');
-  const [updating, setUpdating] = useState(null);
+  const [search, setSearch]             = useState('');
+  const [page, setPage]                 = useState(1);
+  const [totalPages, setTotalPages]     = useState(1);
+  const [total, setTotal]               = useState(0);
+  const [updating, setUpdating]         = useState(null);
+  const [expandedId, setExpandedId]     = useState(null);
 
   useEffect(() => {
-    authFetch(`${API_BASE}/api/venues`).then(r => r.json()).then(setVenues).catch(() => {});
+    authFetch(`${API_BASE}/api/venues`).then(r => r.json()).then(d => setVenues(Array.isArray(d) ? d : [])).catch(() => {});
   }, []);
 
   const loadReservations = useCallback(() => {
@@ -324,14 +336,35 @@ function ReservationsTab() {
     if (filterVenue)  params.set('venue', filterVenue);
     if (filterDate)   params.set('date', filterDate);
     if (filterStatus) params.set('status', filterStatus);
-    authFetch(`${API_BASE}/api/reservations?${params}`).then(r => r.json()).then(data => setItems(Array.isArray(data) ? data : [])).catch(() => {});
-  }, [filterVenue, filterDate, filterStatus]);
+    if (search)       params.set('search', search);
+    params.set('page', page);
+    authFetch(`${API_BASE}/api/reservations?${params}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.items) {
+          setItems(data.items);
+          setTotalPages(data.pages || 1);
+          setTotal(data.total || 0);
+        } else {
+          setItems(Array.isArray(data) ? data : []);
+        }
+      })
+      .catch(() => {});
+  }, [filterVenue, filterDate, filterStatus, search, page]);
 
   useEffect(loadReservations, [loadReservations]);
 
+  function handleFilterChange(setter) {
+    return (e) => { setter(e.target.value); setPage(1); };
+  }
+
   async function updateStatus(id, status) {
     setUpdating(id);
-    await authFetch(`${API_BASE}/api/reservations/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    await authFetch(`${API_BASE}/api/reservations/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
     setUpdating(null);
     loadReservations();
   }
@@ -339,45 +372,111 @@ function ReservationsTab() {
   return (
     <div>
       {/* Filters */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-        <select style={{ ...inputStyle, flex: '1', minWidth: '120px' }} value={filterVenue} onChange={e => setFilterVenue(e.target.value)}>
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
+        <input
+          type="text" placeholder="搜尋姓名..."
+          value={search} onChange={handleFilterChange(setSearch)}
+          style={{ ...inputStyle, flex: '1', minWidth: '100px' }}
+        />
+        <select style={{ ...inputStyle, flex: '1', minWidth: '110px' }} value={filterVenue} onChange={handleFilterChange(setFilterVenue)}>
           <option value="">所有場地</option>
           {venues.map(v => <option key={v._id} value={v._id}>{v.name}</option>)}
         </select>
-        <input type="date" style={{ ...inputStyle, flex: '1', minWidth: '120px' }} value={filterDate} onChange={e => setFilterDate(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '1', minWidth: '100px' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+        <input type="date" style={{ ...inputStyle, flex: '1', minWidth: '120px' }} value={filterDate} onChange={handleFilterChange(setFilterDate)} />
+        <select style={{ ...inputStyle, flex: '1', minWidth: '90px' }} value={filterStatus} onChange={handleFilterChange(setFilterStatus)}>
           <option value="">所有狀態</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
 
+      {total > 0 && (
+        <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>共 {total} 筆，第 {page}/{totalPages} 頁</div>
+      )}
+
       {items.length === 0 && <div style={{ color: '#aaa', textAlign: 'center', padding: '24px' }}>沒有符合的預約紀錄</div>}
 
       {items.map(r => {
-        const dateStr = new Date(r.date).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' });
+        const dateStr = new Date(r.date).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'short' });
+        const slotsStr = (r.slots || []).map(s => SLOT_LABELS_ADMIN[s] || s).join(' + ');
         const st = r.status;
+        const isExpanded = expandedId === r._id;
+
         return (
-          <div key={r._id} style={{ border: '1px solid #eee', borderRadius: '10px', padding: '10px 14px', marginBottom: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-              <div>
+          <div key={r._id} style={{ border: '1px solid #eee', borderRadius: '10px', marginBottom: '8px', overflow: 'hidden' }}>
+            {/* Collapsed header — always visible */}
+            <div
+              onClick={() => setExpandedId(isExpanded ? null : r._id)}
+              style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
+            >
+              {/* Avatar */}
+              {r.pictureUrl ? (
+                <img src={r.pictureUrl} alt="" style={{ width: '36px', height: '36px', borderRadius: '50%', flexShrink: 0, objectFit: 'cover' }} />
+              ) : (
+                <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#e0e0e0', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', color: '#999' }}>
+                  {(r.displayName || '?')[0]}
+                </div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: '600', fontSize: '14px' }}>{r.displayName || r.lineUserId}</div>
-                <div style={{ fontSize: '12px', color: '#888' }}>{r.venueName} · {dateStr} · {r.planName || (r.slots || []).join('+')}</div>
-                <div style={{ fontSize: '12px', color: '#888' }}>${r.totalPrice}</div>
+                <div style={{ fontSize: '12px', color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {r.venueName} · {dateStr} · {r.planName || slotsStr}
+                </div>
               </div>
-              <span style={{ background: `${STATUS_COLORS[st]}22`, color: STATUS_COLORS[st], padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', flexShrink: 0 }}>
-                {STATUS_LABELS[st]}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                <span style={{ background: `${STATUS_COLORS[st]}22`, color: STATUS_COLORS[st], padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '600' }}>
+                  {STATUS_LABELS[st]}
+                </span>
+                <span style={{ color: '#bbb', fontSize: '12px' }}>{isExpanded ? '▲' : '▼'}</span>
+              </div>
             </div>
-            {st !== 'cancelled' && st !== 'completed' && (
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {st === 'confirmed'  && <button onClick={() => updateStatus(r._id, 'checked_in')} disabled={updating === r._id} style={btn('#e3f2fd', '#1976d2')}>確認入場</button>}
-                {st === 'checked_in' && <button onClick={() => updateStatus(r._id, 'completed')}  disabled={updating === r._id} style={btn('#e8f5e9', '#2e7d32')}>完成</button>}
-                <button onClick={() => updateStatus(r._id, 'cancelled')} disabled={updating === r._id} style={btn('#ffebee', '#c62828')}>取消</button>
+
+            {/* Expanded detail */}
+            {isExpanded && (
+              <div style={{ padding: '0 14px 12px', borderTop: '1px solid #f5f5f5', background: '#fafafa' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', margin: '10px 0', fontSize: '13px' }}>
+                  <DetailRow label="費用"     value={r.totalPrice > 0 ? `$${r.totalPrice}` : '免費'} />
+                  <DetailRow label="建立時間"  value={fmtDT(r.createdAt)} />
+                  <DetailRow label="預計入場"  value={fmtDT(r.expectedCheckIn)} />
+                  <DetailRow label="預計離場"  value={fmtDT(r.expectedCheckOut)} />
+                  {r.note && <DetailRow label="備注" value={r.note} full />}
+                  <DetailRow label="LINE ID"  value={r.lineUserId} small />
+                </div>
+                {st !== 'cancelled' && st !== 'completed' && (
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+                    {st === 'confirmed'  && <button type="button" onClick={() => updateStatus(r._id, 'checked_in')} disabled={updating === r._id} style={btn('#e3f2fd', '#1976d2')}>確認入場</button>}
+                    {st === 'checked_in' && <button type="button" onClick={() => updateStatus(r._id, 'completed')}  disabled={updating === r._id} style={btn('#e8f5e9', '#2e7d32')}>完成</button>}
+                    <button type="button" onClick={() => updateStatus(r._id, 'cancelled')} disabled={updating === r._id} style={btn('#ffebee', '#c62828')}>取消</button>
+                  </div>
+                )}
               </div>
             )}
           </div>
         );
       })}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginTop: '12px' }}>
+          <button type="button" onClick={() => setPage(p => p - 1)} disabled={page <= 1}
+            style={{ padding: '5px 14px', border: '1px solid #ddd', borderRadius: '6px', background: '#fff', cursor: page <= 1 ? 'default' : 'pointer', color: page <= 1 ? '#ccc' : '#333' }}>
+            ‹ 上一頁
+          </button>
+          <span style={{ fontSize: '13px', color: '#666' }}>第 {page} / {totalPages} 頁</span>
+          <button type="button" onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
+            style={{ padding: '5px 14px', border: '1px solid #ddd', borderRadius: '6px', background: '#fff', cursor: page >= totalPages ? 'default' : 'pointer', color: page >= totalPages ? '#ccc' : '#333' }}>
+            下一頁 ›
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetailRow({ label, value, full, small }) {
+  return (
+    <div style={{ gridColumn: full ? '1 / -1' : undefined }}>
+      <span style={{ color: '#aaa', fontSize: small ? '11px' : '12px' }}>{label}：</span>
+      <span style={{ color: '#444', fontSize: small ? '11px' : '12px', wordBreak: 'break-all' }}>{value}</span>
     </div>
   );
 }
