@@ -42,6 +42,7 @@ function startReservationReminderJob() {
         status: 'checked_in',
         totalPrice: { $gt: 0 },
         paymentStatus: { $ne: 'paid' },
+        paymentRef: { $in: ['', null] },   // skip if payment is in-progress
         expectedCheckOut: { $lt: overdueCheckout }
       });
       for (const r of overdue) {

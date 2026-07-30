@@ -3,11 +3,17 @@ import QRCode from 'qrcode';
 import { fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitEcpayForm } from '../api';
 
 const STATUS_MAP = {
-  confirmed:  { label: '已確認', color: '#1976d2', bg: '#e3f2fd' },
-  checked_in: { label: '進場中', color: '#2e7d32', bg: '#e8f5e9' },
-  completed:  { label: '已完成', color: '#555',    bg: '#f5f5f5' },
-  cancelled:  { label: '已取消', color: '#c62828', bg: '#ffebee' }
+  confirmed:  { label: '已確認',   color: '#1976d2', bg: '#e3f2fd' },
+  checked_in: { label: '進場中',   color: '#2e7d32', bg: '#e8f5e9' },
+  completed:  { label: '已完成',   color: '#555',    bg: '#f5f5f5' },
+  cancelled:  { label: '已取消',   color: '#c62828', bg: '#ffebee' },
+  unpaid_exit:{ label: '未付款離場', color: '#e65100', bg: '#fff3e0' }
 };
+
+function getStatusInfo(status, unpaidExit) {
+  if (status === 'completed' && unpaidExit) return STATUS_MAP.unpaid_exit;
+  return STATUS_MAP[status] || STATUS_MAP.confirmed;
+}
 
 const SLOT_LABELS = { morning: '早上', afternoon: '下午', evening: '晚上' };
 
@@ -104,7 +110,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted }) {
     }
   }
 
-  const st = STATUS_MAP[localStatus] || STATUS_MAP.confirmed;
+  const st = getStatusInfo(localStatus, r.unpaidExit);
   const slotsStr = (r.slots || []).map(s => SLOT_LABELS[s] || s).join(' + ');
 
   return (
@@ -144,6 +150,13 @@ function DetailView({ r, onBack, onCancelled, onCompleted }) {
         <InfoRow label="預計離場" value={fmt(r.expectedCheckOut)} />
         {r.note && <InfoRow label="備注"  value={r.note} />}
       </div>
+
+      {/* Unpaid exit notice */}
+      {r.unpaidExit && (
+        <div style={{ background: '#fff3e0', borderRadius: '10px', padding: '14px 16px', marginBottom: '12px', color: '#e65100', fontSize: '13px', lineHeight: '1.6' }}>
+          此預約未完成付款即離場。如有疑問請聯絡工作人員。
+        </div>
+      )}
 
       {/* QR section */}
       {localStatus === 'cancelled' ? (
@@ -279,7 +292,7 @@ export default function MyBookingsPage({ onBack }) {
       ) : list.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px', color: '#aaa' }}>尚無預約紀錄</div>
       ) : list.map(r => {
-        const st = STATUS_MAP[r.status] || STATUS_MAP.confirmed;
+        const st = getStatusInfo(r.status, r.unpaidExit);
         const dateStr = new Date(r.date).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'short' });
         const slotsStr = (r.slots || []).map(s => SLOT_LABELS[s] || s).join(' + ');
         return (

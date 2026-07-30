@@ -26,7 +26,15 @@ router.post('/callback', async (req, res) => {
         console.log(`[ECPay] Payment confirmed for reservation ${r._id}`);
       }
     } else {
-      console.log(`[ECPay] Payment failed/pending, RtnCode=${body.RtnCode}, TradeNo=${body.MerchantTradeNo}`);
+      // Payment failed/cancelled — clear paymentRef so user can retry and cron can eventually clean up
+      try {
+        const r = await Reservation.findOne({ paymentRef: body.MerchantTradeNo });
+        if (r && r.status === 'checked_in' && r.paymentStatus !== 'paid') {
+          r.paymentRef = '';
+          await r.save();
+        }
+      } catch (_) {}
+      console.log(`[ECPay] Payment failed/cancelled, RtnCode=${body.RtnCode}, TradeNo=${body.MerchantTradeNo}`);
     }
 
     res.send('1|OK');
