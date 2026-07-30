@@ -4,7 +4,10 @@ import { fetchVenues } from '../api';
 const SLOT_LABELS = { morning: '早上', afternoon: '下午', evening: '晚上' };
 
 function toDateStr(d) {
-  return d.toISOString().slice(0, 10);
+  const yyyy = d.getFullYear();
+  const mm   = String(d.getMonth() + 1).padStart(2, '0');
+  const dd   = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function getDays(count) {
