@@ -37,6 +37,8 @@ app.use('/webhook', webhookRouter);
 
 // JSON body parser for all other routes
 app.use(express.json());
+// ECPay callback uses application/x-www-form-urlencoded
+app.use(express.urlencoded({ extended: false }));
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 function safeEqual(a, b) {

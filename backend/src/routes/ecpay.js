@@ -64,9 +64,10 @@ router.get('/result', async (req, res) => {
 
   const title  = paid ? '付款成功！' : '付款結果';
   const icon   = paid ? '✅' : '⏳';
-  const msg    = paid
+  const mainMsg = paid
     ? `您在「${venueName || '場地'}」的預約已完成結帳，感謝使用！`
-    : '付款處理中，請稍後回 LINE 確認預約狀態。';
+    : '付款仍在處理中，請稍後至「個人資料 → 預約紀錄」確認狀態。';
+  const subMsg = paid ? '請關閉此頁面，回到 LINE 查看預約紀錄。' : '';
 
   res.send(`<!DOCTYPE html>
 <html lang="zh-TW">
@@ -82,22 +83,20 @@ router.get('/result', async (req, res) => {
           max-width:340px;width:100%;box-shadow:0 2px 16px rgba(0,0,0,.1)}
     .icon{font-size:56px;margin-bottom:16px}
     h2{font-size:20px;font-weight:700;margin-bottom:8px;color:#111}
-    p{font-size:14px;color:#666;line-height:1.6;margin-bottom:28px}
-    a{display:block;padding:14px;background:#06c755;color:#fff;border-radius:12px;
-      text-decoration:none;font-size:15px;font-weight:700}
+    p{font-size:14px;color:#666;line-height:1.6;margin-bottom:12px}
+    .hint{font-size:13px;color:#999;margin-bottom:28px}
+    .btn{display:block;padding:14px;background:#06c755;color:#fff;border-radius:12px;
+         text-decoration:none;font-size:15px;font-weight:700;border:none;cursor:pointer;width:100%}
   </style>
 </head>
 <body>
   <div class="card">
     <div class="icon">${icon}</div>
     <h2>${title}</h2>
-    <p>${msg}</p>
-    <a href="javascript:history.back()">返回 LINE App</a>
+    <p>${mainMsg}</p>
+    ${subMsg ? `<p class="hint">${subMsg}</p>` : ''}
+    <button class="btn" onclick="window.close()">關閉此頁面</button>
   </div>
-  <script>
-    // Auto-navigate back after 5s if user doesn't click
-    setTimeout(() => { history.back(); }, 5000);
-  </script>
 </body>
 </html>`);
 });
