@@ -92,16 +92,13 @@ export default function ReserveFlowPage({ venue: initialVenue, mode, onBack, onD
     setSelectedSlots(plan.slots || []);
   }
 
-  // Derive total price
-  let totalPrice = 0;
-  let planName = '';
-  if (selectedPlan) {
-    totalPrice = selectedPlan.price;
-    planName = selectedPlan.name;
-  } else if (selectedSlots.length === 1) {
-    const matchPlan = plans.find(p => p.type === 'single' && p.slots?.[0] === selectedSlots[0]);
-    if (matchPlan) { totalPrice = matchPlan.price; planName = matchPlan.name; }
-  }
+  // Derive effective plan: user-selected, or auto-match for single-slot walkin
+  const autoMatchPlan = !selectedPlan && selectedSlots.length === 1
+    ? plans.find(p => p.type === 'single' && p.slots?.[0] === selectedSlots[0])
+    : null;
+  const effectivePlan = selectedPlan || autoMatchPlan;
+  const totalPrice = effectivePlan ? effectivePlan.price : 0;
+  const planName   = effectivePlan ? effectivePlan.name  : '';
 
   // Check-in/out times
   const slotTimes = {
@@ -137,7 +134,7 @@ export default function ReserveFlowPage({ venue: initialVenue, mode, onBack, onD
     try {
       await createReservation({
         venueId: venue._id,
-        planId: selectedPlan?._id,
+        planId: effectivePlan?._id,
         date, slots: selectedSlots,
         expectedCheckIn: checkIn, expectedCheckOut: checkOut,
         mode
