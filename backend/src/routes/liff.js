@@ -11,6 +11,7 @@ const Task = require('../models/Task');
 const TaskSubmission = require('../models/TaskSubmission');
 const Coupon = require('../models/Coupon');
 const { createOrderParams } = require('../services/ecpayService');
+const { pushMessage } = require('../services/lineService');
 
 const router = express.Router();
 
@@ -475,7 +476,51 @@ router.get('/tasks', liffAuth, async (req, res) => {
     // Check if user has a currently checked-in reservation
     const checkedInRes = await Reservation.findOne({ lineUserId, status: 'checked_in' }).lean();
 
-    res.json({ tasks: tasksWithSub, checkedInReservationId: checkedInRes ? checkedInRes._id : null });
+    res.json({
+      tasks: tasksWithSub,
+      checkedInReservationId: checkedInRes ? checkedInRes._id : null,
+      myLineUserId: lineUserId
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/liff/tasks/:id/accept ───────────────────────────────────────────
+router.post('/tasks/:id/accept', liffAuth, async (req, res) => {
+  try {
+    const lineUserId = req.liffUser.lineUserId;
+
+    // Verify user has a checked-in reservation
+    const checkedIn = await Reservation.findOne({ lineUserId, status: 'checked_in' }).lean();
+    if (!checkedIn) return res.status(403).json({ error: '只有在場中的用戶才能承接任務' });
+
+    const task = await Task.findById(req.params.id);
+    if (!task || task.status !== 'open') return res.status(404).json({ error: '任務不存在或已關閉' });
+
+    // First-come-first-served locking
+    if (task.acceptedBy && task.acceptedBy !== lineUserId) {
+      return res.status(409).json({ error: '此任務已被他人承接' });
+    }
+
+    // Already accepted by this user — idempotent
+    if (task.acceptedBy === lineUserId) {
+      return res.json({ ok: true });
+    }
+
+    task.acceptedBy = lineUserId;
+    task.acceptorName = req.liffUser.displayName;
+    task.acceptedAt = new Date();
+    await task.save();
+
+    // Push LINE confirmation message
+    try {
+      await pushMessage(lineUserId, `✅ 您已成功接取任務「${task.title}」！\n請到預約系統的「任務」頁面查看詳情，並於截止前完成任務拍照上傳。`);
+    } catch (e) {
+      console.error('[liff] pushMessage after accept failed:', e.message);
+    }
+
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -495,6 +540,11 @@ router.post('/tasks/:id/submit', liffAuth, async (req, res) => {
 
     const task = await Task.findById(req.params.id).lean();
     if (!task || task.status !== 'open') return res.status(404).json({ error: '任務不存在或已關閉' });
+
+    // Verify submitter is the task acceptor
+    if (task.acceptedBy && task.acceptedBy !== lineUserId) {
+      return res.status(403).json({ error: '此任務由他人承接，無法提交' });
+    }
 
     // Upsert submission (allow re-submission only if rejected)
     const existing = await TaskSubmission.findOne({ taskId: req.params.id, lineUserId });

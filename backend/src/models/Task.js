@@ -7,6 +7,9 @@ const TaskSchema = new mongoose.Schema({
   venueId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Venue', required: true },
   venueName:    { type: String, default: '' },
   status:       { type: String, enum: ['open', 'closed', 'cancelled'], default: 'open' },
+  acceptedBy:   { type: String, default: '' },
+  acceptorName: { type: String, default: '' },
+  acceptedAt:   { type: Date, default: null },
   expiresAt:    { type: Date, default: null },
   createdAt:    { type: Date, default: Date.now }
 });

@@ -35,10 +35,10 @@ app.use(cors({
 // LINE Webhook route requires raw body for signature validation
 app.use('/webhook', webhookRouter);
 
-// JSON body parser for all other routes
-app.use(express.json());
+// JSON body parser for all other routes (10mb for photo base64 uploads)
+app.use(express.json({ limit: '10mb' }));
 // ECPay callback uses application/x-www-form-urlencoded
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 function safeEqual(a, b) {

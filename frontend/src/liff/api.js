@@ -102,14 +102,26 @@ export async function fetchTasks() {
   return json;
 }
 
+export async function acceptTask(taskId) {
+  const r = await fetch(`${BASE}/tasks/${taskId}/accept`, {
+    method: 'POST',
+    headers: authHeaders()
+  });
+  let json;
+  try { json = await r.json(); } catch (_) { throw new Error('操作失敗，請重試'); }
+  if (!r.ok) throw new Error(json?.error || '操作失敗');
+  return json;
+}
+
 export async function submitTask(taskId, data) {
   const r = await fetch(`${BASE}/tasks/${taskId}/submit`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(data)
   });
-  const json = await r.json();
-  if (!r.ok) throw new Error(json.error || '提交失敗');
+  let json;
+  try { json = await r.json(); } catch (_) { throw new Error('請求失敗，請重試'); }
+  if (!r.ok) throw new Error(json?.error || '提交失敗');
   return json;
 }
 

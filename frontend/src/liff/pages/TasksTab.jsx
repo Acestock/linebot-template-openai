@@ -1,5 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchTasks, submitTask, fetchMyCoupons } from '../api';
+import { fetchTasks, submitTask, fetchMyCoupons, acceptTask } from '../api';
+
+async function compressImage(file, maxWidth = 800, quality = 0.75) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxWidth / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(img.width  * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.src = url;
+  });
+}
 
 function StatusBadge({ status }) {
   const map = {
@@ -29,23 +46,39 @@ function CouponStatusBadge({ status }) {
   );
 }
 
-function TaskCard({ task, expanded, onToggle, checkedInReservationId, onSubmitted }) {
-  const [photoFile, setPhotoFile]       = useState(null);
+function TaskCard({ task, expanded, onToggle, checkedInReservationId, myUserId, onSubmitted, onAccepted }) {
   const [photoPreview, setPhotoPreview] = useState('');
   const [note, setNote]                 = useState('');
   const [submitting, setSubmitting]     = useState(false);
+  const [accepting, setAccepting]       = useState(false);
   const fileRef = useRef();
 
   const sub = task.mySubmission;
-  const canSubmit = !sub && !!checkedInReservationId;
+  const canInteract = !!checkedInReservationId;
+  const isMine = !!myUserId && task.acceptedBy === myUserId;
+  const isTaken = !!task.acceptedBy && !isMine;
 
   async function handlePhotoChange(e) {
     const file = e.target.files[0];
     if (!file) return;
-    setPhotoFile(file);
-    const reader = new FileReader();
-    reader.onload = ev => setPhotoPreview(ev.target.result);
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImage(file);
+      setPhotoPreview(compressed);
+    } catch (_) {
+      setPhotoPreview('');
+    }
+  }
+
+  async function handleAccept() {
+    setAccepting(true);
+    try {
+      await acceptTask(task._id);
+      onAccepted(task._id);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setAccepting(false);
+    }
   }
 
   async function handleSubmit() {
@@ -77,6 +110,12 @@ function TaskCard({ task, expanded, onToggle, checkedInReservationId, onSubmitte
             {expanded ? task.description : task.description.slice(0, 60) + (task.description.length > 60 ? '...' : '')}
           </div>
         )}
+        {isTaken && (
+          <div style={{ marginTop: '4px', fontSize: '12px', color: '#888' }}>此任務已被他人承接</div>
+        )}
+        {isMine && (
+          <div style={{ marginTop: '4px', fontSize: '12px', color: '#2e7d32', fontWeight: '600' }}>✓ 已承接</div>
+        )}
         <div style={{ marginTop: '6px', fontSize: '12px', color: '#aaa', textAlign: 'right' }}>
           {expanded ? '收起 ▲' : '查看詳情 ▼'}
         </div>
@@ -91,7 +130,6 @@ function TaskCard({ task, expanded, onToggle, checkedInReservationId, onSubmitte
             </div>
           )}
 
-          {/* Submission status */}
           {sub ? (
             <div style={{ background: '#f9f9f9', borderRadius: '10px', padding: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{ fontSize: '14px', color: '#444' }}>
@@ -101,7 +139,23 @@ function TaskCard({ task, expanded, onToggle, checkedInReservationId, onSubmitte
               </div>
               <StatusBadge status={sub.status} />
             </div>
-          ) : canSubmit ? (
+          ) : isTaken ? (
+            <div style={{ background: '#f5f5f5', borderRadius: '10px', padding: '12px', textAlign: 'center', color: '#888', fontSize: '13px' }}>
+              此任務已被他人承接
+            </div>
+          ) : !canInteract ? (
+            <div style={{ background: '#f5f5f5', borderRadius: '10px', padding: '12px', textAlign: 'center', color: '#888', fontSize: '13px' }}>
+              需在場內才能承接任務
+            </div>
+          ) : !isMine ? (
+            <button
+              type="button"
+              onClick={handleAccept}
+              disabled={accepting}
+              style={{ width: '100%', padding: '12px', border: 'none', borderRadius: '10px', background: accepting ? '#ccc' : '#E67E22', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: accepting ? 'not-allowed' : 'pointer' }}>
+              {accepting ? '處理中...' : '接受任務'}
+            </button>
+          ) : (
             <div>
               <div style={{ fontSize: '13px', color: '#444', marginBottom: '10px', fontWeight: '600' }}>提交任務完成照片</div>
               <input
@@ -117,7 +171,7 @@ function TaskCard({ task, expanded, onToggle, checkedInReservationId, onSubmitte
                   <img src={photoPreview} alt="預覽" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px', objectFit: 'cover' }} />
                   <button
                     type="button"
-                    onClick={() => { setPhotoPreview(''); setPhotoFile(null); if (fileRef.current) fileRef.current.value = ''; }}
+                    onClick={() => { setPhotoPreview(''); if (fileRef.current) fileRef.current.value = ''; }}
                     style={{ display: 'block', margin: '6px auto 0', fontSize: '12px', color: '#888', background: 'none', border: 'none', cursor: 'pointer' }}>
                     重新拍照
                   </button>
@@ -144,10 +198,6 @@ function TaskCard({ task, expanded, onToggle, checkedInReservationId, onSubmitte
                 style={{ width: '100%', padding: '12px', border: 'none', borderRadius: '10px', background: submitting || !photoPreview ? '#ccc' : '#E67E22', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: submitting || !photoPreview ? 'not-allowed' : 'pointer' }}>
                 {submitting ? '提交中...' : '提交任務'}
               </button>
-            </div>
-          ) : (
-            <div style={{ background: '#f5f5f5', borderRadius: '10px', padding: '12px', textAlign: 'center', color: '#888', fontSize: '13px' }}>
-              需在場內才能提交任務
             </div>
           )}
         </div>
@@ -178,11 +228,12 @@ function MyCoupons({ coupons }) {
 }
 
 export default function TasksTab() {
-  const [tasks, setTasks]         = useState([]);
-  const [coupons, setCoupons]     = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [expandedId, setExpandedId] = useState(null);
+  const [tasks, setTasks]             = useState([]);
+  const [coupons, setCoupons]         = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [expandedId, setExpandedId]   = useState(null);
   const [checkedInId, setCheckedInId] = useState(null);
+  const [myUserId, setMyUserId]       = useState('');
 
   async function load() {
     setLoading(true);
@@ -190,12 +241,19 @@ export default function TasksTab() {
       const [tasksData, couponsData] = await Promise.all([fetchTasks(), fetchMyCoupons()]);
       setTasks(tasksData.tasks || []);
       setCheckedInId(tasksData.checkedInReservationId || null);
+      setMyUserId(tasksData.myLineUserId || '');
       setCoupons(Array.isArray(couponsData) ? couponsData : []);
     } catch (e) {
       console.error('TasksTab load error:', e.message);
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleTaskAccepted(taskId) {
+    setTasks(prev => prev.map(t =>
+      t._id === taskId ? { ...t, acceptedBy: myUserId, acceptorName: '你' } : t
+    ));
   }
 
   useEffect(() => { load(); }, []);
@@ -208,7 +266,7 @@ export default function TasksTab() {
     <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
       {!checkedInId && (
         <div style={{ background: '#fff8e1', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px', fontSize: '13px', color: '#f57f17', lineHeight: '1.5' }}>
-          💡 您目前不在場內。進場後即可接受並提交限時任務。
+          💡 您目前不在場內。進場後即可承接並提交限時任務。
         </div>
       )}
 
@@ -222,7 +280,9 @@ export default function TasksTab() {
             expanded={expandedId === task._id}
             onToggle={() => setExpandedId(expandedId === task._id ? null : task._id)}
             checkedInReservationId={checkedInId}
+            myUserId={myUserId}
             onSubmitted={load}
+            onAccepted={handleTaskAccepted}
           />
         ))
       )}
