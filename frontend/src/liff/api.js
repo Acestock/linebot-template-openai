@@ -84,13 +84,39 @@ export async function checkoutReservation(id) {
   return json;
 }
 
-export async function initiatePayment(id) {
+export async function initiatePayment(id, couponId) {
   const r = await fetch(`${BASE}/reservations/${id}/payment`, {
     method: 'POST',
-    headers: authHeaders()
+    headers: authHeaders(),
+    body: JSON.stringify({ couponId: couponId || undefined })
   });
   const json = await r.json();
   if (!r.ok) throw new Error(json.error || '付款啟動失敗');
+  return json;
+}
+
+export async function fetchTasks() {
+  const r = await fetch(`${BASE}/tasks`, { headers: authHeaders() });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '載入任務失敗');
+  return json;
+}
+
+export async function submitTask(taskId, data) {
+  const r = await fetch(`${BASE}/tasks/${taskId}/submit`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data)
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '提交失敗');
+  return json;
+}
+
+export async function fetchMyCoupons() {
+  const r = await fetch(`${BASE}/coupons`, { headers: authHeaders() });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '載入折扣券失敗');
   return json;
 }
 

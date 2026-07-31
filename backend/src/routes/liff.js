@@ -7,6 +7,9 @@ const Reservation = require('../models/Reservation');
 const Announcement = require('../models/Announcement');
 const BusinessProfile = require('../models/BusinessProfile');
 const BlockedSlot = require('../models/BlockedSlot');
+const Task = require('../models/Task');
+const TaskSubmission = require('../models/TaskSubmission');
+const Coupon = require('../models/Coupon');
 const { createOrderParams } = require('../services/ecpayService');
 
 const router = express.Router();
@@ -298,6 +301,7 @@ router.delete('/reservations/:id', liffAuth, async (req, res) => {
 
 // ── POST /api/liff/reservations/:id/payment ───────────────────────────────────
 // Initiate ECPay payment; returns form data for client to submit
+// Accepts optional body.couponId to apply a discount coupon
 router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
   try {
     const r = await Reservation.findById(req.params.id);
@@ -317,7 +321,37 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
       return res.json({ skip: true });
     }
 
-    const { params, apiUrl, tradeNo } = createOrderParams(r);
+    // Apply coupon if provided
+    const { couponId } = req.body;
+    let effectivePrice = r.totalPrice;
+    let coupon = null;
+    if (couponId) {
+      coupon = await Coupon.findOne({ _id: couponId, lineUserId: req.liffUser.lineUserId, status: 'valid' });
+      if (coupon) {
+        effectivePrice = Math.max(0, r.totalPrice - coupon.discountAmount);
+        r.appliedCouponId = coupon._id;
+        r.discountAmount = coupon.discountAmount;
+        await r.save();
+
+        if (effectivePrice === 0) {
+          // Full discount — no ECPay needed
+          coupon.status = 'used';
+          coupon.usedAt = new Date();
+          coupon.usedForReservationId = r._id;
+          await coupon.save();
+          r.paymentStatus = 'paid';
+          r.status = 'completed';
+          await r.save();
+          return res.json({ skip: true });
+        }
+      }
+    }
+
+    // Build ECPay order with effective price (may be discounted)
+    const reservationForPayment = effectivePrice !== r.totalPrice
+      ? { ...r.toObject(), totalPrice: effectivePrice }
+      : r;
+    const { params, apiUrl, tradeNo } = createOrderParams(reservationForPayment);
     r.paymentRef = tradeNo;
     await r.save();
 
@@ -416,6 +450,91 @@ router.post('/checkin', async (req, res) => {
     r.status = 'checked_in';
     await r.save();
     res.json({ ok: true, status: 'checked_in', reservation: r });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/liff/tasks ────────────────────────────────────────────────────────
+router.get('/tasks', liffAuth, async (req, res) => {
+  try {
+    const lineUserId = req.liffUser.lineUserId;
+    const tasks = await Task.find({ status: 'open' }).sort({ createdAt: -1 }).lean();
+
+    // Find user's submissions for these tasks
+    const taskIds = tasks.map(t => t._id);
+    const submissions = await TaskSubmission.find({ taskId: { $in: taskIds }, lineUserId }).lean();
+    const subMap = {};
+    submissions.forEach(s => { subMap[s.taskId.toString()] = s; });
+
+    const tasksWithSub = tasks.map(t => ({
+      ...t,
+      mySubmission: subMap[t._id.toString()] || null
+    }));
+
+    // Check if user has a currently checked-in reservation
+    const checkedInRes = await Reservation.findOne({ lineUserId, status: 'checked_in' }).lean();
+
+    res.json({ tasks: tasksWithSub, checkedInReservationId: checkedInRes ? checkedInRes._id : null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/liff/tasks/:id/submit ───────────────────────────────────────────
+router.post('/tasks/:id/submit', liffAuth, async (req, res) => {
+  try {
+    const { photoBase64, note, reservationId } = req.body;
+    if (!photoBase64) return res.status(400).json({ error: '請上傳任務完成照片' });
+
+    const lineUserId = req.liffUser.lineUserId;
+
+    // Verify user has a checked-in reservation
+    const checkedIn = await Reservation.findOne({ lineUserId, status: 'checked_in' }).lean();
+    if (!checkedIn) return res.status(403).json({ error: '只有在場中的用戶才能提交任務' });
+
+    const task = await Task.findById(req.params.id).lean();
+    if (!task || task.status !== 'open') return res.status(404).json({ error: '任務不存在或已關閉' });
+
+    // Upsert submission (allow re-submission only if rejected)
+    const existing = await TaskSubmission.findOne({ taskId: req.params.id, lineUserId });
+    if (existing && existing.status === 'pending') {
+      return res.status(409).json({ error: '您已提交此任務，等待審核中' });
+    }
+    if (existing && existing.status === 'approved') {
+      return res.status(409).json({ error: '此任務已審核通過' });
+    }
+
+    const subData = {
+      taskId: req.params.id,
+      lineUserId,
+      displayName: req.liffUser.displayName,
+      pictureUrl: req.liffUser.pictureUrl,
+      reservationId: reservationId || checkedIn._id,
+      status: 'pending',
+      photoBase64,
+      note: note || ''
+    };
+
+    if (existing) {
+      Object.assign(existing, subData);
+      await existing.save();
+      res.json({ ok: true, submission: existing });
+    } else {
+      const sub = await TaskSubmission.create(subData);
+      res.json({ ok: true, submission: sub });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/liff/coupons ─────────────────────────────────────────────────────
+router.get('/coupons', liffAuth, async (req, res) => {
+  try {
+    const coupons = await Coupon.find({ lineUserId: req.liffUser.lineUserId, status: 'valid' })
+      .sort({ createdAt: -1 }).lean();
+    res.json(coupons);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

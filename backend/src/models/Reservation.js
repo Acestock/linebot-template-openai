@@ -20,6 +20,8 @@ const ReservationSchema = new mongoose.Schema({
   qrToken:          { type: String, default: '' },
   note:             { type: String, default: '' },
   reminderSentAt:   { type: Date, default: null },
+  appliedCouponId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null },
+  discountAmount:   { type: Number, default: 0 },
   createdAt:        { type: Date, default: Date.now }
 });
 

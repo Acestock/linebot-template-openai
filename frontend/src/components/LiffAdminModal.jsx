@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import API_BASE, { authFetch } from '../config';
 
-const TABS = ['場地管理', '時段方案', '公告管理', '預約列表', '系統設定'];
+const TABS = ['場地管理', '時段方案', '公告管理', '預約列表', '系統設定', '任務管理'];
 const SLOT_OPTIONS = [
   { key: 'morning',   label: '早上 (07–12)' },
   { key: 'afternoon', label: '下午 (12–18)' },
@@ -676,6 +676,220 @@ function SystemSettingsTab() {
   );
 }
 
+// ── Tasks Admin Tab ───────────────────────────────────────────────────────────
+function TasksAdminTab() {
+  const [venues, setVenues]         = useState([]);
+  const [tasks, setTasks]           = useState([]);
+  const [expandedSubs, setExpandedSubs] = useState(null); // taskId being reviewed
+  const [submissions, setSubmissions]   = useState([]);
+  const [subsLoading, setSubsLoading]   = useState(false);
+  const [form, setForm] = useState({ venueId: '', title: '', description: '', rewardAmount: '', expiresAt: '' });
+  const [creating, setCreating]     = useState(false);
+  const [lightbox, setLightbox]     = useState(null); // base64 image URL for full-view
+
+  useEffect(() => {
+    authFetch(`${API_BASE}/api/venues`)
+      .then(r => r.json()).then(d => setVenues(Array.isArray(d) ? d : [])).catch(() => {});
+    loadTasks();
+  }, []);
+
+  async function loadTasks() {
+    const data = await authFetch(`${API_BASE}/api/tasks`).then(r => r.json()).catch(() => []);
+    setTasks(Array.isArray(data) ? data : []);
+  }
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    if (!form.venueId || !form.title || !form.rewardAmount) {
+      alert('請填寫場地、任務名稱與獎勵金額'); return;
+    }
+    setCreating(true);
+    try {
+      const body = {
+        venueId: form.venueId,
+        title: form.title,
+        description: form.description,
+        rewardAmount: Number(form.rewardAmount),
+        ...(form.expiresAt ? { expiresAt: form.expiresAt } : {})
+      };
+      const res = await authFetch(`${API_BASE}/api/tasks`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '建立失敗');
+      alert(`任務已建立，已廣播給 ${data.broadcastCount} 位在場用戶`);
+      setForm({ venueId: '', title: '', description: '', rewardAmount: '', expiresAt: '' });
+      loadTasks();
+    } catch (err) { alert(err.message); }
+    finally { setCreating(false); }
+  }
+
+  async function handleCloseTask(id) {
+    if (!confirm('確定關閉此任務？')) return;
+    await authFetch(`${API_BASE}/api/tasks/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'closed' })
+    });
+    loadTasks();
+  }
+
+  async function handleViewSubmissions(taskId) {
+    if (expandedSubs === taskId) { setExpandedSubs(null); return; }
+    setExpandedSubs(taskId);
+    setSubsLoading(true);
+    try {
+      const data = await authFetch(`${API_BASE}/api/tasks/${taskId}/submissions`).then(r => r.json());
+      setSubmissions(Array.isArray(data) ? data : []);
+    } catch (_) { setSubmissions([]); }
+    finally { setSubsLoading(false); }
+  }
+
+  async function handleReview(taskId, subId, status) {
+    const adminNote = status === 'rejected' ? (prompt('輸入拒絕原因（選填）') || '') : '';
+    await authFetch(`${API_BASE}/api/tasks/${taskId}/submissions/${subId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, adminNote })
+    });
+    // Refresh submissions
+    const data = await authFetch(`${API_BASE}/api/tasks/${taskId}/submissions`).then(r => r.json()).catch(() => []);
+    setSubmissions(Array.isArray(data) ? data : []);
+  }
+
+  const sectionStyle = { background: '#f8f8f8', borderRadius: '10px', padding: '16px', marginBottom: '20px' };
+  const labelStyle   = { display: 'block', fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '5px' };
+  const inputStyle   = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '7px', fontSize: '13px', marginBottom: '10px' };
+
+  const STATUS_BADGE = {
+    pending:  { label: '待審核', color: '#e65100', bg: '#fff3e0' },
+    approved: { label: '已核准', color: '#2e7d32', bg: '#e8f5e9' },
+    rejected: { label: '已拒絕', color: '#c62828', bg: '#ffebee' }
+  };
+  const TASK_STATUS_BADGE = {
+    open:      { label: '進行中', color: '#1976d2', bg: '#e3f2fd' },
+    closed:    { label: '已關閉', color: '#555',    bg: '#f5f5f5' },
+    cancelled: { label: '已取消', color: '#c62828', bg: '#ffebee' }
+  };
+
+  return (
+    <div>
+      {/* Create task form */}
+      <div style={sectionStyle}>
+        <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '12px' }}>建立限時任務</div>
+        <form onSubmit={handleCreate}>
+          <label style={labelStyle}>場地 *</label>
+          <select value={form.venueId} onChange={e => setForm(f => ({ ...f, venueId: e.target.value }))} style={inputStyle}>
+            <option value="">請選擇場地</option>
+            {venues.map(v => <option key={v._id} value={v._id}>{v.name}</option>)}
+          </select>
+
+          <label style={labelStyle}>任務名稱 *</label>
+          <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="例：協助掃地、補換咖啡包" style={inputStyle} />
+
+          <label style={labelStyle}>任務說明</label>
+          <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="任務詳細說明（選填）" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+
+          <label style={labelStyle}>獎勵金額（元）*</label>
+          <input type="number" min="1" value={form.rewardAmount} onChange={e => setForm(f => ({ ...f, rewardAmount: e.target.value }))} placeholder="例：100" style={inputStyle} />
+
+          <label style={labelStyle}>截止時間（選填）</label>
+          <input type="datetime-local" value={form.expiresAt} onChange={e => setForm(f => ({ ...f, expiresAt: e.target.value }))} style={inputStyle} />
+
+          <button type="submit" disabled={creating} style={{ background: creating ? '#ccc' : '#E67E22', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 20px', fontSize: '13px', fontWeight: '700', cursor: creating ? 'not-allowed' : 'pointer' }}>
+            {creating ? '建立中...' : '🎯 建立並廣播'}
+          </button>
+          <div style={{ fontSize: '11px', color: '#aaa', marginTop: '6px' }}>建立後將立即發送 LINE 通知給目前在場中的用戶</div>
+        </form>
+      </div>
+
+      {/* Task list */}
+      <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '10px' }}>任務清單</div>
+      {tasks.length === 0 ? (
+        <div style={{ color: '#aaa', textAlign: 'center', padding: '30px', fontSize: '13px' }}>尚無任務</div>
+      ) : tasks.map(task => {
+        const tb = TASK_STATUS_BADGE[task.status] || TASK_STATUS_BADGE.open;
+        return (
+          <div key={task._id} style={{ border: '1px solid #eee', borderRadius: '10px', marginBottom: '10px', overflow: 'hidden' }}>
+            <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: '700', fontSize: '14px' }}>{task.title}</span>
+                  <span style={{ background: tb.bg, color: tb.color, padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: '600' }}>{tb.label}</span>
+                </div>
+                <div style={{ fontSize: '12px', color: '#888' }}>{task.venueName} · 獎勵 ${task.rewardAmount}</div>
+                {task.expiresAt && <div style={{ fontSize: '11px', color: '#e65100', marginTop: '2px' }}>截止：{new Date(task.expiresAt).toLocaleString('zh-TW')}</div>}
+              </div>
+              <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                <button type="button" onClick={() => handleViewSubmissions(task._id)}
+                  style={{ fontSize: '12px', padding: '5px 10px', border: '1px solid #ddd', borderRadius: '6px', background: '#fff', cursor: 'pointer', color: '#444' }}>
+                  {expandedSubs === task._id ? '收起' : '查看提交'}
+                </button>
+                {task.status === 'open' && (
+                  <button type="button" onClick={() => handleCloseTask(task._id)}
+                    style={{ fontSize: '12px', padding: '5px 10px', border: 'none', borderRadius: '6px', background: '#f5f5f5', cursor: 'pointer', color: '#666' }}>
+                    關閉
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Submissions expanded */}
+            {expandedSubs === task._id && (
+              <div style={{ borderTop: '1px solid #f0f0f0', background: '#fafafa', padding: '12px 14px' }}>
+                {subsLoading ? (
+                  <div style={{ textAlign: 'center', color: '#aaa', padding: '16px' }}>載入中...</div>
+                ) : submissions.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: '#aaa', padding: '16px', fontSize: '13px' }}>尚無提交</div>
+                ) : submissions.map(sub => {
+                  const sb = STATUS_BADGE[sub.status] || STATUS_BADGE.pending;
+                  return (
+                    <div key={sub._id} style={{ background: '#fff', borderRadius: '8px', padding: '12px', marginBottom: '8px', border: '1px solid #eee' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <div>
+                          <div style={{ fontWeight: '600', fontSize: '13px' }}>{sub.displayName || '（用戶）'}</div>
+                          <div style={{ fontSize: '11px', color: '#aaa' }}>{new Date(sub.createdAt).toLocaleString('zh-TW')}</div>
+                          {sub.note && <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>備注：{sub.note}</div>}
+                          {sub.adminNote && <div style={{ fontSize: '12px', color: '#e65100', marginTop: '2px' }}>管理員說明：{sub.adminNote}</div>}
+                        </div>
+                        <span style={{ background: sb.bg, color: sb.color, padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600' }}>{sb.label}</span>
+                      </div>
+                      {sub.photoBase64 && (
+                        <img
+                          src={sub.photoBase64}
+                          alt="任務照片"
+                          onClick={() => setLightbox(sub.photoBase64)}
+                          style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', marginBottom: '8px' }}
+                        />
+                      )}
+                      {sub.status === 'pending' && (
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button type="button" onClick={() => handleReview(task._id, sub._id, 'approved')}
+                            style={{ flex: 1, padding: '7px', border: 'none', borderRadius: '6px', background: '#2e7d32', color: '#fff', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
+                            ✓ 核准
+                          </button>
+                          <button type="button" onClick={() => handleReview(task._id, sub._id, 'rejected')}
+                            style={{ flex: 1, padding: '7px', border: 'none', borderRadius: '6px', background: '#c62828', color: '#fff', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
+                            ✕ 拒絕
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Lightbox for full photo */}
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <img src={lightbox} alt="任務照片" style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: '8px', objectFit: 'contain' }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Modal ────────────────────────────────────────────────────────────────
 export default function LiffAdminModal({ onClose }) {
   const [tab, setTab] = useState(0);
@@ -713,6 +927,7 @@ export default function LiffAdminModal({ onClose }) {
           {tab === 2 && <AnnouncementsTab />}
           {tab === 3 && <ReservationsTab />}
           {tab === 4 && <SystemSettingsTab />}
+          {tab === 5 && <TasksAdminTab />}
         </div>
       </div>
     </div>

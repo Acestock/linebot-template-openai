@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitEcpayForm } from '../api';
+import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitEcpayForm, fetchMyCoupons } from '../api';
+import TasksTab from './TasksTab';
 
 const STATUS_MAP = {
   confirmed:  { label: '已確認',   color: '#1976d2', bg: '#e3f2fd' },
@@ -50,8 +51,21 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const [qrValidUntil, setQrValidUntil] = useState(null);
   const [localStatus, setLocalStatus]   = useState(r.status);
   const [localPayStatus, setLocalPayStatus] = useState(r.paymentStatus || 'unpaid');
+  const [coupons, setCoupons]           = useState([]);
+  const [selectedCoupon, setSelectedCoupon] = useState(null);
+
   const canQr = !readOnly && (localStatus === 'confirmed' || localStatus === 'checked_in');
   const needsPayment = !readOnly && localStatus === 'checked_in' && r.totalPrice > 0 && localPayStatus !== 'paid';
+
+  useEffect(() => {
+    if (needsPayment) {
+      fetchMyCoupons().then(data => setCoupons(Array.isArray(data) ? data : [])).catch(() => {});
+    }
+  }, [needsPayment]);
+
+  const effectivePrice = selectedCoupon
+    ? Math.max(0, r.totalPrice - selectedCoupon.discountAmount)
+    : r.totalPrice;
 
   async function handleShowQr() {
     setQrLoading(true);
@@ -91,18 +105,19 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   }
 
   async function handlePay() {
-    if (!confirm('確認前往付款？將跳轉至綠界付款頁面。')) return;
+    const payLabel = selectedCoupon
+      ? `使用折扣券折抵 $${selectedCoupon.discountAmount}，實付 $${effectivePrice}，確認前往付款？`
+      : '確認前往付款？將跳轉至綠界付款頁面。';
+    if (!confirm(payLabel)) return;
     setPaying(true);
     try {
-      const data = await initiatePayment(r._id);
+      const data = await initiatePayment(r._id, selectedCoupon?._id);
       if (data.skip) {
-        // Free reservation — already checked out on backend
         setLocalStatus('completed');
-        setLocalPayStatus('free');
+        setLocalPayStatus('paid');
         onCompleted?.(r._id);
         return;
       }
-      // Submit form to ECPay (redirects browser)
       const { form: { action, fields } } = data;
       submitEcpayForm(action, fields);
     } catch (e) {
@@ -113,6 +128,16 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
 
   const st = getStatusInfo(localStatus, r.unpaidExit);
   const slotsStr = (r.slots || []).map(s => SLOT_LABELS[s] || s).join(' + ');
+
+  function payBtnLabel() {
+    if (paying) return '跳轉付款中...';
+    if (selectedCoupon) {
+      return effectivePrice === 0
+        ? `折扣券全額折抵（原 $${r.totalPrice}）`
+        : `付款並出場（$${r.totalPrice} - $${selectedCoupon.discountAmount} = $${effectivePrice}）`;
+    }
+    return `付款並出場（$${r.totalPrice}）`;
+  }
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
@@ -177,11 +202,39 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
         </div>
       ) : null}
 
+      {/* Coupon selection — shown when payment is needed */}
+      {needsPayment && coupons.length > 0 && (
+        <div style={{ background: '#fff', borderRadius: '12px', padding: '14px 16px', boxShadow: '0 1px 6px rgba(0,0,0,0.08)', marginTop: '16px' }}>
+          <div style={{ fontSize: '14px', fontWeight: '700', color: '#333', marginBottom: '10px' }}>選擇折扣券（可選）</div>
+          {coupons.map(c => (
+            <label key={c._id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #f5f5f5', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="coupon"
+                checked={selectedCoupon?._id === c._id}
+                onChange={() => setSelectedCoupon(c)}
+                style={{ accentColor: '#1976d2', width: '16px', height: '16px' }}
+              />
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: '#222' }}>{c.taskTitle || '折扣券'}</div>
+                <div style={{ fontSize: '12px', color: '#1976d2', fontWeight: '700' }}>折抵 ${c.discountAmount}</div>
+              </div>
+            </label>
+          ))}
+          {selectedCoupon && (
+            <button type="button" onClick={() => setSelectedCoupon(null)}
+              style={{ marginTop: '8px', fontSize: '12px', color: '#888', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              取消選擇
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Payment button — shown when checked_in + has charge + not yet paid */}
       {needsPayment && (
         <button type="button" onClick={handlePay} disabled={paying}
-          style={{ width: '100%', marginTop: '16px', padding: '14px', border: 'none', borderRadius: '10px', background: paying ? '#ccc' : '#e65100', color: '#fff', fontSize: '15px', fontWeight: '700', cursor: paying ? 'not-allowed' : 'pointer' }}>
-          {paying ? '跳轉付款中...' : `付款並出場（$${r.totalPrice}）`}
+          style={{ width: '100%', marginTop: '16px', padding: '14px', border: 'none', borderRadius: '10px', background: paying ? '#ccc' : '#e65100', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: paying ? 'not-allowed' : 'pointer', lineHeight: '1.4' }}>
+          {payBtnLabel()}
         </button>
       )}
 
@@ -302,7 +355,7 @@ function PersonalInfoTab({ user }) {
 }
 
 // ── Main ProfilePage ─────────────────────────────────────────────────────────
-const SUB_TABS = ['當前預約', '預約紀錄', '個人資料'];
+const SUB_TABS = ['當前預約', '任務', '預約紀錄', '個人資料'];
 
 export default function ProfilePage({ user }) {
   const [subTab, setSubTab] = useState(0);
@@ -330,8 +383,8 @@ export default function ProfilePage({ user }) {
             type="button"
             onClick={() => setSubTab(i)}
             style={{
-              flex: 1, padding: '12px 4px', border: 'none', background: 'none',
-              fontSize: '14px', fontWeight: subTab === i ? '700' : '400',
+              flex: 1, padding: '12px 2px', border: 'none', background: 'none',
+              fontSize: '13px', fontWeight: subTab === i ? '700' : '400',
               color: subTab === i ? '#111' : '#888',
               borderBottom: subTab === i ? '2px solid #111' : '2px solid transparent',
               cursor: 'pointer'
@@ -342,8 +395,9 @@ export default function ProfilePage({ user }) {
 
       {/* Sub-tab content */}
       {subTab === 0 && <ActiveBookingsTab list={list} loading={loading} onStatusChanged={handleStatusChanged} />}
-      {subTab === 1 && <HistoryTab list={list} loading={loading} />}
-      {subTab === 2 && <PersonalInfoTab user={user} />}
+      {subTab === 1 && <TasksTab />}
+      {subTab === 2 && <HistoryTab list={list} loading={loading} />}
+      {subTab === 3 && <PersonalInfoTab user={user} />}
     </div>
   );
 }

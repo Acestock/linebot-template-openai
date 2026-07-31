@@ -264,6 +264,15 @@ async function pushMessage(lineUserId, text) {
   });
 }
 
+// Push a pre-built LINE message object (flex, image, etc.)
+async function pushLineMessage(lineUserId, messageObj) {
+  const client = getClient();
+  await client.pushMessage({
+    to: lineUserId,
+    messages: [messageObj]
+  });
+}
+
 // Build LINE Flex Message bubble from a ProductCard document
 function buildFlexBubble(card) {
   const headerBgColor    = card.headerBgColor    || '#ffffff';
@@ -436,7 +445,7 @@ async function pushOrderCard(lineUserId, items, shopName) {
 }
 
 module.exports = {
-  getUserProfile, pushMessage, pushFlexCard, pushOrderCard,
+  getUserProfile, pushMessage, pushLineMessage, pushFlexCard, pushOrderCard,
   getRichMenuTemplates, createRichMenu, createRichMenuRaw, listRichMenus,
   deleteRichMenuById, setDefaultRichMenuById, cancelDefaultRichMenuAll,
   getRichMenu, getDefaultRichMenuId,
