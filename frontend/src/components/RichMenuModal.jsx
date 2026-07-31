@@ -160,6 +160,7 @@ export default function RichMenuModal({ onClose }) {
   const [previewId, setPreviewId] = useState(null); // richMenuId of expanded preview
   const [editingMenu, setEditingMenu] = useState(null); // { id, chatBarText } | null
   const [editButtons, setEditButtons] = useState([]);
+  const [editImageUrl, setEditImageUrl] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [editLoading, setEditLoading] = useState(null); // richMenuId being loaded
 
@@ -288,6 +289,7 @@ export default function RichMenuModal({ onClose }) {
         text: area.action?.text || '',
         data: area.action?.data || ''
       })));
+      setEditImageUrl('');
       setEditingMenu({ id: menu.richMenuId, chatBarText: detail.chatBarText || menu.chatBarText || '選單' });
     } catch (err) { alert('載入失敗：' + err.message); }
     setEditLoading(null);
@@ -301,17 +303,24 @@ export default function RichMenuModal({ onClose }) {
     if (!editingMenu) return;
     setEditSaving(true);
     try {
+      const trimmedImageUrl = editImageUrl.trim();
       const res = await authFetch(`${API_BASE}/api/rich-menu/${editingMenu.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ buttons: editButtons, chatBarText: editingMenu.chatBarText })
+        body: JSON.stringify({
+          buttons: editButtons,
+          chatBarText: editingMenu.chatBarText,
+          ...(trimmedImageUrl ? { imageUrl: trimmedImageUrl } : {})
+        })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '儲存失敗');
       setEditingMenu(null);
       setEditButtons([]);
+      setEditImageUrl('');
       await loadMenus();
-      alert(`✅ 按鈕動作已更新！\n新選單 ID：${data.richMenuId}\n\n⚠️ 請重新上傳背景圖片（選單 ID 已變更）。`);
+      const imgMsg = trimmedImageUrl ? '圖片已更新！' : (data.imagePreserved ? '圖片已自動保留。' : '（注意：此選單原本沒有圖片，請至管理頁上傳。）');
+      alert(`✅ 按鈕動作已更新，${imgMsg}`);
     } catch (err) { alert('儲存失敗：' + err.message); }
     setEditSaving(false);
   }
@@ -520,9 +529,6 @@ export default function RichMenuModal({ onClose }) {
                 <button onClick={() => setEditingMenu(null)} style={{ background: 'none', border: '1px solid #ddd', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', color: '#666', fontSize: '13px' }}>← 取消</button>
                 <span style={{ fontWeight: 'bold', fontSize: '15px' }}>✏️ 編輯按鈕動作</span>
               </div>
-              <div style={{ background: '#fff3e0', border: '1px solid #ffe0b2', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#e65100' }}>
-                ⚠️ 儲存後原本的圖片會消失（LINE 系統限制），儲存完畢後請重新上傳圖片。
-              </div>
               <div style={{ marginBottom: '14px' }}>
                 <label style={{ fontSize: '13px', fontWeight: '600', color: '#555' }}>選單列文字</label>
                 <input value={editingMenu.chatBarText} maxLength={14}
@@ -573,6 +579,17 @@ export default function RichMenuModal({ onClose }) {
                     )}
                   </div>
                 ))}
+              </div>
+              <div style={{ background: '#f1f8e9', border: '1px solid #c5e1a5', borderRadius: '8px', padding: '10px 12px', marginBottom: '16px' }}>
+                <div style={{ fontSize: '12px', fontWeight: '700', color: '#558b2f', marginBottom: '6px' }}>
+                  更換圖片（選填）— 留空則自動保留現有圖片
+                </div>
+                <input
+                  value={editImageUrl}
+                  onChange={e => setEditImageUrl(e.target.value)}
+                  placeholder="https://example.com/new-image.jpg（不填則保留原圖）"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '12px' }}
+                />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button onClick={() => setEditingMenu(null)}

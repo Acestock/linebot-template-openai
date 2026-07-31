@@ -449,5 +449,5 @@ module.exports = {
   getRichMenuTemplates, createRichMenu, createRichMenuRaw, listRichMenus,
   deleteRichMenuById, setDefaultRichMenuById, cancelDefaultRichMenuAll,
   getRichMenu, getDefaultRichMenuId,
-  uploadRichMenuImageFromUrl, getRichMenuImageBuffer
+  uploadRichMenuImageFromUrl, getRichMenuImageBuffer, uploadRichMenuImageBuffer
 };

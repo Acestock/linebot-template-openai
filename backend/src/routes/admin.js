@@ -5,7 +5,7 @@ const {
   getRichMenuTemplates, createRichMenu, createRichMenuRaw, listRichMenus,
   deleteRichMenuById, setDefaultRichMenuById, cancelDefaultRichMenuAll,
   getRichMenu, getDefaultRichMenuId,
-  uploadRichMenuImageFromUrl, getRichMenuImageBuffer
+  uploadRichMenuImageFromUrl, getRichMenuImageBuffer, uploadRichMenuImageBuffer
 } = require('../services/lineService');
 const sheetService = require('../services/sheetService');
 const BusinessProfile = require('../models/BusinessProfile');
@@ -1122,15 +1122,18 @@ router.get('/rich-menu/:id/detail', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// PUT /api/rich-menu/:id — update button actions (delete old → recreate with same layout)
+// PUT /api/rich-menu/:id — update button actions (delete old → recreate with same layout, auto-migrate image)
 router.put('/rich-menu/:id', async (req, res) => {
   try {
-    const { buttons, chatBarText } = req.body;
+    const { buttons, chatBarText, imageUrl } = req.body;
     if (!buttons || !Array.isArray(buttons)) return res.status(400).json({ error: 'buttons array required' });
 
     const existing = await getRichMenu(req.params.id);
     const defaultId = await getDefaultRichMenuId();
     const wasDefault = defaultId === req.params.id;
+
+    // Save old image buffer before deletion so we can re-attach it to the new ID
+    const oldImg = await getRichMenuImageBuffer(req.params.id).catch(() => null);
 
     const newAreas = existing.areas.map((area, i) => {
       const btn = buttons[i] || {};
@@ -1155,11 +1158,18 @@ router.put('/rich-menu/:id', async (req, res) => {
       areas: newAreas
     });
 
+    // Upload image: use new URL if provided, otherwise re-attach the old image
+    if (imageUrl) {
+      await uploadRichMenuImageFromUrl(newId, imageUrl);
+    } else if (oldImg) {
+      await uploadRichMenuImageBuffer(newId, oldImg.buffer, oldImg.contentType);
+    }
+
     if (wasDefault) {
       try { await setDefaultRichMenuById(newId); } catch {}
     }
 
-    res.json({ richMenuId: newId, wasDefault });
+    res.json({ richMenuId: newId, wasDefault, imagePreserved: !imageUrl && !!oldImg });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
