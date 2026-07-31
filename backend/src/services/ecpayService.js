@@ -64,7 +64,7 @@ function createOrderParams(reservation) {
     TradeDesc:         '場地預約費用',
     ItemName:          itemName,
     ReturnURL:         `${appUrl}/api/ecpay/callback`,
-    ClientBackURL:     `${appUrl}/ecpay/result?reservationId=${reservation._id}`,
+    ClientBackURL:     `${appUrl}/ecpay/result?reservationId=${reservation._id}${process.env.LIFF_ID ? '&liffId=' + process.env.LIFF_ID : ''}`,
     ChoosePayment:     'Credit',
     EncryptType:       '1',
   };
