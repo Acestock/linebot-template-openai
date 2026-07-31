@@ -8,6 +8,7 @@ import BroadcastModal from './components/BroadcastModal';
 import OrdersModal from './components/OrdersModal';
 import CalendarModal from './components/CalendarModal';
 import RichMenuModal from './components/RichMenuModal';
+import LiffAdminModal from './components/LiffAdminModal';
 import StickyNotes from './components/StickyNotes';
 import LoginScreen from './components/LoginScreen';
 import API_BASE, { authFetch } from './config';
@@ -80,6 +81,7 @@ function App() {
   const [showOrders, setShowOrders] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showRichMenu, setShowRichMenu] = useState(false);
+  const [showLiffAdmin, setShowLiffAdmin] = useState(false);
   const [newOrderCount, setNewOrderCount] = useState(0);
   const [labels, setLabels] = useState([]);
   const [customerLabels, setCustomerLabels] = useState({});
@@ -303,6 +305,7 @@ function App() {
           <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
             <MobileIconBtn onClick={() => { setShowOrders(true); setNewOrderCount(0); }} badge={newOrderCount}>📦</MobileIconBtn>
             <MobileIconBtn onClick={() => setShowCalendar(true)}>📅</MobileIconBtn>
+            <MobileIconBtn onClick={() => setShowLiffAdmin(true)}>🏠</MobileIconBtn>
             <MobileIconBtn onClick={() => setShowRichMenu(true)}>📋</MobileIconBtn>
             <MobileIconBtn onClick={() => setShowBroadcast(true)}>📢</MobileIconBtn>
             <MobileIconBtn onClick={() => setShowSettings(true)}>⚙</MobileIconBtn>
@@ -314,6 +317,7 @@ function App() {
         {showOrders && <OrdersModal onClose={() => setShowOrders(false)} />}
         {showCalendar && <CalendarModal onClose={() => setShowCalendar(false)} />}
         {showRichMenu && <RichMenuModal onClose={() => setShowRichMenu(false)} />}
+        {showLiffAdmin && <LiffAdminModal onClose={() => setShowLiffAdmin(false)} />}
 
         {/* Mobile Content */}
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -357,6 +361,7 @@ function App() {
           {/* Primary actions */}
           <DeskBtn onClick={() => { setShowOrders(true); setNewOrderCount(0); }} title="訂單管理" badge={newOrderCount}>📦 訂單</DeskBtn>
           <DeskBtn onClick={() => setShowCalendar(true)} title="行事曆">📅 行事曆</DeskBtn>
+          <DeskBtn onClick={() => setShowLiffAdmin(true)} title="預約管理">🏠 預約管理</DeskBtn>
           <DeskBtn onClick={() => setShowRichMenu(true)} title="圖文選單">📋 圖文選單</DeskBtn>
           <DeskBtn onClick={() => setShowBroadcast(true)} title="群發訊息">📢 群發</DeskBtn>
           {/* Divider */}
@@ -371,6 +376,7 @@ function App() {
       {showOrders && <OrdersModal onClose={() => setShowOrders(false)} />}
       {showCalendar && <CalendarModal onClose={() => setShowCalendar(false)} />}
       {showRichMenu && <RichMenuModal onClose={() => setShowRichMenu(false)} />}
+      {showLiffAdmin && <LiffAdminModal onClose={() => setShowLiffAdmin(false)} />}
 
       {/* Main layout */}
       <div style={{ display: 'flex', marginTop: '48px', width: '100%' }}>

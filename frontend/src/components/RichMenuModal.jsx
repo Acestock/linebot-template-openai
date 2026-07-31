@@ -158,6 +158,10 @@ export default function RichMenuModal({ onClose }) {
   const [uploadingImg, setUploadingImg] = useState(null); // richMenuId or null
   const [step, setStep] = useState(1); // 1 = pick template, 2 = configure buttons
   const [previewId, setPreviewId] = useState(null); // richMenuId of expanded preview
+  const [editingMenu, setEditingMenu] = useState(null); // { id, chatBarText } | null
+  const [editButtons, setEditButtons] = useState([]);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editLoading, setEditLoading] = useState(null); // richMenuId being loaded
 
   useEffect(() => {
     loadTemplates();
@@ -269,6 +273,47 @@ export default function RichMenuModal({ onClose }) {
       setPreviewId(null);
     } catch (err) { alert('圖片上傳失敗：' + err.message); }
     setUploadingImg(null);
+  }
+
+  async function handleStartEdit(menu) {
+    setEditLoading(menu.richMenuId);
+    try {
+      const res = await authFetch(`${API_BASE}/api/rich-menu/${menu.richMenuId}/detail`);
+      const detail = await res.json();
+      if (!res.ok) throw new Error(detail.error);
+      setEditButtons((detail.areas || []).map((area, i) => ({
+        label: area.action?.label || `按鈕 ${i + 1}`,
+        actionType: area.action?.type || 'uri',
+        uri: area.action?.uri || '',
+        text: area.action?.text || '',
+        data: area.action?.data || ''
+      })));
+      setEditingMenu({ id: menu.richMenuId, chatBarText: detail.chatBarText || menu.chatBarText || '選單' });
+    } catch (err) { alert('載入失敗：' + err.message); }
+    setEditLoading(null);
+  }
+
+  function updateEditButton(idx, field, value) {
+    setEditButtons(prev => prev.map((b, i) => i === idx ? { ...b, [field]: value } : b));
+  }
+
+  async function handleSaveEdit() {
+    if (!editingMenu) return;
+    setEditSaving(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/rich-menu/${editingMenu.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ buttons: editButtons, chatBarText: editingMenu.chatBarText })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '儲存失敗');
+      setEditingMenu(null);
+      setEditButtons([]);
+      await loadMenus();
+      alert(`✅ 按鈕動作已更新！\n新選單 ID：${data.richMenuId}\n\n⚠️ 請重新上傳背景圖片（選單 ID 已變更）。`);
+    } catch (err) { alert('儲存失敗：' + err.message); }
+    setEditSaving(false);
   }
 
   // ── Size spec for template ──
@@ -469,7 +514,78 @@ export default function RichMenuModal({ onClose }) {
           )}
 
           {/* ─── MANAGE TAB ─── */}
-          {tab === 'manage' && (
+          {tab === 'manage' && (editingMenu ? (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                <button onClick={() => setEditingMenu(null)} style={{ background: 'none', border: '1px solid #ddd', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', color: '#666', fontSize: '13px' }}>← 取消</button>
+                <span style={{ fontWeight: 'bold', fontSize: '15px' }}>✏️ 編輯按鈕動作</span>
+              </div>
+              <div style={{ background: '#fff3e0', border: '1px solid #ffe0b2', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#e65100' }}>
+                ⚠️ 儲存後原本的圖片會消失（LINE 系統限制），儲存完畢後請重新上傳圖片。
+              </div>
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ fontSize: '13px', fontWeight: '600', color: '#555' }}>選單列文字</label>
+                <input value={editingMenu.chatBarText} maxLength={14}
+                  onChange={e => setEditingMenu(m => ({ ...m, chatBarText: e.target.value }))}
+                  style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: '4px', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '14px' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
+                {editButtons.map((btn, i) => (
+                  <div key={i} style={{ border: '1px solid #e8edf2', borderRadius: '8px', padding: '12px 14px', backgroundColor: '#fafbfc' }}>
+                    <div style={{ fontWeight: '600', fontSize: '13px', color: '#555', marginBottom: '10px' }}>按鈕 {i + 1}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
+                      <div>
+                        <label style={{ fontSize: '12px', color: '#777' }}>顯示標籤</label>
+                        <input value={btn.label} onChange={e => updateEditButton(i, 'label', e.target.value)} maxLength={20}
+                          style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: '3px', padding: '7px 9px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '12px', color: '#777' }}>動作類型</label>
+                        <select value={btn.actionType} onChange={e => updateEditButton(i, 'actionType', e.target.value)}
+                          style={{ display: 'block', width: '100%', marginTop: '3px', padding: '7px 9px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px', backgroundColor: '#fff' }}>
+                          {ACTION_TYPES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    {btn.actionType === 'uri' && (
+                      <div>
+                        <label style={{ fontSize: '12px', color: '#777' }}>連結網址</label>
+                        <input value={btn.uri} onChange={e => updateEditButton(i, 'uri', e.target.value)}
+                          placeholder="https://liff.line.me/..."
+                          style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: '3px', padding: '7px 9px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
+                      </div>
+                    )}
+                    {btn.actionType === 'message' && (
+                      <div>
+                        <label style={{ fontSize: '12px', color: '#777' }}>傳送文字</label>
+                        <input value={btn.text} onChange={e => updateEditButton(i, 'text', e.target.value)}
+                          placeholder="例：查看菜單"
+                          style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: '3px', padding: '7px 9px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
+                      </div>
+                    )}
+                    {btn.actionType === 'postback' && (
+                      <div>
+                        <label style={{ fontSize: '12px', color: '#777' }}>Postback data</label>
+                        <input value={btn.data} onChange={e => updateEditButton(i, 'data', e.target.value)}
+                          placeholder="action=menu"
+                          style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: '3px', padding: '7px 9px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button onClick={() => setEditingMenu(null)}
+                  style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #e0e0e0', background: '#fff', color: '#666', fontSize: '14px', cursor: 'pointer' }}>
+                  取消
+                </button>
+                <button onClick={handleSaveEdit} disabled={editSaving}
+                  style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', background: editSaving ? '#b0bec5' : '#00B900', color: '#fff', fontWeight: 'bold', fontSize: '14px', cursor: editSaving ? 'not-allowed' : 'pointer' }}>
+                  {editSaving ? '儲存中...' : '✅ 儲存'}
+                </button>
+              </div>
+            </div>
+          ) : (
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                 <span style={{ fontSize: '13px', color: '#666' }}>LINE 帳號目前建立的圖文選單（上限 10 個）</span>
@@ -515,6 +631,10 @@ export default function RichMenuModal({ onClose }) {
                           color: isExpanded ? '#2196F3' : '#555', fontWeight: isExpanded ? '700' : '400'
                         }}>
                         {isExpanded ? '▲ 收合' : '👁 預覽'}
+                      </button>
+                      <button onClick={() => handleStartEdit(menu)} disabled={editLoading === menu.richMenuId}
+                        style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', color: '#555', fontSize: '12px', cursor: editLoading === menu.richMenuId ? 'not-allowed' : 'pointer' }}>
+                        {editLoading === menu.richMenuId ? '載入...' : '✏️ 編輯'}
                       </button>
                       <button onClick={() => handleDelete(menu.richMenuId)}
                         style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #ffcdd2', background: '#fff', color: '#f44336', fontSize: '12px', cursor: 'pointer' }}>
@@ -574,7 +694,7 @@ export default function RichMenuModal({ onClose }) {
                 最多建立 10 個選單，同時只能有 1 個預設
               </div>
             </div>
-          )}
+          ))}
         </div>
       </div>
     </div>

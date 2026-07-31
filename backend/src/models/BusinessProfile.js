@@ -12,6 +12,7 @@ const BusinessProfileSchema = new mongoose.Schema({
   autoReplyDelay: { type: Number, default: 60 },
   adminLineUserId:         { type: String, default: '' },
   appointmentReplyEnabled: { type: Boolean, default: false },
+  liffTitle:               { type: String, default: '預約入場系統' },
   workingHours: {
     mon: { enabled: { type: Boolean, default: false }, start: { type: String, default: '09:00' }, end: { type: String, default: '18:00' } },
     tue: { enabled: { type: Boolean, default: false }, start: { type: String, default: '09:00' }, end: { type: String, default: '18:00' } },

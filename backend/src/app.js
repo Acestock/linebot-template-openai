@@ -12,6 +12,7 @@ const { authMiddleware, createToken } = require('./middleware/auth');
 const dbService = require('./services/dbService');
 const sheetService = require('./services/sheetService');
 const { startNotifyJob } = require('./services/calendarService');
+const { startReservationReminderJob } = require('./services/reservationCronService');
 
 if (!process.env.ADMIN_PASSWORD) {
   console.warn('[Auth] WARNING: ADMIN_PASSWORD is not set. Please set it in environment variables.');
@@ -36,6 +37,8 @@ app.use('/webhook', webhookRouter);
 
 // JSON body parser for all other routes
 app.use(express.json());
+// ECPay callback uses application/x-www-form-urlencoded
+app.use(express.urlencoded({ extended: false }));
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 function safeEqual(a, b) {
@@ -59,6 +62,15 @@ app.post('/api/auth/login', (req, res) => {
 
 // GET /api/auth/verify — check if current token is still valid
 app.get('/api/auth/verify', authMiddleware, (req, res) => res.json({ ok: true }));
+
+// LIFF public API (LINE user auth, not admin auth — must be before authMiddleware)
+const liffRouter = require('./routes/liff');
+app.use('/api/liff', liffRouter);
+
+// ECPay callback (no admin auth — called by ECPay servers + user browser)
+const ecpayRouter = require('./routes/ecpay');
+app.use('/api/ecpay', ecpayRouter);   // POST /api/ecpay/callback
+app.use('/ecpay',     ecpayRouter);   // GET  /ecpay/result (user return page)
 
 // All other /api/* routes require auth
 app.use('/api', authMiddleware);
@@ -99,6 +111,9 @@ cron.schedule('0 2 * * *', async () => {
 
 // Start calendar event LINE notification cron job (every minute)
 startNotifyJob();
+
+// Start reservation auto-cancel + checkout reminder cron job (every minute)
+startReservationReminderJob();
 
 app.listen(PORT, () => {
   console.log(`[Server] Backend running on port ${PORT}`);

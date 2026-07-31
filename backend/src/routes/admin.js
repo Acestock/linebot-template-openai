@@ -2,8 +2,9 @@ const express = require('express');
 const dbService = require('../services/dbService');
 const {
   pushMessage, pushOrderCard,
-  getRichMenuTemplates, createRichMenu, listRichMenus,
+  getRichMenuTemplates, createRichMenu, createRichMenuRaw, listRichMenus,
   deleteRichMenuById, setDefaultRichMenuById, cancelDefaultRichMenuAll,
+  getRichMenu, getDefaultRichMenuId,
   uploadRichMenuImageFromUrl, getRichMenuImageBuffer
 } = require('../services/lineService');
 const sheetService = require('../services/sheetService');
@@ -739,10 +740,10 @@ router.get('/settings', async (req, res) => {
 // PUT /api/settings
 router.put('/settings', async (req, res) => {
   try {
-    const { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId } = req.body;
+    const { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId, liffTitle } = req.body;
     const profile = await BusinessProfile.findOneAndUpdate(
       {},
-      { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId, updatedAt: new Date() },
+      { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId, liffTitle, updatedAt: new Date() },
       { upsert: true, new: true }
     );
     res.json(profile);
@@ -1107,6 +1108,214 @@ router.delete('/rich-menu/:id', async (req, res) => {
   try {
     await deleteRichMenuById(req.params.id);
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/rich-menu/:id/detail — fetch single rich menu definition
+router.get('/rich-menu/:id/detail', async (req, res) => {
+  try {
+    const menu = await getRichMenu(req.params.id);
+    res.json(menu);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/rich-menu/:id — update button actions (delete old → recreate with same layout)
+router.put('/rich-menu/:id', async (req, res) => {
+  try {
+    const { buttons, chatBarText } = req.body;
+    if (!buttons || !Array.isArray(buttons)) return res.status(400).json({ error: 'buttons array required' });
+
+    const existing = await getRichMenu(req.params.id);
+    const defaultId = await getDefaultRichMenuId();
+    const wasDefault = defaultId === req.params.id;
+
+    const newAreas = existing.areas.map((area, i) => {
+      const btn = buttons[i] || {};
+      let action;
+      if (btn.actionType === 'message') {
+        action = { type: 'message', label: btn.label || `按鈕${i + 1}`, text: btn.text || btn.label || `按鈕${i + 1}` };
+      } else if (btn.actionType === 'postback') {
+        action = { type: 'postback', label: btn.label || `按鈕${i + 1}`, data: btn.data || 'action=none', displayText: btn.label || `按鈕${i + 1}` };
+      } else {
+        action = { type: 'uri', label: btn.label || `按鈕${i + 1}`, uri: btn.uri || 'https://line.me' };
+      }
+      return { bounds: area.bounds, action };
+    });
+
+    await deleteRichMenuById(req.params.id);
+
+    const newId = await createRichMenuRaw({
+      size: existing.size,
+      selected: true,
+      name: chatBarText || existing.chatBarText || '選單',
+      chatBarText: chatBarText || existing.chatBarText || '選單',
+      areas: newAreas
+    });
+
+    if (wasDefault) {
+      try { await setDefaultRichMenuById(newId); } catch {}
+    }
+
+    res.json({ richMenuId: newId, wasDefault });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Venues ──────────────────────────────────────────────────────────────────
+const Venue        = require('../models/Venue');
+const VenuePlan    = require('../models/VenuePlan');
+const Announcement = require('../models/Announcement');
+const Reservation  = require('../models/Reservation');
+const BlockedSlot  = require('../models/BlockedSlot');
+
+router.get('/venues', async (req, res) => {
+  try {
+    const venues = await Venue.find().sort({ order: 1, createdAt: 1 }).lean();
+    res.json(venues);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/venues', async (req, res) => {
+  try {
+    const venue = await Venue.create(req.body);
+    res.json(venue);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.patch('/venues/:id', async (req, res) => {
+  try {
+    const venue = await Venue.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!venue) return res.status(404).json({ error: 'Not found' });
+    res.json(venue);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/venues/:id', async (req, res) => {
+  try {
+    await Venue.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Venue Plans ──────────────────────────────────────────────────────────────
+router.get('/venues/:venueId/plans', async (req, res) => {
+  try {
+    const plans = await VenuePlan.find({ venueId: req.params.venueId }).sort({ order: 1 }).lean();
+    res.json(plans);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/venues/:venueId/plans', async (req, res) => {
+  try {
+    const plan = await VenuePlan.create({ ...req.body, venueId: req.params.venueId });
+    res.json(plan);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.patch('/venues/:venueId/plans/:planId', async (req, res) => {
+  try {
+    const plan = await VenuePlan.findOneAndUpdate(
+      { _id: req.params.planId, venueId: req.params.venueId }, req.body, { new: true }
+    );
+    if (!plan) return res.status(404).json({ error: 'Not found' });
+    res.json(plan);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/venues/:venueId/plans/:planId', async (req, res) => {
+  try {
+    await VenuePlan.findOneAndDelete({ _id: req.params.planId, venueId: req.params.venueId });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Announcements ────────────────────────────────────────────────────────────
+router.get('/announcements', async (req, res) => {
+  try {
+    const items = await Announcement.find().sort({ createdAt: -1 }).lean();
+    res.json(items);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/announcements', async (req, res) => {
+  try {
+    const item = await Announcement.create(req.body);
+    res.json(item);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.patch('/announcements/:id', async (req, res) => {
+  try {
+    const item = await Announcement.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    res.json(item);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/announcements/:id', async (req, res) => {
+  try {
+    await Announcement.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Reservation Admin ────────────────────────────────────────────────────────
+router.get('/reservations', async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.venue)  filter.venueId = req.query.venue;
+    if (req.query.status) filter.status  = req.query.status;
+    if (req.query.date) {
+      const d = new Date(req.query.date);
+      filter.date = { $gte: d, $lt: new Date(d.getTime() + 24 * 60 * 60 * 1000) };
+    }
+    if (req.query.search) {
+      filter.displayName = { $regex: req.query.search, $options: 'i' };
+    }
+    const page  = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, parseInt(req.query.limit) || 30);
+    const total = await Reservation.countDocuments(filter);
+    const items = await Reservation.find(filter)
+      .sort({ date: -1, createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+    res.json({ items, total, page, pages: Math.ceil(total / limit) || 1 });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.patch('/reservations/:id', async (req, res) => {
+  try {
+    const item = await Reservation.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    res.json(item);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Blocked Slots (包場) ─────────────────────────────────────────────────────
+router.get('/blocked-slots', async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.venueId) filter.venueId = req.query.venueId;
+    const items = await BlockedSlot.find(filter).sort({ date: -1, createdAt: -1 }).lean();
+    res.json(items);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/blocked-slots', async (req, res) => {
+  try {
+    const { venueId, date, slots, eventName } = req.body;
+    if (!venueId || !date || !slots || !slots.length) {
+      return res.status(400).json({ error: 'venueId, date, slots 為必填' });
+    }
+    const item = await BlockedSlot.create({ venueId, date: new Date(date), slots, eventName: eventName || '' });
+    res.json(item);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.delete('/blocked-slots/:id', async (req, res) => {
+  try {
+    await BlockedSlot.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
