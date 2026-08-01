@@ -7,6 +7,7 @@ const SLOT_OPTIONS = [
   { key: 'afternoon', label: '下午 (12–18)' },
   { key: 'evening',   label: '晚上 (18–02)' }
 ];
+const SLOT_CN = { morning: '早上', afternoon: '下午', evening: '晚上' };
 const STATUS_LABELS = { confirmed: '已確認', checked_in: '已入場', completed: '已完成', cancelled: '已取消' };
 const STATUS_COLORS = { confirmed: '#1976d2', checked_in: '#2e7d32', completed: '#555', cancelled: '#c62828' };
 
@@ -296,7 +297,7 @@ function PlansTab() {
         <div key={p._id} style={{ border: '1px solid #eee', borderRadius: '10px', padding: '10px 14px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontWeight: '600', fontSize: '14px' }}>{p.icon} {p.name}</div>
-            <div style={{ fontSize: '12px', color: '#888' }}>{p.type === 'single' ? '單時段' : '多時段'} · {(p.slots || []).join('+') } · ${p.price}</div>
+            <div style={{ fontSize: '12px', color: '#888' }}>{p.type === 'single' ? '單時段' : '多時段'} · {(p.slots || []).map(s => SLOT_CN[s] || s).join('+')} · ${p.price}</div>
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
             <button onClick={() => setForm({ ...p })} style={btn('#f5f5f5', '#333')}>編輯</button>

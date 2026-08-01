@@ -7,6 +7,12 @@ const SLOTS = [
   { key: 'evening',   label: '晚上', range: '18:00–02:00', icon: '🌙' }
 ];
 
+const SLOT_LABEL = {
+  morning:   '早上 07:00–12:00',
+  afternoon: '下午 12:00–18:00',
+  evening:   '晚上 18:00–02:00'
+};
+
 function getCurrentSlot() {
   const h = new Date().getHours();
   if (h >= 7  && h < 12) return 'morning';
@@ -46,7 +52,7 @@ function StepBar({ step, total }) {
 
 export default function ReserveFlowPage({ venue: initialVenue, mode, onBack, onDone }) {
   const isWalkIn = mode === 'walkin';
-  const totalSteps = isWalkIn ? 1 : 3;
+  const totalSteps = isWalkIn ? 2 : 3;
 
   const [step, setStep]         = useState(0);
   const [venue, setVenue]       = useState(initialVenue);
@@ -66,6 +72,14 @@ export default function ReserveFlowPage({ venue: initialVenue, mode, onBack, onD
     }
   }, []);
 
+  // Walk-in: auto-select the current slot's single plan once plans are loaded
+  useEffect(() => {
+    if (!isWalkIn || !plans.length || selectedPlan) return;
+    const cur = getCurrentSlot();
+    const match = plans.find(p => p.type === 'single' && p.slots?.[0] === cur);
+    if (match) selectPlan(match);
+  }, [plans]);
+
   // Load availability when date changes
   useEffect(() => {
     if (!venue) return;
@@ -77,6 +91,10 @@ export default function ReserveFlowPage({ venue: initialVenue, mode, onBack, onD
   }, [date, venue]);
 
   const plans = venue?.plans || [];
+  const currentSlotKey = isWalkIn ? getCurrentSlot() : null;
+  const walkInPlans = isWalkIn
+    ? plans.filter(p => p.isActive !== false && p.slots?.includes(currentSlotKey))
+    : [];
   const today = toDateStr(new Date());
   const maxDate = toDateStr(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
 
@@ -161,27 +179,76 @@ export default function ReserveFlowPage({ venue: initialVenue, mode, onBack, onD
     );
   }
 
-  // Walk-in: single confirm screen
+  // Walk-in: step 0 = plan selection, step 1 = confirm
   if (isWalkIn) {
-    const curSlot = SLOTS.find(s => s.key === selectedSlots[0]);
+    // Step 0: plan selection
+    if (step === 0) {
+      return (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px' }}>
+          <StepBar step={0} total={2} />
+          <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '14px' }}>選擇入場方案</div>
+          {walkInPlans.length === 0 ? (
+            <div style={{ color: '#aaa', textAlign: 'center', padding: '40px', fontSize: '14px' }}>
+              目前時段無可用方案<br />
+              <span style={{ fontSize: '12px' }}>請聯絡場地人員</span>
+            </div>
+          ) : (
+            walkInPlans.map(plan => {
+              const sel = selectedPlan?._id === plan._id;
+              return (
+                <div key={plan._id}
+                  onClick={() => selectPlan(plan)}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '14px', borderRadius: '10px', marginBottom: '10px',
+                    border: `1.5px solid ${sel ? '#111' : '#e0e0e0'}`,
+                    background: sel ? '#f0f0f0' : '#fff',
+                    cursor: 'pointer', transition: 'border-color 0.15s'
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '600' }}>{plan.icon} {plan.name}</div>
+                    <div style={{ fontSize: '12px', color: '#888', marginTop: '3px' }}>
+                      {plan.slots?.map(s => SLOT_LABEL[s]).join(' + ')}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '16px', fontWeight: '700' }}>${plan.price}</span>
+                </div>
+              );
+            })
+          )}
+          <button
+            onClick={() => setStep(1)}
+            disabled={!selectedPlan}
+            style={{ ...nextBtnStyle, opacity: selectedPlan ? 1 : 0.4 }}>
+            下一步
+          </button>
+        </div>
+      );
+    }
+
+    // Step 1: confirm
     return (
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px' }}>
-        <StepBar step={0} total={1} />
+        <StepBar step={1} total={2} />
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <div style={{ fontSize: '32px', fontWeight: '800', color: '#111' }}>${totalPrice || '—'}</div>
-          <div style={{ fontSize: '16px', color: '#555', marginTop: '4px' }}>{planName || curSlot?.label + ' 時段'}</div>
+          <div style={{ fontSize: '16px', color: '#555', marginTop: '4px' }}>{planName}</div>
           <div style={{ fontSize: '14px', color: '#888', marginTop: '4px' }}>{venue.name} · 今日</div>
         </div>
         <div style={{ background: '#f8f8f8', borderRadius: '12px', padding: '16px', marginBottom: '24px' }}>
-          <Row label="選擇時段" value={`${curSlot?.icon} ${curSlot?.label} (${curSlot?.range})`} />
-          <Row label="入場時間" value={curSlot?.range.split('–')[0]} />
-          <Row label="離場時間" value={curSlot?.range.split('–')[1]} />
+          <Row label="時段" value={sortedSlots.map(s => SLOTS.find(x => x.key === s)?.label).join('+')} />
+          <Row label="入場時間" value={slotTimes[firstSlot]?.checkIn} />
+          <Row label="離場時間" value={`${crossesMidnight ? '次日 ' : ''}${slotTimes[lastSlot]?.checkOut}`} />
         </div>
         <Notice />
         {error && <div style={{ color: '#c62828', textAlign: 'center', marginBottom: '12px', fontSize: '14px' }}>{error}</div>}
-        <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: '15px', borderRadius: '10px', border: 'none', background: submitting ? '#ccc' : '#111', color: '#fff', fontSize: '16px', fontWeight: '700', cursor: submitting ? 'not-allowed' : 'pointer' }}>
-          {submitting ? '處理中...' : '確認立即入場'}
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={() => setStep(0)} style={backBtnStyle}>返回</button>
+          <button onClick={handleSubmit} disabled={submitting} style={{ ...nextBtnStyle, flex: 1, marginTop: 0, background: submitting ? '#ccc' : '#111', cursor: submitting ? 'not-allowed' : 'pointer' }}>
+            {submitting ? '處理中...' : '確認立即入場'}
+          </button>
+        </div>
       </div>
     );
   }
