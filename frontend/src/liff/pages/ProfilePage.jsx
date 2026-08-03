@@ -4,15 +4,17 @@ import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchRe
 import TasksTab from './TasksTab';
 
 const STATUS_MAP = {
-  confirmed:  { label: '已確認',   color: '#1976d2', bg: '#e3f2fd' },
-  checked_in: { label: '進場中',   color: '#2e7d32', bg: '#e8f5e9' },
-  completed:  { label: '已完成',   color: '#555',    bg: '#f5f5f5' },
-  cancelled:  { label: '已取消',   color: '#c62828', bg: '#ffebee' },
-  unpaid_exit:{ label: '未付款離場', color: '#e65100', bg: '#fff3e0' }
+  confirmed:       { label: '已確認',    color: '#1976d2', bg: '#e3f2fd' },
+  checked_in:      { label: '進場中',    color: '#2e7d32', bg: '#e8f5e9' },
+  completed:       { label: '已完成',    color: '#555',    bg: '#f5f5f5' },
+  cancelled:       { label: '已取消',    color: '#c62828', bg: '#ffebee' },
+  unpaid_exit:     { label: '未付款離場', color: '#e65100', bg: '#fff3e0' },
+  unpaid_checkout: { label: '未成功結帳', color: '#c62828', bg: '#ffebee' }
 };
 
 function getStatusInfo(status, unpaidExit) {
-  if (status === 'completed' && unpaidExit) return STATUS_MAP.unpaid_exit;
+  if (status === 'completed' && unpaidExit) return STATUS_MAP.unpaid_checkout;
+  if (status === 'completed' && unpaidExit === false) return STATUS_MAP.completed;
   return STATUS_MAP[status] || STATUS_MAP.confirmed;
 }
 
@@ -54,8 +56,11 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const [coupons, setCoupons]           = useState([]);
   const [selectedCoupon, setSelectedCoupon] = useState(null);
 
+  const isUnpaidCheckout = localStatus === 'completed' && r.unpaidExit && localPayStatus !== 'paid';
   const canQr = !readOnly && (localStatus === 'confirmed' || localStatus === 'checked_in');
-  const needsPayment = !readOnly && localStatus === 'checked_in' && r.totalPrice > 0 && localPayStatus !== 'paid';
+  const needsPayment = !readOnly && (
+    (localStatus === 'checked_in' || isUnpaidCheckout) && r.totalPrice > 0 && localPayStatus !== 'paid'
+  );
 
   useEffect(() => {
     if (needsPayment) {
@@ -115,7 +120,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
       if (data.skip) {
         setLocalStatus('completed');
         setLocalPayStatus('paid');
-        onCompleted?.(r._id);
+        onCompleted?.(r._id, { unpaidExit: false });
         return;
       }
       const { form: { action, fields } } = data;
@@ -131,12 +136,13 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
 
   function payBtnLabel() {
     if (paying) return '跳轉付款中...';
+    const actionText = isUnpaidCheckout ? '補付款' : '付款並出場';
     if (selectedCoupon) {
       return effectivePrice === 0
         ? `折扣券全額折抵（原 $${r.totalPrice}）`
-        : `付款並出場（$${r.totalPrice} - $${selectedCoupon.discountAmount} = $${effectivePrice}）`;
+        : `${actionText}（$${r.totalPrice} - $${selectedCoupon.discountAmount} = $${effectivePrice}）`;
     }
-    return `付款並出場（$${r.totalPrice}）`;
+    return `${actionText}（$${r.totalPrice}）`;
   }
 
   return (
@@ -165,10 +171,11 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
         {r.note && <InfoRow label="備注"  value={r.note} />}
       </div>
 
-      {/* Unpaid exit notice */}
-      {r.unpaidExit && (
-        <div style={{ background: '#fff3e0', borderRadius: '10px', padding: '14px 16px', marginBottom: '12px', color: '#e65100', fontSize: '13px', lineHeight: '1.6' }}>
-          此預約未完成付款即離場。如有疑問請聯絡工作人員。
+      {/* Unpaid checkout notice */}
+      {r.unpaidExit && localPayStatus !== 'paid' && (
+        <div style={{ background: '#ffebee', borderRadius: '10px', padding: '14px 16px', marginBottom: '12px', border: '1px solid #ef9a9a', lineHeight: '1.6' }}>
+          <div style={{ color: '#c62828', fontWeight: '700', fontSize: '14px', marginBottom: '4px' }}>未成功結帳</div>
+          <div style={{ color: '#b71c1c', fontSize: '13px' }}>此時段未完成付款。請點下方「補付款」完成結帳，否則將無法進行新預約。</div>
         </div>
       )}
 
@@ -279,7 +286,11 @@ function BookingCard({ r, onClick }) {
 // ── Sub-tab: 當前預約 ──────────────────────────────────────────────────────────
 function ActiveBookingsTab({ list, loading, onStatusChanged }) {
   const [selected, setSelected] = useState(null);
-  const active = list.filter(r => r.status === 'confirmed' || r.status === 'checked_in');
+  const active = list.filter(r =>
+    r.status === 'confirmed' || r.status === 'checked_in' ||
+    (r.status === 'completed' && r.unpaidExit && r.paymentStatus !== 'paid')
+  );
+  const hasLock = list.some(r => r.unpaidExit && r.paymentStatus !== 'paid');
 
   if (selected) {
     const fresh = list.find(r => r._id === selected._id) || selected;
@@ -288,7 +299,7 @@ function ActiveBookingsTab({ list, loading, onStatusChanged }) {
         r={fresh}
         onBack={() => setSelected(null)}
         onCancelled={id => { onStatusChanged(id, 'cancelled'); setSelected(null); }}
-        onCompleted={id => { onStatusChanged(id, 'completed'); setSelected(null); }}
+        onCompleted={(id, extras) => { onStatusChanged(id, 'completed', extras); setSelected(null); }}
         readOnly={false}
       />
     );
@@ -296,6 +307,11 @@ function ActiveBookingsTab({ list, loading, onStatusChanged }) {
 
   return (
     <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
+      {hasLock && (
+        <div style={{ background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: '10px', padding: '12px 14px', marginBottom: '12px', color: '#c62828', fontSize: '13px', lineHeight: '1.6' }}>
+          ⚠️ 您有未完成付款的紀錄，暫時無法進行新預約。請點擊下方紀錄完成補付款，或聯絡工作人員。
+        </div>
+      )}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '60px', color: '#aaa' }}>載入中...</div>
       ) : active.length === 0 ? (
@@ -308,7 +324,10 @@ function ActiveBookingsTab({ list, loading, onStatusChanged }) {
 // ── Sub-tab: 預約紀錄 ──────────────────────────────────────────────────────────
 function HistoryTab({ list, loading }) {
   const [selected, setSelected] = useState(null);
-  const history = list.filter(r => r.status === 'completed' || r.status === 'cancelled');
+  const history = list.filter(r =>
+    (r.status === 'completed' && (!r.unpaidExit || r.paymentStatus === 'paid')) ||
+    r.status === 'cancelled'
+  );
 
   if (selected) {
     return (
@@ -369,8 +388,8 @@ export default function ProfilePage({ user }) {
       .finally(() => setLoading(false));
   }, []);
 
-  function handleStatusChanged(id, newStatus) {
-    setList(l => l.map(r => r._id === id ? { ...r, status: newStatus } : r));
+  function handleStatusChanged(id, newStatus, extras = {}) {
+    setList(l => l.map(r => r._id === id ? { ...r, status: newStatus, ...extras } : r));
   }
 
   return (

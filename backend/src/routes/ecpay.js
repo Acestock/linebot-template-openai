@@ -23,6 +23,7 @@ router.post('/callback', async (req, res) => {
       if (r && r.paymentStatus !== 'paid') {
         r.paymentStatus = 'paid';
         r.status = 'completed';
+        r.unpaidExit = false;
         await r.save();
         // Mark applied coupon as used
         if (r.appliedCouponId) {

@@ -488,6 +488,17 @@ function ReservationsTab() {
     loadReservations();
   }
 
+  async function clearUnpaidExit(id) {
+    setUpdating(id);
+    await authFetch(`${API_BASE}/api/reservations/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unpaidExit: false })
+    });
+    setUpdating(null);
+    loadReservations();
+  }
+
   return (
     <div>
       {/* Filters */}
@@ -542,9 +553,9 @@ function ReservationsTab() {
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                {r.unpaidExit && (
-                  <span style={{ background: '#fff3e0', color: '#e65100', padding: '3px 7px', borderRadius: '20px', fontSize: '10px', fontWeight: '700', whiteSpace: 'nowrap' }}>
-                    未付款離場
+                {r.unpaidExit && r.paymentStatus !== 'paid' && (
+                  <span style={{ background: '#ffebee', color: '#c62828', padding: '3px 7px', borderRadius: '20px', fontSize: '10px', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                    未成功結帳
                   </span>
                 )}
                 <span style={{ background: `${STATUS_COLORS[st]}22`, color: STATUS_COLORS[st], padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '600' }}>
@@ -570,13 +581,18 @@ function ReservationsTab() {
                   {r.note && <DetailRow label="備注" value={r.note} full />}
                   <DetailRow label="LINE ID"  value={r.lineUserId} small />
                 </div>
-                {st !== 'cancelled' && st !== 'completed' && (
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
-                    {st === 'confirmed'  && <button type="button" onClick={() => updateStatus(r._id, 'checked_in')} disabled={updating === r._id} style={btn('#e3f2fd', '#1976d2')}>確認入場</button>}
-                    {st === 'checked_in' && <button type="button" onClick={() => updateStatus(r._id, 'completed')}  disabled={updating === r._id} style={btn('#e8f5e9', '#2e7d32')}>完成</button>}
-                    <button type="button" onClick={() => updateStatus(r._id, 'cancelled')} disabled={updating === r._id} style={btn('#ffebee', '#c62828')}>取消</button>
-                  </div>
-                )}
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+                  {st !== 'cancelled' && st !== 'completed' && (
+                    <>
+                      {st === 'confirmed'  && <button type="button" onClick={() => updateStatus(r._id, 'checked_in')} disabled={updating === r._id} style={btn('#e3f2fd', '#1976d2')}>確認入場</button>}
+                      {st === 'checked_in' && <button type="button" onClick={() => updateStatus(r._id, 'completed')}  disabled={updating === r._id} style={btn('#e8f5e9', '#2e7d32')}>完成</button>}
+                      <button type="button" onClick={() => updateStatus(r._id, 'cancelled')} disabled={updating === r._id} style={btn('#ffebee', '#c62828')}>取消</button>
+                    </>
+                  )}
+                  {r.unpaidExit && r.paymentStatus !== 'paid' && (
+                    <button type="button" onClick={() => clearUnpaidExit(r._id)} disabled={updating === r._id} style={btn('#f3e5f5', '#7b1fa2')}>清除未結帳標記</button>
+                  )}
+                </div>
               </div>
             )}
           </div>

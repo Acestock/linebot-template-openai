@@ -229,6 +229,13 @@ router.post('/reservations', liffAuth, async (req, res) => {
         return res.status(409).json({ error: `${slot} 時段已額滿` });
     }
 
+    // 未成功結帳鎖定：有 unpaidExit 記錄則不允許新預約
+    const lineUserId = req.liffUser.lineUserId;
+    const hasUnpaidExit = await Reservation.findOne({ lineUserId, unpaidExit: true });
+    if (hasUnpaidExit) {
+      return res.status(403).json({ error: '您有未完成付款的記錄，暫時無法預約。請先至預約紀錄完成補付款，或聯絡工作人員處理。' });
+    }
+
     // 重複預約防呆：同一用戶 + 同場地 + 同日 + 時段有交集
     const dateStart = new Date(dateStr + 'T00:00:00+08:00');
     const dateEnd   = new Date(dateStr + 'T23:59:59+08:00');
@@ -309,8 +316,8 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
     if (!r) return res.status(404).json({ error: 'Not found' });
     if (r.lineUserId !== req.liffUser.lineUserId)
       return res.status(403).json({ error: 'Forbidden' });
-    if (r.status !== 'checked_in')
-      return res.status(400).json({ error: '只有進場中的預約才能付款' });
+    if (r.status !== 'checked_in' && !(r.status === 'completed' && r.unpaidExit))
+      return res.status(400).json({ error: '此預約狀態無法付款' });
     if (r.paymentStatus === 'paid')
       return res.status(400).json({ error: '此預約已完成付款' });
 
@@ -342,6 +349,7 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
           await coupon.save();
           r.paymentStatus = 'paid';
           r.status = 'completed';
+          r.unpaidExit = false;
           await r.save();
           return res.json({ skip: true });
         }
