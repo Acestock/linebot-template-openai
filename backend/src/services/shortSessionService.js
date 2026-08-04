@@ -13,10 +13,12 @@ function ceilToTen(n) {
   return Math.ceil(n / 10) * 10;
 }
 
-// Convert a Date to minutes-from-midnight; hours < 7 are treated as "next-day" (add 1440)
+// Convert a Date to minutes-from-midnight in Taiwan time (UTC+8)
+// Hours < 7 are treated as "next-day" (add 1440), e.g. 02:00 → 1560
 function timeToMinutes(date) {
-  const h = date.getHours();
-  const m = date.getMinutes();
+  const taipei = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  const h = taipei.getUTCHours();
+  const m = taipei.getUTCMinutes();
   const raw = h * 60 + m;
   return h < 7 ? raw + 1440 : raw;
 }

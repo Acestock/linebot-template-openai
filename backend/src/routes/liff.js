@@ -228,10 +228,11 @@ router.get('/venues/:id/short-session-quote', async (req, res) => {
 
     const config = venue.shortSession;
     const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10);
 
-    // Determine current slot from current hour
-    const h = now.getHours();
+    // All time calculations use Taiwan time (UTC+8)
+    const taipei = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    const dateStr = taipei.toISOString().slice(0, 10);
+    const h = taipei.getUTCHours();
     const currentSlot = h >= 7 && h < 12 ? 'morning' : h >= 12 && h < 18 ? 'afternoon' : 'evening';
 
     const [avail, allPlans] = await Promise.all([
