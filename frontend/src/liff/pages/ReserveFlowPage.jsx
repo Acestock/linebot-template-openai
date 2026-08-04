@@ -176,13 +176,16 @@ function WalkInShortFlow({ venue: initialVenue, onBack, onDone }) {
   );
 }
 
-export default function ReserveFlowPage({ venue: initialVenue, mode, onBack, onDone }) {
-  const isWalkIn = mode === 'walkin';
-
-  // Short-session walk-in is handled by a separate component
+// Thin router — no hooks here, so conditional return is safe
+export default function ReserveFlowPage({ venue, mode, onBack, onDone }) {
   if (mode === 'walkin_short') {
-    return <WalkInShortFlow venue={initialVenue} onBack={onBack} onDone={onDone} />;
+    return <WalkInShortFlow venue={venue} onBack={onBack} onDone={onDone} />;
   }
+  return <RegularReserveFlow venue={venue} mode={mode} onBack={onBack} onDone={onDone} />;
+}
+
+function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
+  const isWalkIn = mode === 'walkin';
   const totalSteps = isWalkIn ? 2 : 3;
 
   const [step, setStep]         = useState(0);
