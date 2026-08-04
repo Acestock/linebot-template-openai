@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitEcpayForm, fetchMyCoupons } from '../api';
+import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitEcpayForm, fetchMyCoupons, fetchShortSessionPrice } from '../api';
 import TasksTab from './TasksTab';
 
 const STATUS_MAP = {
@@ -53,13 +53,18 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const [qrValidUntil, setQrValidUntil] = useState(null);
   const [localStatus, setLocalStatus]   = useState(r.status);
   const [localPayStatus, setLocalPayStatus] = useState(r.paymentStatus || 'unpaid');
-  const [coupons, setCoupons]           = useState([]);
-  const [selectedCoupon, setSelectedCoupon] = useState(null);
+  const [coupons, setCoupons]                   = useState([]);
+  const [selectedCoupon, setSelectedCoupon]     = useState(null);
+  const [shortQuote, setShortQuote]             = useState(null);
+  const [shortQuoteLoading, setShortQuoteLoading] = useState(false);
+  const [showShortConfirm, setShowShortConfirm] = useState(false);
 
+  const isShortSession = r.mode === 'walkin_short';
   const isUnpaidCheckout = localStatus === 'completed' && r.unpaidExit && localPayStatus !== 'paid';
-  const canQr = !readOnly && (localStatus === 'confirmed' || localStatus === 'checked_in');
+  const canQr = !readOnly && !isShortSession && (localStatus === 'confirmed' || localStatus === 'checked_in');
   const needsPayment = !readOnly && (
-    (localStatus === 'checked_in' || isUnpaidCheckout) && r.totalPrice > 0 && localPayStatus !== 'paid'
+    ((localStatus === 'checked_in' || isUnpaidCheckout) && r.totalPrice > 0 && localPayStatus !== 'paid') ||
+    (isShortSession && localStatus === 'checked_in' && localPayStatus !== 'paid')
   );
 
   useEffect(() => {
@@ -134,8 +139,22 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const st = getStatusInfo(localStatus, r.unpaidExit);
   const slotsStr = (r.slots || []).map(s => SLOT_LABELS[s] || s).join(' + ');
 
+  async function handleShortSessionCheckout() {
+    setShortQuoteLoading(true);
+    try {
+      const q = await fetchShortSessionPrice(r._id);
+      setShortQuote(q);
+      setShowShortConfirm(true);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setShortQuoteLoading(false);
+    }
+  }
+
   function payBtnLabel() {
     if (paying) return '跳轉付款中...';
+    if (isShortSession && r.totalPrice === 0) return shortQuoteLoading ? '計算中...' : '查看計費並結帳';
     const actionText = isUnpaidCheckout ? '補付款' : '付款並出場';
     if (selectedCoupon) {
       return effectivePrice === 0
@@ -237,23 +256,68 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
         </div>
       )}
 
+      {/* Short-session: 計時中 badge */}
+      {isShortSession && localStatus === 'checked_in' && (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#e3f2fd', color: '#1565c0', borderRadius: '20px', padding: '5px 12px', fontSize: '13px', fontWeight: '600', marginTop: '12px' }}>
+          ⏱ 計時中｜入場：{fmt(r.expectedCheckIn)}
+        </div>
+      )}
+
       {/* Payment button — shown when checked_in + has charge + not yet paid */}
       {needsPayment && (
-        <button type="button" onClick={handlePay} disabled={paying}
-          style={{ width: '100%', marginTop: '16px', padding: '14px', border: 'none', borderRadius: '10px', background: paying ? '#ccc' : '#e65100', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: paying ? 'not-allowed' : 'pointer', lineHeight: '1.4' }}>
+        <button type="button"
+          onClick={isShortSession && r.totalPrice === 0 ? handleShortSessionCheckout : handlePay}
+          disabled={paying || shortQuoteLoading}
+          style={{ width: '100%', marginTop: '16px', padding: '14px', border: 'none', borderRadius: '10px', background: (paying || shortQuoteLoading) ? '#ccc' : '#e65100', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: (paying || shortQuoteLoading) ? 'not-allowed' : 'pointer', lineHeight: '1.4' }}>
           {payBtnLabel()}
         </button>
       )}
 
-      {/* Checkout button — only show for free reservations or after payment */}
-      {!readOnly && localStatus === 'checked_in' && !needsPayment && (
+      {/* Short-session checkout confirmation modal */}
+      {showShortConfirm && shortQuote && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', padding: '24px', width: '320px', maxWidth: '100%' }}>
+            <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '16px', textAlign: 'center' }}>計時結帳確認</div>
+            <div style={{ background: '#f8f8f8', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '14px' }}>
+                <span style={{ color: '#888' }}>已使用時間</span>
+                <span>{Math.floor((shortQuote.actualMinutes || 0) / 60)}時{(shortQuote.actualMinutes || 0) % 60}分</span>
+              </div>
+              {shortQuote.billedHours && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '14px' }}>
+                  <span style={{ color: '#888' }}>計費時數</span>
+                  <span>{shortQuote.billedHours} 小時</span>
+                </div>
+              )}
+              {shortQuote.isOverThreeHours && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '14px' }}>
+                  <span style={{ color: '#888' }}>計費方式</span>
+                  <span style={{ color: '#7b1fa2' }}>固定方案最低組合</span>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', fontWeight: '800', marginTop: '8px', borderTop: '1px solid #eee', paddingTop: '10px' }}>
+                <span>應付金額</span>
+                <span style={{ color: '#e65100' }}>${shortQuote.price}</span>
+              </div>
+            </div>
+            <div style={{ fontSize: '12px', color: '#999', marginBottom: '16px', textAlign: 'center' }}>實際費用將在付款時以當下計算為準</div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setShowShortConfirm(false)} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #ddd', background: '#fff', fontSize: '14px', cursor: 'pointer', color: '#333' }}>取消</button>
+              <button onClick={() => { setShowShortConfirm(false); handlePay(); }} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', background: '#e65100', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>確認付款</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Checkout button — only show for free/paid non-short reservations */}
+      {!readOnly && localStatus === 'checked_in' && !needsPayment && !isShortSession && (
         <button type="button" onClick={handleCheckout} disabled={checkingOut}
           style={{ width: '100%', marginTop: '16px', padding: '13px', border: 'none', borderRadius: '10px', background: '#e53935', color: '#fff', fontSize: '15px', fontWeight: '600', cursor: 'pointer' }}>
           {checkingOut ? '處理中...' : '確認出場（結束使用）'}
         </button>
       )}
 
-      {!readOnly && localStatus === 'confirmed' && (
+      {!readOnly && localStatus === 'confirmed' && !isShortSession && (
         <button type="button" onClick={handleCancel} disabled={cancelling}
           style={{ width: '100%', marginTop: '16px', padding: '12px', border: '1px solid #e0e0e0', borderRadius: '10px', background: '#fff', fontSize: '14px', color: '#666', cursor: 'pointer' }}>
           {cancelling ? '取消中...' : '取消此預約'}
@@ -276,7 +340,9 @@ function BookingCard({ r, onClick }) {
       </div>
       <div style={{ fontSize: '13px', color: '#666', marginBottom: '4px' }}>{dateStr} · {r.planName || slotsStr}</div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: '14px', fontWeight: '600', color: '#c0392b' }}>{r.totalPrice > 0 ? `$${r.totalPrice}` : ''}</div>
+        <div style={{ fontSize: '14px', fontWeight: '600', color: '#c0392b' }}>
+          {r.mode === 'walkin_short' && r.status === 'checked_in' ? <span style={{ color: '#1565c0' }}>⏱ 計時中</span> : r.totalPrice > 0 ? `$${r.totalPrice}` : ''}
+        </div>
         <div style={{ fontSize: '12px', color: '#aaa' }}>點擊查看詳情 ›</div>
       </div>
     </div>

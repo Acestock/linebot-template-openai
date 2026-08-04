@@ -151,7 +151,7 @@ function VenueTab() {
   }, []);
   useEffect(load, [load]);
 
-  const emptyForm = { name: '', address: '', transportInfo: '', imageUrl: '', businessHours: '', facilities: '', rules: '', howToUse: '', color: '#2196F3', maxCapacityPerSlot: 10, isActive: true };
+  const emptyForm = { name: '', address: '', transportInfo: '', imageUrl: '', businessHours: '', facilities: '', rules: '', howToUse: '', color: '#2196F3', maxCapacityPerSlot: 10, isActive: true, shortSession: { enabled: false, minHourPrice: 40, ratio1h: 0.25, ratio2h: 0.60, ratio3h: 0.80, maxCapacityBlock: 2 } };
 
   async function save() {
     if (!form.name) return alert('請輸入場地名稱');
@@ -222,6 +222,50 @@ function VenueTab() {
                 <input type="number" min="1" style={{ ...inputStyle, width: '100px' }} value={form.maxCapacityPerSlot} onChange={e => setForm(f => ({ ...f, maxCapacityPerSlot: +e.target.value }))} />
               </Field>
             </div>
+            {/* Short-session settings */}
+            <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ fontWeight: '600', fontSize: '13px', color: '#555', marginBottom: '10px' }}>計時入場設定</div>
+              <Field label="">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!form.shortSession?.enabled} onChange={e => setForm(f => ({ ...f, shortSession: { ...(f.shortSession || {}), enabled: e.target.checked } }))} />
+                  啟用計時入場（立即入場改為按時計費）
+                </label>
+              </Field>
+              {form.shortSession?.enabled && (
+                <>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <Field label="1hr 比例（%）">
+                      <input type="number" min="1" max="100" style={{ ...inputStyle, width: '90px' }}
+                        value={Math.round((form.shortSession?.ratio1h || 0.25) * 100)}
+                        onChange={e => setForm(f => ({ ...f, shortSession: { ...(f.shortSession || {}), ratio1h: +e.target.value / 100 } }))} />
+                    </Field>
+                    <Field label="2hr 比例（%）">
+                      <input type="number" min="1" max="100" style={{ ...inputStyle, width: '90px' }}
+                        value={Math.round((form.shortSession?.ratio2h || 0.60) * 100)}
+                        onChange={e => setForm(f => ({ ...f, shortSession: { ...(f.shortSession || {}), ratio2h: +e.target.value / 100 } }))} />
+                    </Field>
+                    <Field label="3hr 比例（%）">
+                      <input type="number" min="1" max="100" style={{ ...inputStyle, width: '90px' }}
+                        value={Math.round((form.shortSession?.ratio3h || 0.80) * 100)}
+                        onChange={e => setForm(f => ({ ...f, shortSession: { ...(f.shortSession || {}), ratio3h: +e.target.value / 100 } }))} />
+                    </Field>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <Field label="最低 1hr 價格（$）">
+                      <input type="number" min="0" style={{ ...inputStyle, width: '100px' }}
+                        value={form.shortSession?.minHourPrice ?? 40}
+                        onChange={e => setForm(f => ({ ...f, shortSession: { ...(f.shortSession || {}), minHourPrice: +e.target.value } }))} />
+                    </Field>
+                    <Field label="封鎖門檻（剩 ≤ N 位暫停計時）">
+                      <input type="number" min="0" style={{ ...inputStyle, width: '80px' }}
+                        value={form.shortSession?.maxCapacityBlock ?? 2}
+                        onChange={e => setForm(f => ({ ...f, shortSession: { ...(f.shortSession || {}), maxCapacityBlock: +e.target.value } }))} />
+                    </Field>
+                  </div>
+                </>
+              )}
+            </div>
+
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }}>
               <button onClick={() => setForm(null)} style={btn('#f5f5f5', '#333')}>取消</button>
               <button onClick={save} disabled={saving} style={btn('#111')}>{saving ? '儲存中...' : '儲存'}</button>

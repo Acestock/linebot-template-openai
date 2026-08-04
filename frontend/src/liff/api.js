@@ -132,6 +132,22 @@ export async function fetchMyCoupons() {
   return json;
 }
 
+export async function fetchShortSessionQuote(venueId) {
+  const r = await fetch(`${BASE}/venues/${venueId}/short-session-quote`);
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '無法取得計時報價');
+  return json;
+}
+
+export async function fetchShortSessionPrice(reservationId) {
+  const r = await fetch(`${BASE}/reservations/${reservationId}/short-session-price`, {
+    headers: authHeaders()
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '無法取得計時費用');
+  return json;
+}
+
 export function submitEcpayForm(action, fields) {
   const form = document.createElement('form');
   form.method = 'POST';

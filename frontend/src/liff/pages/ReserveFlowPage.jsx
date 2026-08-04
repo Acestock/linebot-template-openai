@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchVenue, fetchAvailability, createReservation, getSessionToken } from '../api';
+import { fetchVenue, fetchAvailability, createReservation, getSessionToken, fetchShortSessionQuote } from '../api';
 
 const SLOTS = [
   { key: 'morning',   label: '早上', range: '07:00–12:00', icon: '🌅' },
@@ -50,8 +50,139 @@ function StepBar({ step, total }) {
   );
 }
 
+// ── 計時入場流程 ───────────────────────────────────────────────────────────────
+function WalkInShortFlow({ venue: initialVenue, onBack, onDone }) {
+  const [venue, setVenue]       = useState(initialVenue);
+  const [quote, setQuote]       = useState(null);
+  const [quoteErr, setQuoteErr] = useState('');
+  const [loading, setLoading]   = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError]       = useState('');
+  const [done, setDone]         = useState(false);
+
+  useEffect(() => {
+    if (!venue?._id) return;
+    setLoading(true);
+    fetchShortSessionQuote(venue._id)
+      .then(data => { setQuote(data); setLoading(false); })
+      .catch(e => { setQuoteErr(e.message); setLoading(false); });
+  }, [venue?._id]);
+
+  useEffect(() => {
+    if (!venue?.plans) {
+      fetchVenue(initialVenue._id).then(setVenue).catch(() => {});
+    }
+  }, []);
+
+  async function handleConfirm() {
+    if (!getSessionToken()) { setError('請先登入 LINE'); return; }
+    setSubmitting(true); setError('');
+    try {
+      const h = new Date().getHours();
+      const currentSlot = h >= 7 && h < 12 ? 'morning' : h >= 12 && h < 18 ? 'afternoon' : 'evening';
+      await createReservation({
+        venueId:  venue._id,
+        date:     toDateStr(new Date()),
+        slots:    [currentSlot],
+        mode:     'walkin_short',
+        expectedCheckIn: new Date().toISOString()
+      });
+      setDone(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (done) {
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px', textAlign: 'center' }}>
+        <div style={{ fontSize: '56px', marginBottom: '16px' }}>⏱</div>
+        <div style={{ fontSize: '20px', fontWeight: '700', marginBottom: '8px' }}>計時開始！</div>
+        <div style={{ color: '#555', marginBottom: '8px' }}>{venue.name}</div>
+        <div style={{ color: '#888', fontSize: '13px', marginBottom: '24px', lineHeight: '1.6' }}>
+          費用將依實際使用時間計算。<br />出場前請至「個人資料 → 我的預約」完成結帳付款。
+        </div>
+        <button onClick={onDone} style={{ padding: '14px 40px', borderRadius: '10px', border: 'none', background: '#111', color: '#fff', fontSize: '15px', fontWeight: '600', cursor: 'pointer' }}>
+          返回首頁
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px' }}>
+      <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>計時入場報價</div>
+      <div style={{ fontSize: '12px', color: '#888', marginBottom: '16px' }}>{venue.name} · 今日入場，費用出場時結算</div>
+
+      {loading ? (
+        <div style={{ color: '#aaa', textAlign: 'center', padding: '40px' }}>載入中...</div>
+      ) : quoteErr ? (
+        <div style={{ background: '#ffebee', borderRadius: '10px', padding: '14px', color: '#c62828', fontSize: '14px' }}>{quoteErr}</div>
+      ) : !quote?.available ? (
+        <div style={{ background: '#fff3e0', borderRadius: '12px', padding: '16px', border: '1px solid #ffcc80', marginBottom: '16px' }}>
+          <div style={{ fontWeight: '700', fontSize: '14px', color: '#e65100', marginBottom: '4px' }}>目前暫停計時入場</div>
+          <div style={{ fontSize: '13px', color: '#bf360c' }}>場內剩餘座位不足，請稍後再試或改為預約入場。</div>
+        </div>
+      ) : (
+        <>
+          {/* Pricing tiers */}
+          <div style={{ marginBottom: '16px' }}>
+            {(quote.tiers || []).map(t => (
+              <div key={t.hours} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: '10px', marginBottom: '8px', background: '#f8f8f8', border: '1px solid #eee' }}>
+                <div>
+                  <div style={{ fontWeight: '600', fontSize: '14px' }}>{t.hours} 小時</div>
+                  <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>出場時間：{t.exitTimeStr} 前</div>
+                </div>
+                <span style={{ fontSize: '18px', fontWeight: '800', color: '#111' }}>${t.price}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Over 3hr notice */}
+          {quote.overThreeHours && (
+            <div style={{ background: '#f3e5f5', border: '1px solid #ce93d8', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' }}>
+              <div style={{ fontWeight: '600', fontSize: '13px', color: '#7b1fa2', marginBottom: '4px' }}>超過 3 小時</div>
+              <div style={{ fontSize: '13px', color: '#6a1b9a' }}>
+                費用改採固定方案計算，最低 <strong>${quote.overThreeHours.minPrice}</strong>，可使用至 <strong>{quote.overThreeHours.validUntilStr}</strong>。
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          <div style={{ background: '#f8f8f8', borderRadius: '10px', padding: '12px 14px', marginBottom: '20px' }}>
+            <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '6px' }}>計費說明</div>
+            {['費用依實際使用時長計算，出場前完成付款。', '70 分鐘內按 1 小時計費，130 分鐘內按 2 小時，190 分鐘內按 3 小時。', '跨越不同時段時，依各時段分鐘比例加權計費。', '超過 3 小時將自動切換為固定方案最低組合。'].map((t, i) => (
+              <div key={i} style={{ fontSize: '12px', color: '#666', marginBottom: '3px' }}>• {t}</div>
+            ))}
+          </div>
+
+          {error && <div style={{ color: '#c62828', textAlign: 'center', marginBottom: '12px', fontSize: '14px' }}>{error}</div>}
+
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={onBack} style={backBtnStyle}>返回</button>
+            <button onClick={handleConfirm} disabled={submitting} style={{ ...nextBtnStyle, flex: 1, marginTop: 0 }}>
+              {submitting ? '處理中...' : '確認計時入場'}
+            </button>
+          </div>
+        </>
+      )}
+
+      {!loading && !quote?.available && (
+        <button onClick={onBack} style={{ ...backBtnStyle, display: 'block', width: '100%', marginTop: '16px' }}>返回</button>
+      )}
+    </div>
+  );
+}
+
 export default function ReserveFlowPage({ venue: initialVenue, mode, onBack, onDone }) {
   const isWalkIn = mode === 'walkin';
+
+  // Short-session walk-in is handled by a separate component
+  if (mode === 'walkin_short') {
+    return <WalkInShortFlow venue={initialVenue} onBack={onBack} onDone={onDone} />;
+  }
   const totalSteps = isWalkIn ? 2 : 3;
 
   const [step, setStep]         = useState(0);

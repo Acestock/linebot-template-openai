@@ -111,7 +111,7 @@ export default function LiffApp() {
           <div style={{ fontWeight: '800', fontSize: '17px', letterSpacing: '-0.3px' }}>
             {page.name === 'list'    ? '預約入場'   : ''}
             {page.name === 'detail'  ? '場地詳情'   : ''}
-            {page.name === 'reserve' ? (page.params.mode === 'walkin' ? '立即入場' : '預約入場') : ''}
+            {page.name === 'reserve' ? (page.params.mode === 'walkin_short' ? '計時入場' : page.params.mode === 'walkin' ? '立即入場' : '預約入場') : ''}
             {page.name === 'my'      ? '我的預約'   : ''}
             {page.name === 'profile' ? '個人資料'   : ''}
           </div>
@@ -137,7 +137,7 @@ export default function LiffApp() {
         <VenueDetailPage
           venueId={page.params.venueId}
           onReserve={(venue) => navigate('reserve', { venue, mode: 'advance' })}
-          onWalkIn={(venue)  => navigate('reserve', { venue, mode: 'walkin' })}
+          onWalkIn={(venue)  => navigate('reserve', { venue, mode: venue.shortSession?.enabled ? 'walkin_short' : 'walkin' })}
         />
       )}
       {page.name === 'reserve' && (

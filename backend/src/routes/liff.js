@@ -12,6 +12,14 @@ const TaskSubmission = require('../models/TaskSubmission');
 const Coupon = require('../models/Coupon');
 const { createOrderParams } = require('../services/ecpayService');
 const { pushMessage } = require('../services/lineService');
+const {
+  timeToMinutes,
+  billedHours,
+  calcShortSessionPrice,
+  calcPreviewTiers,
+  findCheapestCoverage,
+  minutesToTimeStr
+} = require('../services/shortSessionService');
 
 const router = express.Router();
 
@@ -211,6 +219,59 @@ router.get('/venues/:id/availability', async (req, res) => {
   }
 });
 
+// ── GET /api/liff/venues/:id/short-session-quote ──────────────────────────────
+router.get('/venues/:id/short-session-quote', async (req, res) => {
+  try {
+    const venue = await Venue.findById(req.params.id).lean();
+    if (!venue || !venue.isActive) return res.status(404).json({ error: 'Venue not found' });
+    if (!venue.shortSession?.enabled) return res.status(404).json({ error: '此場地未開放計時入場' });
+
+    const config = venue.shortSession;
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+
+    // Determine current slot from current hour
+    const h = now.getHours();
+    const currentSlot = h >= 7 && h < 12 ? 'morning' : h >= 12 && h < 18 ? 'afternoon' : 'evening';
+
+    const [avail, allPlans] = await Promise.all([
+      getSlotAvailability(venue._id, venue.maxCapacityPerSlot, dateStr),
+      VenuePlan.find({ venueId: venue._id, isActive: true }).lean()
+    ]);
+
+    const slotAvail = avail[currentSlot] || { remaining: 0 };
+    const available = !slotAvail.blocked && slotAvail.remaining > (config.maxCapacityBlock || 2);
+
+    const singlePlans = allPlans.filter(p => p.type === 'single');
+    const checkInMinute = timeToMinutes(now);
+
+    const tiers = calcPreviewTiers(singlePlans, checkInMinute, config);
+
+    // Find cheapest over-3hr coverage: simulate entering just past the 190-min grace window
+    const overResult = findCheapestCoverage(allPlans, checkInMinute, checkInMinute + 200, config);
+
+    res.json({
+      available,
+      remaining: slotAvail.remaining,
+      currentSlot,
+      checkInMinute,
+      tiers: tiers.map(t => ({
+        hours: t.hours,
+        price: t.price,
+        exitMinute: t.exitMinute,
+        exitTimeStr: minutesToTimeStr(t.exitMinute)
+      })),
+      overThreeHours: overResult.minCost !== null ? {
+        minPrice: overResult.minCost,
+        validUntil: overResult.validUntil,
+        validUntilStr: minutesToTimeStr(overResult.validUntil)
+      } : null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/liff/reservations ───────────────────────────────────────────────
 router.post('/reservations', liffAuth, async (req, res) => {
   try {
@@ -224,9 +285,24 @@ router.post('/reservations', liffAuth, async (req, res) => {
     // Check availability for each requested slot
     const dateStr = typeof date === 'string' ? date : new Date(date).toISOString().slice(0, 10);
     const avail = await getSlotAvailability(venueId, venue.maxCapacityPerSlot, dateStr);
-    for (const slot of slots) {
-      if (avail[slot] && avail[slot].remaining <= 0)
-        return res.status(409).json({ error: `${slot} 時段已額滿` });
+
+    // Short-session walk-in: validate config and capacity
+    const isShortSession = mode === 'walkin_short';
+    if (isShortSession) {
+      if (!venue.shortSession?.enabled)
+        return res.status(400).json({ error: '此場地未開放計時入場' });
+      const cfg = venue.shortSession;
+      const currentSlot = slots[0];
+      const slotAvail = avail[currentSlot] || {};
+      if (slotAvail.blocked)
+        return res.status(409).json({ error: '此時段已包場，無法計時入場' });
+      if ((slotAvail.remaining ?? 0) <= (cfg.maxCapacityBlock || 2))
+        return res.status(409).json({ error: '目前人數已達上限，暫停計時入場' });
+    } else {
+      for (const slot of slots) {
+        if (avail[slot] && avail[slot].remaining <= 0)
+          return res.status(409).json({ error: `${slot} 時段已額滿` });
+      }
     }
 
     // 未成功結帳鎖定：有 unpaidExit 記錄則不允許新預約
@@ -250,7 +326,17 @@ router.post('/reservations', liffAuth, async (req, res) => {
 
     let planName = '';
     let totalPrice = 0;
-    if (planId) {
+    let initialStatus = 'confirmed';
+    let checkInTime = expectedCheckIn ? new Date(expectedCheckIn) : undefined;
+    let checkOutTime = expectedCheckOut ? new Date(expectedCheckOut) : undefined;
+
+    if (isShortSession) {
+      // Short-session: check in immediately, price calculated at checkout
+      initialStatus = 'checked_in';
+      checkInTime   = new Date();
+      checkOutTime  = undefined;
+      planName      = '計時入場';
+    } else if (planId) {
       const plan = await VenuePlan.findById(planId).lean();
       if (plan) { planName = plan.name; totalPrice = plan.price; }
     }
@@ -266,11 +352,12 @@ router.post('/reservations', liffAuth, async (req, res) => {
       planName,
       slots,
       totalPrice,
-      expectedCheckIn:  expectedCheckIn ? new Date(expectedCheckIn) : undefined,
-      expectedCheckOut: expectedCheckOut ? new Date(expectedCheckOut) : undefined,
+      expectedCheckIn:  checkInTime,
+      expectedCheckOut: checkOutTime,
       note:            note || '',
-      status:          'confirmed',
-      paymentStatus:   totalPrice > 0 ? 'unpaid' : 'free',
+      mode:            isShortSession ? 'walkin_short' : 'normal',
+      status:          initialStatus,
+      paymentStatus:   totalPrice > 0 ? 'unpaid' : (isShortSession ? 'unpaid' : 'free'),
       qrToken:         crypto.randomUUID()
     });
     res.json(reservation);
@@ -307,6 +394,49 @@ router.delete('/reservations/:id', liffAuth, async (req, res) => {
   }
 });
 
+// ── GET /api/liff/reservations/:id/short-session-price ───────────────────────
+// Returns the estimated price for an active short-session walk-in based on current time
+router.get('/reservations/:id/short-session-price', liffAuth, async (req, res) => {
+  try {
+    const r = await Reservation.findById(req.params.id).lean();
+    if (!r) return res.status(404).json({ error: 'Not found' });
+    if (r.lineUserId !== req.liffUser.lineUserId)
+      return res.status(403).json({ error: 'Forbidden' });
+    if (r.mode !== 'walkin_short')
+      return res.status(400).json({ error: '此預約不是計時入場' });
+    if (!r.expectedCheckIn)
+      return res.status(400).json({ error: '尚未記錄入場時間' });
+
+    const venue = await Venue.findById(r.venueId).lean();
+    if (!venue) return res.status(404).json({ error: 'Venue not found' });
+    const config = venue.shortSession || {};
+
+    const allPlans = await VenuePlan.find({ venueId: r.venueId, isActive: true }).lean();
+    const singlePlans = allPlans.filter(p => p.type === 'single');
+
+    const now = new Date();
+    const checkInMinute = timeToMinutes(new Date(r.expectedCheckIn));
+    const nowMinute = timeToMinutes(now);
+    const actualMinutes = Math.max(1, nowMinute - checkInMinute);
+    const isOver = actualMinutes > 190;
+
+    let price, bh;
+    if (isOver) {
+      const result = findCheapestCoverage(allPlans, checkInMinute, nowMinute, config);
+      price = result.minCost || 0;
+      bh = null;
+    } else {
+      const result = calcShortSessionPrice(singlePlans, checkInMinute, actualMinutes, config);
+      price = result.price;
+      bh = result.billedHours;
+    }
+
+    res.json({ actualMinutes, billedHours: bh, price, isOverThreeHours: isOver });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/liff/reservations/:id/payment ───────────────────────────────────
 // Initiate ECPay payment; returns form data for client to submit
 // Accepts optional body.couponId to apply a discount coupon
@@ -320,6 +450,27 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
       return res.status(400).json({ error: '此預約狀態無法付款' });
     if (r.paymentStatus === 'paid')
       return res.status(400).json({ error: '此預約已完成付款' });
+
+    // Short-session: calculate actual price at payment time
+    if (r.mode === 'walkin_short' && r.totalPrice === 0) {
+      const venue = await Venue.findById(r.venueId).lean();
+      const config = (venue && venue.shortSession) || {};
+      const allPlans = await VenuePlan.find({ venueId: r.venueId, isActive: true }).lean();
+      const singlePlans = allPlans.filter(p => p.type === 'single');
+      const checkInMinute = timeToMinutes(new Date(r.expectedCheckIn));
+      const nowMinute = timeToMinutes(new Date());
+      const actualMinutes = Math.max(1, nowMinute - checkInMinute);
+      let price;
+      if (actualMinutes > 190) {
+        const result = findCheapestCoverage(allPlans, checkInMinute, nowMinute, config);
+        price = result.minCost || config.minHourPrice || 40;
+      } else {
+        price = calcShortSessionPrice(singlePlans, checkInMinute, actualMinutes, config).price;
+      }
+      r.totalPrice = price;
+      r.paymentStatus = 'unpaid';
+      await r.save();
+    }
 
     // Free reservation — skip payment, auto checkout
     if (r.totalPrice <= 0) {
