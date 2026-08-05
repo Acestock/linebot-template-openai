@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitEcpayForm, fetchMyCoupons, fetchShortSessionPrice } from '../api';
+import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitPaymentForm, fetchMyCoupons, fetchShortSessionPrice } from '../api';
 import TasksTab from './TasksTab';
 
 const STATUS_MAP = {
@@ -129,7 +129,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
         return;
       }
       const { form: { action, fields } } = data;
-      submitEcpayForm(action, fields);
+      submitPaymentForm(action, fields);
     } catch (e) {
       alert(e.message);
       setPaying(false);

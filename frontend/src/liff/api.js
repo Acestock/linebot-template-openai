@@ -148,7 +148,8 @@ export async function fetchShortSessionPrice(reservationId) {
   return json;
 }
 
-export function submitEcpayForm(action, fields) {
+// Generic hidden-form POST — works for both NewebPay and ECPay
+export function submitPaymentForm(action, fields) {
   const form = document.createElement('form');
   form.method = 'POST';
   form.action = action;
@@ -162,3 +163,6 @@ export function submitEcpayForm(action, fields) {
   document.body.appendChild(form);
   form.submit();
 }
+
+// Kept for backward compatibility
+export const submitEcpayForm = submitPaymentForm;

@@ -10,7 +10,13 @@ const BlockedSlot = require('../models/BlockedSlot');
 const Task = require('../models/Task');
 const TaskSubmission = require('../models/TaskSubmission');
 const Coupon = require('../models/Coupon');
-const { createOrderParams } = require('../services/ecpayService');
+const { createOrderParams: _ecpayCreateOrder }   = require('../services/ecpayService');
+const { createOrderParams: _newebpayCreateOrder } = require('../services/newebpayService');
+// Switch gateway via env: PAYMENT_GATEWAY=ecpay to fall back to ECPay (default: newebpay)
+const createOrderParams = (reservation) =>
+  (process.env.PAYMENT_GATEWAY || 'newebpay').toLowerCase() === 'ecpay'
+    ? _ecpayCreateOrder(reservation)
+    : _newebpayCreateOrder(reservation);
 const { pushMessage } = require('../services/lineService');
 const {
   timeToMinutes,
@@ -439,7 +445,8 @@ router.get('/reservations/:id/short-session-price', liffAuth, async (req, res) =
 });
 
 // ── POST /api/liff/reservations/:id/payment ───────────────────────────────────
-// Initiate ECPay payment; returns form data for client to submit
+// Initiate payment (NewebPay by default; set PAYMENT_GATEWAY=ecpay to use ECPay)
+// Returns { form: { action, fields } } for the client to POST via hidden form
 // Accepts optional body.couponId to apply a discount coupon
 router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
   try {
@@ -508,7 +515,7 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
       }
     }
 
-    // Build ECPay order with effective price (may be discounted)
+    // Build payment order with effective price (may be discounted)
     const reservationForPayment = effectivePrice !== r.totalPrice
       ? { ...r.toObject(), totalPrice: effectivePrice }
       : r;
