@@ -743,10 +743,10 @@ router.get('/settings', async (req, res) => {
 // PUT /api/settings
 router.put('/settings', async (req, res) => {
   try {
-    const { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId, liffTitle } = req.body;
+    const { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId, liffTitle, brandColor, brandTextColor } = req.body;
     const profile = await BusinessProfile.findOneAndUpdate(
       {},
-      { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId, liffTitle, updatedAt: new Date() },
+      { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId, liffTitle, brandColor, brandTextColor, updatedAt: new Date() },
       { upsert: true, new: true }
     );
     res.json(profile);

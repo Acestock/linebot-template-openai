@@ -86,7 +86,7 @@ export default function VenueListPage({ onSelect }) {
   }, []);
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 80px' }}>
+    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 0', display: 'flex', flexDirection: 'column' }}>
       {/* Date tabs — scrollable */}
       <div
         ref={tabBarRef}
@@ -115,28 +115,29 @@ export default function VenueListPage({ onSelect }) {
         <VenueCard key={v._id} venue={v} dateKey={days[tab].key} onClick={() => onSelect(v._id)} />
       ))}
 
-      {/* Brand tagline */}
+      {/* Brand tagline — stretches to fill remaining space and self-centers */}
       {!loading && (
-        <div style={{ textAlign: 'center', padding: '32px 16px 16px' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '160px', padding: '24px 16px 80px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center', marginBottom: '14px' }}>
-            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to right, transparent, #C9A882)' }} />
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#C9A882' }} />
-            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to left, transparent, #C9A882)' }} />
+            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to right, transparent, var(--brand-border))' }} />
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--brand-color)' }} />
+            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to left, transparent, var(--brand-border))' }} />
           </div>
           <div style={{
             fontFamily: "'Noto Serif TC', 'Noto Serif', Georgia, serif",
             fontSize: '15px',
-            color: '#8B6751',
+            color: 'var(--brand-text)',
             letterSpacing: '0.15em',
             lineHeight: '1.9',
             fontWeight: '400',
+            opacity: 0.7,
           }}>
             讀一本書，享一段自己
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center', marginTop: '14px' }}>
-            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to right, transparent, #C9A882)' }} />
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#C9A882' }} />
-            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to left, transparent, #C9A882)' }} />
+            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to right, transparent, var(--brand-border))' }} />
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--brand-color)' }} />
+            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to left, transparent, var(--brand-border))' }} />
           </div>
         </div>
       )}

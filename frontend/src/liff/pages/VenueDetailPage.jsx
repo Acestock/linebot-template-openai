@@ -156,16 +156,16 @@ export default function VenueDetailPage({ venueId, onReserve, onWalkIn }) {
           onClick={() => onWalkIn(venue)}
           style={{
             flex: 1, padding: '14px', borderRadius: '10px',
-            border: '1.5px solid #C9A882', background: '#F5EDE3',
-            fontSize: '15px', fontWeight: '600', cursor: 'pointer', color: '#5D3A1A'
+            border: '1.5px solid var(--brand-border)', background: 'var(--brand-light)',
+            fontSize: '15px', fontWeight: '600', cursor: 'pointer', color: 'var(--brand-text)'
           }}
         >立即入場</button>
         <button
           onClick={() => onReserve(venue)}
           style={{
             flex: 1, padding: '14px', borderRadius: '10px',
-            border: 'none', background: '#C9A882',
-            fontSize: '15px', fontWeight: '600', cursor: 'pointer', color: '#3E2723'
+            border: 'none', background: 'var(--brand-color)',
+            fontSize: '15px', fontWeight: '600', cursor: 'pointer', color: 'var(--brand-text)'
           }}
         >預約入場</button>
       </div>

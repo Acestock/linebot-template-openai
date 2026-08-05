@@ -13,6 +13,8 @@ const BusinessProfileSchema = new mongoose.Schema({
   adminLineUserId:         { type: String, default: '' },
   appointmentReplyEnabled: { type: Boolean, default: false },
   liffTitle:               { type: String, default: '預約入場系統' },
+  brandColor:              { type: String, default: '#C9A882' },
+  brandTextColor:          { type: String, default: '#3E2723' },
   workingHours: {
     mon: { enabled: { type: Boolean, default: false }, start: { type: String, default: '09:00' }, end: { type: String, default: '18:00' } },
     tue: { enabled: { type: Boolean, default: false }, start: { type: String, default: '09:00' }, end: { type: String, default: '18:00' } },

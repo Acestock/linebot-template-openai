@@ -145,9 +145,13 @@ async function getSlotAvailability(venueId, maxCapacity, dateStr) {
 router.get('/config', async (req, res) => {
   try {
     const profile = await BusinessProfile.findOne().lean();
-    res.json({ liffTitle: profile?.liffTitle || '預約入場系統' });
+    res.json({
+      liffTitle:      profile?.liffTitle      || '預約入場系統',
+      brandColor:     profile?.brandColor     || '#C9A882',
+      brandTextColor: profile?.brandTextColor || '#3E2723',
+    });
   } catch (err) {
-    res.json({ liffTitle: '預約入場系統' });
+    res.json({ liffTitle: '預約入場系統', brandColor: '#C9A882', brandTextColor: '#3E2723' });
   }
 });
 

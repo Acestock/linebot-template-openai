@@ -379,7 +379,7 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
         {error && <div style={{ color: '#c62828', textAlign: 'center', marginBottom: '12px', fontSize: '14px' }}>{error}</div>}
         <div style={{ display: 'flex', gap: '10px' }}>
           <button onClick={() => setStep(0)} style={backBtnStyle}>返回</button>
-          <button onClick={handleSubmit} disabled={submitting} style={{ ...nextBtnStyle, flex: 1, marginTop: 0, background: submitting ? '#e8d8c8' : '#C9A882', cursor: submitting ? 'not-allowed' : 'pointer' }}>
+          <button onClick={handleSubmit} disabled={submitting} style={{ ...nextBtnStyle, flex: 1, marginTop: 0, background: submitting ? 'var(--brand-light)' : 'var(--brand-color)', cursor: submitting ? 'not-allowed' : 'pointer' }}>
             {submitting ? '處理中...' : '確認立即入場'}
           </button>
         </div>
@@ -496,7 +496,7 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
           {error && <div style={{ color: '#c62828', textAlign: 'center', marginBottom: '12px', fontSize: '14px' }}>{error}</div>}
           <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
             <button onClick={() => setStep(1)} style={backBtnStyle}>返回</button>
-            <button onClick={handleSubmit} disabled={submitting} style={{ ...nextBtnStyle, flex: 1, margin: 0, background: submitting ? '#e8d8c8' : '#C9A882' }}>
+            <button onClick={handleSubmit} disabled={submitting} style={{ ...nextBtnStyle, flex: 1, margin: 0, background: submitting ? 'var(--brand-light)' : 'var(--brand-color)' }}>
               {submitting ? '處理中...' : '完成預約'}
             </button>
           </div>
@@ -528,10 +528,10 @@ function Notice() {
 
 const nextBtnStyle = {
   display: 'block', width: '100%', marginTop: '16px', padding: '15px',
-  borderRadius: '10px', border: 'none', background: '#C9A882',
-  color: '#3E2723', fontSize: '16px', fontWeight: '700', cursor: 'pointer'
+  borderRadius: '10px', border: 'none', background: 'var(--brand-color)',
+  color: 'var(--brand-text)', fontSize: '16px', fontWeight: '700', cursor: 'pointer'
 };
 const backBtnStyle = {
-  padding: '15px 20px', borderRadius: '10px', border: '1.5px solid #C9A882',
-  background: '#F5EDE3', fontSize: '15px', fontWeight: '500', cursor: 'pointer', color: '#5D3A1A'
+  padding: '15px 20px', borderRadius: '10px', border: '1.5px solid var(--brand-border)',
+  background: 'var(--brand-light)', fontSize: '15px', fontWeight: '500', cursor: 'pointer', color: 'var(--brand-text)'
 };

@@ -20,7 +20,19 @@ export default function LiffApp() {
   useEffect(() => {
     fetch('/api/liff/config')
       .then(r => r.json())
-      .then(cfg => { if (cfg.liffTitle) document.title = cfg.liffTitle; })
+      .then(cfg => {
+        if (cfg.liffTitle) document.title = cfg.liffTitle;
+        const color = cfg.brandColor || '#C9A882';
+        const text  = cfg.brandTextColor || '#3E2723';
+        const r = parseInt(color.slice(1, 3), 16);
+        const g = parseInt(color.slice(3, 5), 16);
+        const b = parseInt(color.slice(5, 7), 16);
+        const root = document.documentElement;
+        root.style.setProperty('--brand-color', color);
+        root.style.setProperty('--brand-text',  text);
+        root.style.setProperty('--brand-light',  `rgba(${r},${g},${b},0.15)`);
+        root.style.setProperty('--brand-border', `rgba(${r},${g},${b},0.65)`);
+      })
       .catch(() => {});
   }, []);
 
@@ -132,7 +144,7 @@ export default function LiffApp() {
         {showMyBtn && (
           <button
             onClick={() => navigate('profile')}
-            style={{ background: '#F5EDE3', border: '1px solid #C9A882', borderRadius: '20px', padding: '5px 14px', fontSize: '13px', cursor: 'pointer', color: '#5D3A1A', fontWeight: '500' }}
+            style={{ background: 'var(--brand-light)', border: '1px solid var(--brand-border)', borderRadius: '20px', padding: '5px 14px', fontSize: '13px', cursor: 'pointer', color: 'var(--brand-text)', fontWeight: '500' }}
           >
             預約紀錄
           </button>
@@ -177,15 +189,15 @@ export default function LiffApp() {
             bottom: '24px',
             right: '16px',
             zIndex: 999,
-            background: '#C9A882',
-            color: '#3E2723',
+            background: 'var(--brand-color)',
+            color: 'var(--brand-text)',
             border: 'none',
             borderRadius: '28px',
             padding: '12px 20px',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            boxShadow: '0 4px 20px rgba(121,80,40,0.30)',
+            boxShadow: '0 4px 16px var(--brand-light)',
             cursor: 'pointer',
             fontSize: '14px',
             fontWeight: '700',

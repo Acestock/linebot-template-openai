@@ -672,28 +672,33 @@ function DetailRow({ label, value, full, small }) {
 
 // ── Tab 5: 系統設定 ──────────────────────────────────────────────────────────
 function SystemSettingsTab() {
-  const [liffTitle, setLiffTitle] = useState('');
-  const [loading, setLoading]     = useState(true);
-  const [saving, setSaving]       = useState(false);
-  const [saved, setSaved]         = useState(false);
+  const [liffTitle,      setLiffTitle]      = useState('');
+  const [brandColor,     setBrandColor]     = useState('#C9A882');
+  const [brandTextColor, setBrandTextColor] = useState('#3E2723');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
 
   useEffect(() => {
     authFetch(`${API_BASE}/api/settings`)
       .then(r => r.json())
-      .then(d => { setLiffTitle(d.liffTitle || ''); })
+      .then(d => {
+        setLiffTitle(d.liffTitle || '');
+        setBrandColor(d.brandColor || '#C9A882');
+        setBrandTextColor(d.brandTextColor || '#3E2723');
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
   async function handleSave(e) {
     e.preventDefault();
-    setSaving(true);
-    setSaved(false);
+    setSaving(true); setSaved(false);
     try {
       await authFetch(`${API_BASE}/api/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ liffTitle })
+        body: JSON.stringify({ liffTitle, brandColor, brandTextColor })
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -706,8 +711,15 @@ function SystemSettingsTab() {
 
   if (loading) return <div style={{ color: '#aaa', textAlign: 'center', padding: '40px' }}>載入中...</div>;
 
+  const previewStyle = {
+    display: 'inline-flex', alignItems: 'center', gap: '8px',
+    padding: '8px 18px', borderRadius: '8px', fontSize: '14px', fontWeight: '600',
+    background: brandColor, color: brandTextColor, marginTop: '8px'
+  };
+
   return (
     <form onSubmit={handleSave}>
+      {/* LIFF title */}
       <div style={{ marginBottom: '20px' }}>
         <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>
           LIFF 頁面標題（顯示於 LINE 瀏覽器頂部）
@@ -715,13 +727,59 @@ function SystemSettingsTab() {
         <input
           value={liffTitle}
           onChange={e => setLiffTitle(e.target.value)}
-          placeholder="例：OO 運動場地預約系統"
+          placeholder="例：讀享・預約入場系統"
           style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
         />
-        <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>
-          若留空則顯示預設：「預約入場系統」
+        <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>若留空則顯示預設：「預約入場系統」</div>
+      </div>
+
+      {/* Brand color */}
+      <div style={{ marginBottom: '20px' }}>
+        <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>
+          主題按鈕顏色（奶茶色等）
+        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <input
+            type="color"
+            value={brandColor}
+            onChange={e => setBrandColor(e.target.value)}
+            style={{ width: '48px', height: '40px', border: '1px solid #ddd', borderRadius: '8px', cursor: 'pointer', padding: '2px' }}
+          />
+          <input
+            value={brandColor}
+            onChange={e => setBrandColor(e.target.value)}
+            placeholder="#C9A882"
+            style={{ flex: 1, boxSizing: 'border-box', padding: '9px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px', fontFamily: 'monospace' }}
+          />
         </div>
       </div>
+
+      {/* Brand text color */}
+      <div style={{ marginBottom: '20px' }}>
+        <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>
+          按鈕文字顏色（深咖啡色等）
+        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <input
+            type="color"
+            value={brandTextColor}
+            onChange={e => setBrandTextColor(e.target.value)}
+            style={{ width: '48px', height: '40px', border: '1px solid #ddd', borderRadius: '8px', cursor: 'pointer', padding: '2px' }}
+          />
+          <input
+            value={brandTextColor}
+            onChange={e => setBrandTextColor(e.target.value)}
+            placeholder="#3E2723"
+            style={{ flex: 1, boxSizing: 'border-box', padding: '9px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px', fontFamily: 'monospace' }}
+          />
+        </div>
+        {/* Live preview */}
+        <div>
+          <span style={previewStyle}>預約入場</span>
+          <span style={{ fontSize: '12px', color: '#aaa', marginLeft: '12px' }}>即時預覽</span>
+        </div>
+      </div>
+
       <button type="submit" disabled={saving} style={{
         background: '#111', color: '#fff', border: 'none', borderRadius: '8px',
         padding: '10px 24px', fontSize: '14px', fontWeight: '600', cursor: 'pointer'
