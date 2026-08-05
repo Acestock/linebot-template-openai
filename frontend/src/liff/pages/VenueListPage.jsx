@@ -114,6 +114,32 @@ export default function VenueListPage({ onSelect }) {
       ) : venues.map(v => (
         <VenueCard key={v._id} venue={v} dateKey={days[tab].key} onClick={() => onSelect(v._id)} />
       ))}
+
+      {/* Brand tagline */}
+      {!loading && (
+        <div style={{ textAlign: 'center', padding: '32px 16px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center', marginBottom: '14px' }}>
+            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to right, transparent, #C9A882)' }} />
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#C9A882' }} />
+            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to left, transparent, #C9A882)' }} />
+          </div>
+          <div style={{
+            fontFamily: "'Noto Serif TC', 'Noto Serif', Georgia, serif",
+            fontSize: '15px',
+            color: '#8B6751',
+            letterSpacing: '0.15em',
+            lineHeight: '1.9',
+            fontWeight: '400',
+          }}>
+            讀一本書，享一段自己
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center', marginTop: '14px' }}>
+            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to right, transparent, #C9A882)' }} />
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#C9A882' }} />
+            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to left, transparent, #C9A882)' }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -132,7 +132,7 @@ export default function LiffApp() {
         {showMyBtn && (
           <button
             onClick={() => navigate('profile')}
-            style={{ background: 'none', border: '1px solid #ddd', borderRadius: '20px', padding: '5px 14px', fontSize: '13px', cursor: 'pointer', color: '#555' }}
+            style={{ background: '#F5EDE3', border: '1px solid #C9A882', borderRadius: '20px', padding: '5px 14px', fontSize: '13px', cursor: 'pointer', color: '#5D3A1A', fontWeight: '500' }}
           >
             預約紀錄
           </button>
@@ -177,15 +177,15 @@ export default function LiffApp() {
             bottom: '24px',
             right: '16px',
             zIndex: 999,
-            background: '#1565c0',
-            color: '#fff',
+            background: '#C9A882',
+            color: '#3E2723',
             border: 'none',
             borderRadius: '28px',
             padding: '12px 20px',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            boxShadow: '0 4px 20px rgba(21,101,192,0.45)',
+            boxShadow: '0 4px 20px rgba(121,80,40,0.30)',
             cursor: 'pointer',
             fontSize: '14px',
             fontWeight: '700',
