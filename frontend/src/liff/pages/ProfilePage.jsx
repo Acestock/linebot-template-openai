@@ -61,7 +61,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
 
   const isShortSession = r.mode === 'walkin_short';
   const isUnpaidCheckout = localStatus === 'completed' && r.unpaidExit && localPayStatus !== 'paid';
-  const canQr = !readOnly && !isShortSession && (localStatus === 'confirmed' || localStatus === 'checked_in');
+  const canQr = !readOnly && (localStatus === 'confirmed' || localStatus === 'checked_in');
   const needsPayment = !readOnly && (
     ((localStatus === 'checked_in' || isUnpaidCheckout) && r.totalPrice > 0 && localPayStatus !== 'paid') ||
     (isShortSession && localStatus === 'checked_in' && localPayStatus !== 'paid')
@@ -209,8 +209,13 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
         <div style={{ background: '#fff', borderRadius: '12px', padding: '16px', boxShadow: '0 1px 6px rgba(0,0,0,0.08)', textAlign: 'center' }}>
           {qrImg ? (
             <>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>
+                {isShortSession ? '入場票・請出示給工作人員' : '入場 QR Code'}
+              </div>
               <img src={qrImg} alt="QR Code" style={{ width: '220px', height: '220px' }} />
-              {qrValidUntil && r.expectedCheckIn && (
+              {isShortSession ? (
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>計時進行中，此票券全場有效</div>
+              ) : qrValidUntil && r.expectedCheckIn ? (
                 <div style={{ fontSize: '12px', color: '#888', marginTop: '8px', lineHeight: '1.6' }}>
                   入場有效時間<br />
                   <span style={{ color: '#444', fontWeight: '600' }}>
@@ -219,12 +224,15 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
                     {new Date(qrValidUntil).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
-              )}
+              ) : null}
             </>
           ) : (
             <button type="button" onClick={handleShowQr} disabled={qrLoading}
-              style={{ background: '#00b900', color: '#fff', border: 'none', borderRadius: '10px', padding: '12px 28px', fontSize: '15px', fontWeight: '600', cursor: 'pointer' }}>
-              {qrLoading ? '產生中...' : localStatus === 'checked_in' ? '顯示 QR（離場 / 再入場）' : '顯示入場 QR'}
+              style={{ background: 'var(--brand-color)', color: 'var(--brand-text)', border: 'none', borderRadius: '10px', padding: '12px 28px', fontSize: '15px', fontWeight: '600', cursor: 'pointer' }}>
+              {qrLoading ? '產生中...'
+                : isShortSession ? '顯示入場票'
+                : localStatus === 'checked_in' ? '顯示 QR（離場 / 再入場）'
+                : '顯示入場 QR'}
             </button>
           )}
         </div>

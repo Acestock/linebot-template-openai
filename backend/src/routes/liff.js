@@ -540,13 +540,12 @@ router.get('/reservations/:id/qr', liffAuth, async (req, res) => {
     if (!r) return res.status(404).json({ error: 'Not found' });
     if (r.lineUserId !== req.liffUser.lineUserId)
       return res.status(403).json({ error: 'Forbidden' });
-    const validFrom  = r.expectedCheckIn
-      ? new Date(r.expectedCheckIn.getTime() - 10 * 60 * 1000)
-      : null;
-    const validUntil = r.expectedCheckIn
-      ? new Date(r.expectedCheckIn.getTime() + 30 * 60 * 1000)
-      : null;
-    res.json({ qrToken: r.qrToken, validFrom, validUntil, status: r.status });
+    // walkin_short: QR stays valid for the whole session (no fixed window)
+    const validFrom  = r.mode === 'walkin_short' || !r.expectedCheckIn ? null
+      : new Date(r.expectedCheckIn.getTime() - 10 * 60 * 1000);
+    const validUntil = r.mode === 'walkin_short' || !r.expectedCheckIn ? null
+      : new Date(r.expectedCheckIn.getTime() + 30 * 60 * 1000);
+    res.json({ qrToken: r.qrToken, validFrom, validUntil, status: r.status, mode: r.mode });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
