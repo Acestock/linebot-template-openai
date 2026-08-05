@@ -76,14 +76,19 @@ router.get('/result', async (req, res) => {
     ? `您在「${venueName || '場地'}」的預約已完成結帳，感謝使用！`
     : '付款仍在處理中，請稍後至「個人資料 → 預約紀錄」確認狀態。';
 
-  // If LIFF ID is available, use liff.closeWindow(); otherwise instruct user to tap X
-  const closeScript = liffId ? `
-    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  const liffAppUrl = liffId ? `https://liff.line.me/${liffId}` : '';
+  const redirectScript = liffAppUrl ? `
     <script>
-      liff.init({ liffId: '${liffId}' })
-        .then(() => liff.closeWindow())
-        .catch(() => {});
+      setTimeout(() => { window.location.href = '${liffAppUrl}'; }, 2500);
     </script>` : '';
+
+  const backBtn = liffAppUrl
+    ? `<a href="${liffAppUrl}" style="display:block;margin-top:20px;padding:13px;background:#06C755;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:700;">回到預約系統</a>`
+    : `<div class="hint"><div class="arrow">↗</div>請點右上角 <strong>✕</strong> 關閉此頁面，<br>回到 LINE 查看預約紀錄</div>`;
+
+  const countdownHtml = liffAppUrl
+    ? `<p style="color:#aaa;font-size:12px;margin-top:10px;">2.5 秒後自動回到預約系統…</p>`
+    : '';
 
   res.send(`<!DOCTYPE html>
 <html lang="zh-TW">
@@ -101,7 +106,7 @@ router.get('/result', async (req, res) => {
     h2{font-size:20px;font-weight:700;margin-bottom:8px;color:#111}
     p{font-size:14px;color:#666;line-height:1.6;margin-bottom:12px}
     .hint{background:#f0f0f0;border-radius:10px;padding:12px 14px;
-          font-size:13px;color:#555;line-height:1.7;margin-bottom:0}
+          font-size:13px;color:#555;line-height:1.7}
     .arrow{font-size:18px}
   </style>
 </head>
@@ -110,12 +115,10 @@ router.get('/result', async (req, res) => {
     <div class="icon">${icon}</div>
     <h2>${title}</h2>
     <p>${mainMsg}</p>
-    <div class="hint">
-      <div class="arrow">↗</div>
-      請點右上角 <strong>✕</strong> 關閉此頁面，<br>回到 LINE 查看預約紀錄
-    </div>
+    ${backBtn}
+    ${countdownHtml}
   </div>
-  ${closeScript}
+  ${redirectScript}
 </body>
 </html>`);
 });

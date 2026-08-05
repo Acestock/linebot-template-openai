@@ -459,8 +459,8 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
     if (r.paymentStatus === 'paid')
       return res.status(400).json({ error: '此預約已完成付款' });
 
-    // Short-session: calculate actual price at payment time
-    if (r.mode === 'walkin_short' && r.totalPrice === 0) {
+    // Short-session: always recalculate price at payment time (covers multi-attempt retries)
+    if (r.mode === 'walkin_short') {
       const venue = await Venue.findById(r.venueId).lean();
       const config = (venue && venue.shortSession) || {};
       const allPlans = await VenuePlan.find({ venueId: r.venueId, isActive: true }).lean();
