@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import liff from '@line/liff';
-import { liffAuth, setSessionToken } from './api';
+import { liffAuth, setSessionToken, fetchMyReservations } from './api';
 import VenueListPage   from './pages/VenueListPage';
 import VenueDetailPage from './pages/VenueDetailPage';
 import ReserveFlowPage from './pages/ReserveFlowPage';
@@ -15,6 +15,7 @@ export default function LiffApp() {
   const [user, setUser]     = useState(null);
   const [initError, setInitError] = useState('');
   const [initing, setIniting]     = useState(true);
+  const [hasActiveCheckIn, setHasActiveCheckIn] = useState(false);
 
   useEffect(() => {
     fetch('/api/liff/config')
@@ -58,6 +59,16 @@ export default function LiffApp() {
     init();
   }, []);
 
+  // Check if user has an active check-in; refresh whenever returning to the venue list
+  useEffect(() => {
+    if (!user || page.name !== 'list') return;
+    fetchMyReservations()
+      .then(data => {
+        setHasActiveCheckIn((Array.isArray(data) ? data : []).some(r => r.status === 'checked_in'));
+      })
+      .catch(() => {});
+  }, [user, page.name]);
+
   function navigate(name, params = {}) {
     setPage({ name, params });
   }
@@ -87,6 +98,7 @@ export default function LiffApp() {
 
   const showBack    = page.name !== 'list';
   const showMyBtn   = page.name !== 'profile' && !!user;
+  const showFab     = hasActiveCheckIn && page.name !== 'profile' && !!user;
 
   function handleBack() {
     if (page.name === 'profile') return navigate('list');
@@ -113,7 +125,7 @@ export default function LiffApp() {
             {page.name === 'detail'  ? '場地詳情'   : ''}
             {page.name === 'reserve' ? (page.params.mode === 'walkin_short' ? '計時入場' : page.params.mode === 'walkin' ? '立即入場' : '預約入場') : ''}
             {page.name === 'my'      ? '我的預約'   : ''}
-            {page.name === 'profile' ? '個人資料'   : ''}
+            {page.name === 'profile' ? '預約紀錄'   : ''}
           </div>
         </div>
         {showMyBtn && (
@@ -121,7 +133,7 @@ export default function LiffApp() {
             onClick={() => navigate('profile')}
             style={{ background: 'none', border: '1px solid #ddd', borderRadius: '20px', padding: '5px 14px', fontSize: '13px', cursor: 'pointer', color: '#555' }}
           >
-            個人資料
+            預約紀錄
           </button>
         )}
       </div>
@@ -153,6 +165,34 @@ export default function LiffApp() {
       )}
       {page.name === 'profile' && (
         <ProfilePage user={user} />
+      )}
+
+      {/* Floating action button — visible when user has an active check-in */}
+      {showFab && (
+        <button
+          onClick={() => navigate('profile')}
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '16px',
+            zIndex: 999,
+            background: '#1565c0',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '28px',
+            padding: '12px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            boxShadow: '0 4px 20px rgba(21,101,192,0.45)',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: '700',
+          }}
+        >
+          <span style={{ fontSize: '17px' }}>⏱</span>
+          進場中・當前預約
+        </button>
       )}
     </div>
   );

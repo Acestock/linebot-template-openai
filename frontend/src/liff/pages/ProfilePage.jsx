@@ -114,11 +114,13 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
     finally { setCheckingOut(false); }
   }
 
-  async function handlePay() {
-    const payLabel = selectedCoupon
-      ? `使用折扣券折抵 $${selectedCoupon.discountAmount}，實付 $${effectivePrice}，確認前往付款？`
-      : '確認前往付款？將跳轉至藍新金流付款頁面。';
-    if (!confirm(payLabel)) return;
+  async function handlePay(skipConfirm = false) {
+    if (!skipConfirm) {
+      const payLabel = selectedCoupon
+        ? `使用折扣券折抵 $${selectedCoupon.discountAmount}，實付 $${effectivePrice}，確認前往付款？`
+        : '確認前往付款？將跳轉至藍新金流付款頁面。';
+      if (!confirm(payLabel)) return;
+    }
     setPaying(true);
     try {
       const data = await initiatePayment(r._id, selectedCoupon?._id);
@@ -154,7 +156,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
 
   function payBtnLabel() {
     if (paying) return '跳轉付款中...';
-    if (isShortSession && r.totalPrice === 0) return shortQuoteLoading ? '計算中...' : '查看計費並結帳';
+    if (isShortSession) return shortQuoteLoading ? '計算中...' : '結帳出場（確認費用）';
     const actionText = isUnpaidCheckout ? '補付款' : '付款並出場';
     if (selectedCoupon) {
       return effectivePrice === 0
@@ -266,7 +268,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
       {/* Payment button — shown when checked_in + has charge + not yet paid */}
       {needsPayment && (
         <button type="button"
-          onClick={isShortSession && r.totalPrice === 0 ? handleShortSessionCheckout : handlePay}
+          onClick={isShortSession ? handleShortSessionCheckout : handlePay}
           disabled={paying || shortQuoteLoading}
           style={{ width: '100%', marginTop: '16px', padding: '14px', border: 'none', borderRadius: '10px', background: (paying || shortQuoteLoading) ? '#ccc' : '#e65100', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: (paying || shortQuoteLoading) ? 'not-allowed' : 'pointer', lineHeight: '1.4' }}>
           {payBtnLabel()}
@@ -303,7 +305,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
             <div style={{ fontSize: '12px', color: '#999', marginBottom: '16px', textAlign: 'center' }}>實際費用將在付款時以當下計算為準</div>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => setShowShortConfirm(false)} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #ddd', background: '#fff', fontSize: '14px', cursor: 'pointer', color: '#333' }}>取消</button>
-              <button onClick={() => { setShowShortConfirm(false); handlePay(); }} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', background: '#e65100', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>確認付款</button>
+              <button onClick={() => { setShowShortConfirm(false); handlePay(true); }} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', background: '#e65100', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>確認付款</button>
             </div>
           </div>
         </div>
