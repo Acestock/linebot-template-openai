@@ -92,7 +92,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted }) {
   }
 
   async function handlePay() {
-    if (!confirm('確認前往付款？將跳轉至綠界付款頁面。')) return;
+    if (!confirm('確認前往付款？將跳轉至藍新金流付款頁面。')) return;
     setPaying(true);
     try {
       const data = await initiatePayment(r._id);

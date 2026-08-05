@@ -54,9 +54,10 @@ router.post('/notify', async (req, res) => {
   }
 });
 
-// ── GET /newebpay/result ──────────────────────────────────────────────────────
-// User browser return page after NewebPay payment flow
-router.get('/result', async (req, res) => {
+// ── GET|POST /newebpay/result ─────────────────────────────────────────────────
+// User browser return page after NewebPay payment flow.
+// NewebPay may redirect with GET or POST; reservationId is always in the query string.
+router.all('/result', async (req, res) => {
   const { reservationId, liffId } = req.query;
   let paid = false;
   let venueName = '';

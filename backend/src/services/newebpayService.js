@@ -82,9 +82,8 @@ function createOrderParams(reservation) {
     Amt:             String(Math.max(1, Math.round(reservation.totalPrice))),
     ItemDesc:        itemDesc,
     TradeLimit:      '900',          // 15-minute payment window
-    ReturnURL:       `${appUrl}/api/newebpay/notify`,   // server-to-server notify
-    NotifyURL:       `${appUrl}/api/newebpay/notify`,   // same, for API v2.0 compat
-    ClientBackURL:   clientBackURL,
+    ReturnURL:       clientBackURL,                      // user browser redirect after payment
+    NotifyURL:       `${appUrl}/api/newebpay/notify`,   // async server-to-server notification
     LoginType:       '0',
     CREDIT:          '1',
   }).toString();

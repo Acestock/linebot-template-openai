@@ -117,7 +117,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   async function handlePay() {
     const payLabel = selectedCoupon
       ? `使用折扣券折抵 $${selectedCoupon.discountAmount}，實付 $${effectivePrice}，確認前往付款？`
-      : '確認前往付款？將跳轉至綠界付款頁面。';
+      : '確認前往付款？將跳轉至藍新金流付款頁面。';
     if (!confirm(payLabel)) return;
     setPaying(true);
     try {
