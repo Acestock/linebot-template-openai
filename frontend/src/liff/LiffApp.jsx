@@ -98,7 +98,8 @@ export default function LiffApp() {
 
   const showBack    = page.name !== 'list';
   const showMyBtn   = page.name !== 'profile' && !!user;
-  const showFab     = hasActiveCheckIn && page.name !== 'profile' && !!user;
+  // FAB only on venue list — other pages have fixed bottom bars that conflict
+  const showFab     = hasActiveCheckIn && page.name === 'list' && !!user;
 
   function handleBack() {
     if (page.name === 'profile') return navigate('list');

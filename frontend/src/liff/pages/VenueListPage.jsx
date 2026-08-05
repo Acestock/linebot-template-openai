@@ -86,7 +86,7 @@ export default function VenueListPage({ onSelect }) {
   }, []);
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 80px' }}>
       {/* Date tabs — scrollable */}
       <div
         ref={tabBarRef}

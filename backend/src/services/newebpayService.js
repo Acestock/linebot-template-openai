@@ -86,6 +86,7 @@ function createOrderParams(reservation) {
     NotifyURL:       `${appUrl}/api/newebpay/notify`,   // async server-to-server notification
     LoginType:       '0',
     CREDIT:          '1',
+    APPLEPAY:        '1',           // Apple Pay (shown only on supported devices/browsers)
   }).toString();
 
   const tradeInfo = aesEncrypt(tradeParams, cfg.HashKey, cfg.HashIV);
