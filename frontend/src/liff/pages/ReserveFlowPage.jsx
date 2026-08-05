@@ -199,6 +199,8 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
   const [error, setError]       = useState('');
   const [done, setDone]         = useState(false);
 
+  const plans = venue?.plans || [];
+
   // Load full venue details (plans)
   useEffect(() => {
     if (!venue?.plans) {
@@ -223,8 +225,6 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [date, venue]);
-
-  const plans = venue?.plans || [];
   const currentSlotKey = isWalkIn ? getCurrentSlot() : null;
   const walkInPlans = isWalkIn
     ? plans.filter(p => p.isActive !== false && p.slots?.includes(currentSlotKey))
