@@ -345,8 +345,8 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
         </div>
       )}
 
-      {/* Checkout button — only show for free/paid non-short reservations */}
-      {!readOnly && localStatus === 'checked_in' && !needsPayment && !isShortSession && (
+      {/* Checkout button — only show for free/paid non-short reservations outside grace period */}
+      {!readOnly && localStatus === 'checked_in' && !needsPayment && !isShortSession && !isPaidPendingExit && (
         <button type="button" onClick={handleCheckout} disabled={checkingOut}
           style={{ width: '100%', marginTop: '16px', padding: '13px', border: 'none', borderRadius: '10px', background: '#e53935', color: '#fff', fontSize: '15px', fontWeight: '600', cursor: 'pointer' }}>
           {checkingOut ? '處理中...' : '確認出場（結束使用）'}
