@@ -35,6 +35,17 @@ function startReservationReminderJob() {
       console.error('[ReservationCron] Reminder failed:', err.message);
     }
 
+    // ④ 結帳後 10 分鐘寬限：paid + checked_in 超過 10min → 歸檔為 completed
+    try {
+      const tenMinAgo = new Date(now.getTime() - 10 * 60 * 1000);
+      await Reservation.updateMany(
+        { status: 'checked_in', paymentStatus: 'paid', paidAt: { $lte: tenMinAgo } },
+        { $set: { status: 'completed' } }
+      );
+    } catch (err) {
+      console.error('[ReservationCron] Post-payment archive failed:', err.message);
+    }
+
     // ③ 超過 expectedCheckOut 60min 仍在 checked_in 且未付款 → 標記 unpaidExit 並完成
     try {
       const overdueCheckout = new Date(now.getTime() - 60 * 60 * 1000);

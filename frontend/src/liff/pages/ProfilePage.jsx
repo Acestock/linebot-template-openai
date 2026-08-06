@@ -62,6 +62,21 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const isShortSession = r.mode === 'walkin_short';
   const isUnpaidCheckout = localStatus === 'completed' && r.unpaidExit && localPayStatus !== 'paid';
   const canQr = !readOnly && (localStatus === 'confirmed' || localStatus === 'checked_in');
+  const isPaidPendingExit = localStatus === 'checked_in' && localPayStatus === 'paid' && !!r.paidAt;
+
+  const [countdown, setCountdown] = useState('');
+  useEffect(() => {
+    if (!isPaidPendingExit) { setCountdown(''); return; }
+    function tick() {
+      const remaining = Math.max(0, new Date(r.paidAt).getTime() + 10 * 60 * 1000 - Date.now());
+      const m = Math.floor(remaining / 60000);
+      const s = Math.floor((remaining % 60000) / 1000);
+      setCountdown(`${m} 分 ${String(s).padStart(2, '0')} 秒`);
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [isPaidPendingExit, r.paidAt]);
   const needsPayment = !readOnly && (
     ((localStatus === 'checked_in' || isUnpaidCheckout) && r.totalPrice > 0 && localPayStatus !== 'paid') ||
     (isShortSession && localStatus === 'checked_in' && localPayStatus !== 'paid')
@@ -197,6 +212,17 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
         <div style={{ background: '#ffebee', borderRadius: '10px', padding: '14px 16px', marginBottom: '12px', border: '1px solid #ef9a9a', lineHeight: '1.6' }}>
           <div style={{ color: '#c62828', fontWeight: '700', fontSize: '14px', marginBottom: '4px' }}>未成功結帳</div>
           <div style={{ color: '#b71c1c', fontSize: '13px' }}>此時段未完成付款。請點下方「補付款」完成結帳，否則將無法進行新預約。</div>
+        </div>
+      )}
+
+      {/* Post-payment exit countdown banner */}
+      {isPaidPendingExit && (
+        <div style={{ background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: '12px', padding: '14px 16px', textAlign: 'center', marginBottom: '12px' }}>
+          <div style={{ fontWeight: '700', fontSize: '15px', color: '#2e7d32', marginBottom: '4px' }}>✅ 結帳完成！請掃碼出場</div>
+          <div style={{ fontSize: '13px', color: '#388e3c', lineHeight: '1.6' }}>
+            請出示下方 QR 給工作人員，慢慢收拾後再離場。<br />
+            <span style={{ fontWeight: '600' }}>{countdown}</span> 後自動歸檔為「已完成」
+          </div>
         </div>
       )}
 

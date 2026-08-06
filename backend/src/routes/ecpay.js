@@ -22,8 +22,9 @@ router.post('/callback', async (req, res) => {
       const r = await Reservation.findOne({ paymentRef: body.MerchantTradeNo });
       if (r && r.paymentStatus !== 'paid') {
         r.paymentStatus = 'paid';
-        r.status = 'completed';
-        r.unpaidExit = false;
+        r.paidAt        = new Date();
+        r.unpaidExit    = false;
+        // Keep status as checked_in — cron archives to completed after 10-min grace.
         await r.save();
         // Mark applied coupon as used
         if (r.appliedCouponId) {

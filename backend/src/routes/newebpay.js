@@ -36,8 +36,10 @@ router.post('/notify', async (req, res) => {
     if (Status === 'SUCCESS') {
       if (r.paymentStatus !== 'paid') {
         r.paymentStatus = 'paid';
-        r.status        = 'completed';
+        r.paidAt        = new Date();
         r.unpaidExit    = false;
+        // Keep status as checked_in — cron will archive to completed after 10-min grace.
+        // Already-completed (unpaid-exit) records stay completed; no status change needed.
         await r.save();
 
         if (r.appliedCouponId) {

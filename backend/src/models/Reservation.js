@@ -23,6 +23,7 @@ const ReservationSchema = new mongoose.Schema({
   mode:             { type: String, enum: ['normal', 'walkin_short'], default: 'normal' },
   appliedCouponId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null },
   discountAmount:   { type: Number, default: 0 },
+  paidAt:           { type: Date, default: null },
   createdAt:        { type: Date, default: Date.now }
 });
 
