@@ -67,6 +67,10 @@ app.get('/api/auth/verify', authMiddleware, (req, res) => res.json({ ok: true })
 const liffRouter = require('./routes/liff');
 app.use('/api/liff', liffRouter);
 
+// Physical gate controller verification (no admin auth — qrToken is the auth)
+const gateRouter = require('./routes/gate');
+app.use('/api/gate', gateRouter);
+
 // Payment gateway callbacks (no admin auth — called by payment servers + user browser)
 const ecpayRouter   = require('./routes/ecpay');
 const newebpayRouter = require('./routes/newebpay');
