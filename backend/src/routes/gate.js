@@ -41,6 +41,8 @@ function fmt(result, readno, str1 = '', str2 = '', str3 = '', cnt = null) {
 //   time     — gate's timestamp
 router.all('/verify', async (req, res) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('X-Accel-Buffering', 'no'); // disable Railway/Nginx response buffering
+  res.setHeader('Connection', 'close');      // signal end-of-body to embedded HTTP client
 
   // Merge query string + POST body so both request methods work
   const params = { ...req.query, ...req.body };
