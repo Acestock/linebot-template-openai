@@ -17,9 +17,14 @@ function truncate(str, maxBytes = 16) {
   return result;
 }
 
-// Format response in the gate controller's expected plain-text protocol
-function fmt(result, readno, str1 = '', str2 = '', str3 = '', cnt = '001') {
-  return `result=${result};readno=${readno};cnt=${cnt};str1=${str1}str1end;str2=${str2}str2end;str3=${str3}str3end;sndstr=sndstrend;`;
+// Format response in the gate controller's expected plain-text protocol.
+// cnt=001 when allowed, cnt=000 when blocked (per vendor spec).
+// sndstr must not be empty — firmware ignores responses with empty sndstr.
+function fmt(result, readno, str1 = '', str2 = '', str3 = '', cnt = null) {
+  const c = cnt ?? (result === 1 ? '001' : '000');
+  // Use str1 content as voice announcement fallback if str3 is empty
+  const snd = str1 || (result === 1 ? '欢迎' : '无效');
+  return `result=${result};readno=${readno};cnt=${c};str1=${str1}str1end;str2=${str2}str2end;str3=${str3}str3end;sndstr=${snd}sndstrend;`;
 }
 
 // ── GET|POST /api/gate/verify ─────────────────────────────────────────────────
