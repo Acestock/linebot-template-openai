@@ -22,20 +22,24 @@ function fmt(result, readno, str1 = '', str2 = '', str3 = '', cnt = '001') {
   return `result=${result};readno=${readno};cnt=${cnt};str1=${str1}str1end;str2=${str2}str2end;str3=${str3}str3end;sndstr=sndstrend;`;
 }
 
-// ── GET /api/gate/verify ───────────────────────────────────────────────────────
+// ── GET|POST /api/gate/verify ─────────────────────────────────────────────────
 // Called by the physical gate controller (HTTP client mode, no admin auth).
 // Auth is implicit: the qrToken in `id` is unguessable (UUID).
+// Gate may send GET (query string) or POST (form-urlencoded body) depending on
+// firmware; we merge both so either works.
 //
-// Query params from gate:
+// Params:
 //   id       — QR content (our qrToken)
-//   idtype   — 0=QR, 1=serial number, 2=ID card, 99=heartbeat
+//   idtype   — 0=QR head, 1=serial (QR via RS232), 2=ID card, 99=heartbeat
 //   sn       — gate device serial number
 //   readno   — 1=entry reader, 2=exit reader
-//   time     — gate's timestamp (YYYYMMDDHHMMSS)
-router.get('/verify', async (req, res) => {
+//   time     — gate's timestamp
+router.all('/verify', async (req, res) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
 
-  const { id, idtype, sn, readno, time } = req.query;
+  // Merge query string + POST body so both request methods work
+  const params = { ...req.query, ...req.body };
+  const { id, idtype, sn, readno, time } = params;
   const idtypeN = parseInt(idtype, 10);
   const readnoN = parseInt(readno, 10);
 
@@ -46,8 +50,9 @@ router.get('/verify', async (req, res) => {
     return res.send(fmt(1, 0));
   }
 
-  // ② Only handle QR codes (idtype=0) for now
-  if (idtypeN !== 0) {
+  // ② Handle QR codes: idtype=0 (QR head) and idtype=1 (QR via serial port)
+  // Both carry the qrToken as `id`; treat identically.
+  if (idtypeN !== 0 && idtypeN !== 1) {
     console.warn(`[Gate] Unsupported idtype=${idtype}`);
     return res.send(fmt(0, readnoN, '不支援此類型'));
   }
