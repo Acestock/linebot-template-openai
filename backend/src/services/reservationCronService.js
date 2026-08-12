@@ -6,11 +6,12 @@ function startReservationReminderJob() {
   cron.schedule('* * * * *', async () => {
     const now = new Date();
 
-    // ① 自動取消逾時未進場的 confirmed 預約（超過 expectedCheckIn + 30min）
+    // ① 自動取消未進場的 confirmed 預約：超過 expectedCheckOut + 30min 仍未入場
+    // 使用 expectedCheckOut 而非 expectedCheckIn，讓客人在整個時段內都能入場
     try {
       const overdueWindow = new Date(now.getTime() - 30 * 60 * 1000);
       await Reservation.updateMany(
-        { status: 'confirmed', expectedCheckIn: { $lt: overdueWindow } },
+        { status: 'confirmed', expectedCheckOut: { $lt: overdueWindow } },
         { $set: { status: 'cancelled' } }
       );
     } catch (err) {

@@ -98,6 +98,7 @@ router.all('/verify', async (req, res) => {
       }
 
       if (r.status === 'cancelled') {
+        console.warn(`[Gate] Entry blocked (cancelled): ${r._id} (${r.displayName})`);
         return res.send(fmt(0, 1, '預約已取消', '請重新預約'));
       }
 
