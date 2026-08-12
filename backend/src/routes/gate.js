@@ -109,7 +109,7 @@ router.all('/verify', async (req, res) => {
           return res.send(fmt(1, 2, '感謝使用', venue, name));
         }
 
-        if (r.totalPrice === 0 || r.paymentStatus === 'free') {
+        if ((r.totalPrice === 0 || r.paymentStatus === 'free') && r.mode !== 'walkin_short') {
           // Free plan — open gate and complete immediately
           r.status = 'completed';
           await r.save();
