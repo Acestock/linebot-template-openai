@@ -143,9 +143,11 @@ router.all('/verify', async (req, res) => {
       }
 
       if (r.status === 'confirmed') {
+        console.warn(`[Gate] Exit blocked (not checked in yet): ${r._id} (${r.displayName})`);
         return res.send(fmt(0, 2, '尚未入場', '請先掃碼入場'));
       }
 
+      console.warn(`[Gate] Exit blocked (status=${r.status}): ${r._id}`);
       return res.send(fmt(0, 2, '無法出場', '請聯繫工作人員'));
     }
 
