@@ -13,7 +13,7 @@ function gateJson(result, readno, str1 = '', str2 = '', str3 = '') {
     str1,
     str2,
     str3,
-    str4:        str3 || str1,
+    str4:        '讀一本書 享一段自己',
     sndid:       result === 1 ? 1 : 0,
     cnttext:     '',
     opendelay:   '',
