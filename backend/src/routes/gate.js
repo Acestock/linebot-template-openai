@@ -73,74 +73,62 @@ router.all('/verify', async (req, res) => {
     const name  = r.displayName || '訪客';
     const venue = r.venueName   || '';
 
-    // ── Entry (readno=1) ──────────────────────────────────────────────────────
-    if (readnoN === 1) {
+    // ── Entry (readno=2) ──────────────────────────────────────────────────────
+    if (readnoN === 2) {
       if (r.status === 'confirmed') {
         r.status = 'checked_in';
         if (!r.expectedCheckIn) r.expectedCheckIn = new Date();
         await r.save();
         console.log(`[Gate] Entry: ${r._id} (${r.displayName}) confirmed→checked_in`);
-        return res.json(gateJson(1, 1, '歡迎入場', venue, name));
+        return res.json(gateJson(1, 2, '歡迎入場', venue, name));
       }
 
       if (r.status === 'checked_in') {
+        // Re-entry after middle exit (中離)
         console.log(`[Gate] Re-entry: ${r._id} (${r.displayName})`);
-        return res.json(gateJson(1, 1, '歡迎回來', venue, name));
+        return res.json(gateJson(1, 2, '歡迎回來', venue, name));
       }
 
       if (r.status === 'completed') {
-        return res.json(gateJson(0, 1, '此票已結束', '請重新預約'));
+        return res.json(gateJson(0, 2, '此票已結束', '請重新預約'));
       }
 
       if (r.status === 'cancelled') {
         console.warn(`[Gate] Entry blocked (cancelled): ${r._id} (${r.displayName})`);
-        return res.json(gateJson(0, 1, '預約已取消', '請重新預約'));
+        return res.json(gateJson(0, 2, '預約已取消', '請重新預約'));
       }
 
-      return res.json(gateJson(0, 1, '無法入場', '請聯繫工作人員'));
+      return res.json(gateJson(0, 2, '無法入場', '請聯繫工作人員'));
     }
 
-    // ── Exit (readno=2) ───────────────────────────────────────────────────────
-    if (readnoN === 2) {
+    // ── Exit (readno=1) ───────────────────────────────────────────────────────
+    // Exit scan only opens the gate; status stays checked_in so user can re-enter
+    // (middle exit / 中離). Final archiving is handled by cron after payment.
+    if (readnoN === 1) {
       if (r.status === 'checked_in') {
-
-        if (r.paymentStatus === 'paid') {
-          console.log(`[Gate] Exit (paid): ${r._id} (${r.displayName})`);
-          return res.json(gateJson(1, 2, '感謝使用', venue, name));
-        }
-
-        if ((r.totalPrice === 0 || r.paymentStatus === 'free') && r.mode !== 'walkin_short') {
-          r.status = 'completed';
-          await r.save();
-          console.log(`[Gate] Exit (free): ${r._id} (${r.displayName})`);
-          return res.json(gateJson(1, 2, '感謝使用', venue, name));
-        }
-
-        if (r.mode === 'walkin_short') {
+        // Block unpaid walkin_short — must pay via LIFF before exiting
+        if (r.mode === 'walkin_short' && r.paymentStatus !== 'paid') {
           console.warn(`[Gate] Exit blocked (unpaid walkin_short): ${r._id}`);
-          return res.json(gateJson(0, 2, '請先完成結帳', '開啟 LINE 結帳'));
+          return res.json(gateJson(0, 1, '請先完成結帳', '開啟 LINE 結帳'));
         }
-
-        // Unpaid regular booking — open but flag for follow-up
-        r.unpaidExit = true;
-        r.status = 'completed';
-        await r.save();
-        console.warn(`[Gate] Exit (unpaidExit): ${r._id} (${r.displayName})`);
-        return res.json(gateJson(1, 2, '注意未完成結帳', '請盡快付款'));
+        // All other cases (paid, free, unpaid regular): open gate, keep checked_in
+        console.log(`[Gate] Exit: ${r._id} (${r.displayName}) payStatus=${r.paymentStatus}`);
+        return res.json(gateJson(1, 1, '請慢走', venue, name));
       }
 
       if (r.status === 'completed') {
-        console.log(`[Gate] Exit (already completed): ${r._id}`);
-        return res.json(gateJson(1, 2, '感謝使用', venue));
+        // Post-payment grace still active or already done — still open, never trap
+        console.log(`[Gate] Exit (completed): ${r._id}`);
+        return res.json(gateJson(1, 1, '感謝使用', venue));
       }
 
       if (r.status === 'confirmed') {
         console.warn(`[Gate] Exit blocked (not checked in yet): ${r._id} (${r.displayName})`);
-        return res.json(gateJson(0, 2, '尚未入場', '請先掃碼入場'));
+        return res.json(gateJson(0, 1, '尚未入場', '請先掃碼入場'));
       }
 
       console.warn(`[Gate] Exit blocked (status=${r.status}): ${r._id}`);
-      return res.json(gateJson(0, 2, '無法出場', '請聯繫工作人員'));
+      return res.json(gateJson(0, 1, '無法出場', '請聯繫工作人員'));
     }
 
     console.warn(`[Gate] Unknown readno=${readno}`);
