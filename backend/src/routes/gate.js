@@ -106,13 +106,10 @@ router.all('/verify', async (req, res) => {
     // (middle exit / 中離). Final archiving is handled by cron after payment.
     if (readnoN === 1) {
       if (r.status === 'checked_in') {
-        // Block unpaid walkin_short — must pay via LIFF before exiting
-        if (r.mode === 'walkin_short' && r.paymentStatus !== 'paid') {
-          console.warn(`[Gate] Exit blocked (unpaid walkin_short): ${r._id}`);
-          return res.json(gateJson(0, 1, '請先完成結帳', '開啟 LINE 結帳'));
-        }
-        // All other cases (paid, free, unpaid regular): open gate, keep checked_in
-        console.log(`[Gate] Exit: ${r._id} (${r.displayName}) payStatus=${r.paymentStatus}`);
+        // Open gate for all cases (middle exit / 中離 allowed).
+        // Status stays checked_in so user can re-enter freely.
+        // Cron archives to completed 10 min after payment is confirmed.
+        console.log(`[Gate] Exit: ${r._id} (${r.displayName}) mode=${r.mode} payStatus=${r.paymentStatus}`);
         return res.json(gateJson(1, 1, '請慢走', venue, name));
       }
 
