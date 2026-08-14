@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { fetchVenue } from '../api';
 
 function Accordion({ title, children }) {
@@ -27,10 +27,93 @@ function Accordion({ title, children }) {
 }
 
 const SLOT_MAP = {
-  morning: { label: '早上', icon: '🌅', range: '07–12' },
+  morning:   { label: '早上', icon: '🌅', range: '07–12' },
   afternoon: { label: '下午', icon: '☀️', range: '12–18' },
-  evening: { label: '晚上', icon: '🌙', range: '18–02' }
+  evening:   { label: '晚上', icon: '🌙', range: '18–02' }
 };
+
+// Inline SVG icons (no external dependency)
+const IconLocation = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: '1px' }}>
+    <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/>
+    <circle cx="12" cy="10" r="3"/>
+  </svg>
+);
+
+const IconClock = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: '1px' }}>
+    <circle cx="12" cy="12" r="10"/>
+    <polyline points="12 6 12 12 16 14"/>
+  </svg>
+);
+
+const IconInfo = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: '1px' }}>
+    <circle cx="12" cy="12" r="10"/>
+    <line x1="12" y1="8" x2="12" y2="8"/>
+    <line x1="12" y1="12" x2="12" y2="16"/>
+  </svg>
+);
+
+// Auto-sliding image carousel
+function ImageCarousel({ images }) {
+  const [idx, setIdx] = useState(0);
+  const timerRef = useRef(null);
+
+  function startTimer() {
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setIdx(i => (i + 1) % images.length);
+    }, 3500);
+  }
+
+  useEffect(() => {
+    if (images.length > 1) startTimer();
+    return () => clearInterval(timerRef.current);
+  }, [images.length]);
+
+  if (images.length === 0) {
+    return (
+      <div style={{ width: '100%', height: '200px', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '40px' }}>🏢</div>
+    );
+  }
+
+  if (images.length === 1) {
+    return <img src={images[0]} alt="" style={{ width: '100%', height: '220px', objectFit: 'cover', display: 'block' }} />;
+  }
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '220px', overflow: 'hidden' }}>
+      {images.map((src, i) => (
+        <img
+          key={i}
+          src={src}
+          alt=""
+          style={{
+            position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+            opacity: i === idx ? 1 : 0,
+            transition: 'opacity 0.6s ease'
+          }}
+        />
+      ))}
+      {/* Dot indicators */}
+      <div style={{ position: 'absolute', bottom: '10px', left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: '6px' }}>
+        {images.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => { setIdx(i); startTimer(); }}
+            style={{
+              width: i === idx ? '18px' : '7px', height: '7px',
+              borderRadius: '4px', border: 'none', padding: 0,
+              background: i === idx ? '#fff' : 'rgba(255,255,255,0.55)',
+              cursor: 'pointer', transition: 'all 0.3s'
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function VenueDetailPage({ venueId, onReserve, onWalkIn }) {
   const [venue, setVenue] = useState(null);
@@ -48,14 +131,15 @@ export default function VenueDetailPage({ venueId, onReserve, onWalkIn }) {
   const multiPlans  = (venue.plans || []).filter(p => p.type === 'multi');
   const activeAnnouncements = (venue.announcements || []).filter(a => a.isActive);
 
+  // Collect all images: imageUrls array takes priority, fallback to imageUrl
+  const images = (venue.imageUrls && venue.imageUrls.length > 0)
+    ? venue.imageUrls
+    : (venue.imageUrl ? [venue.imageUrl] : []);
+
   return (
     <div style={{ flex: 1, overflowY: 'auto', background: '#fff' }}>
-      {/* Hero image */}
-      {venue.imageUrl ? (
-        <img src={venue.imageUrl} alt={venue.name} style={{ width: '100%', height: '200px', objectFit: 'cover', display: 'block' }} />
-      ) : (
-        <div style={{ width: '100%', height: '160px', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '40px' }}>🏢</div>
-      )}
+      {/* Hero image carousel */}
+      <ImageCarousel images={images} />
 
       {/* Announcements */}
       {activeAnnouncements.length > 0 && (
@@ -74,18 +158,18 @@ export default function VenueDetailPage({ venueId, onReserve, onWalkIn }) {
 
         {/* Info */}
         {venue.transportInfo && (
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '6px', fontSize: '14px', color: '#555' }}>
-            <span>ℹ️</span><span>{venue.transportInfo}</span>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '6px', fontSize: '14px', color: '#555', alignItems: 'flex-start' }}>
+            <IconInfo /><span>{venue.transportInfo}</span>
           </div>
         )}
         {venue.address && (
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '6px', fontSize: '14px', color: '#555' }}>
-            <span>📍</span><span>{venue.address}</span>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '6px', fontSize: '14px', color: '#555', alignItems: 'flex-start' }}>
+            <IconLocation /><span>{venue.address}</span>
           </div>
         )}
         {venue.businessHours && (
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', fontSize: '14px', color: '#555' }}>
-            <span>🕐</span><span style={{ whiteSpace: 'pre-line' }}>{venue.businessHours}</span>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', fontSize: '14px', color: '#555', alignItems: 'flex-start' }}>
+            <IconClock /><span style={{ whiteSpace: 'pre-line' }}>{venue.businessHours}</span>
           </div>
         )}
 

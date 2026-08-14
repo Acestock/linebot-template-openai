@@ -151,7 +151,7 @@ function VenueTab() {
   }, []);
   useEffect(load, [load]);
 
-  const emptyForm = { name: '', address: '', transportInfo: '', imageUrl: '', businessHours: '', facilities: '', rules: '', howToUse: '', color: '#2196F3', maxCapacityPerSlot: 10, isActive: true, shortSession: { enabled: false, minHourPrice: 40, ratio1h: 0.25, ratio2h: 0.60, ratio3h: 0.80, maxCapacityBlock: 2 } };
+  const emptyForm = { name: '', address: '', transportInfo: '', imageUrl: '', imageUrls: [], businessHours: '', facilities: '', rules: '', howToUse: '', color: '#2196F3', maxCapacityPerSlot: 10, isActive: true, shortSession: { enabled: false, minHourPrice: 40, ratio1h: 0.25, ratio2h: 0.60, ratio3h: 0.80, maxCapacityBlock: 2 } };
 
   async function save() {
     if (!form.name) return alert('請輸入場地名稱');
@@ -211,7 +211,30 @@ function VenueTab() {
             <Field label="場地名稱 *"><input style={inputStyle} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="台大醫院重慶" /></Field>
             <Field label="地址"><input style={inputStyle} value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} /></Field>
             <Field label="交通資訊"><input style={inputStyle} value={form.transportInfo} onChange={e => setForm(f => ({ ...f, transportInfo: e.target.value }))} placeholder="捷運XX站步行X分鐘" /></Field>
-            <Field label="場地圖片 URL"><input style={inputStyle} value={form.imageUrl} onChange={e => setForm(f => ({ ...f, imageUrl: e.target.value }))} /></Field>
+            <Field label="場地圖片（可多張，輪播顯示）">
+              {(form.imageUrls || []).map((url, i) => (
+                <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                  <input
+                    style={{ ...inputStyle, flex: 1 }}
+                    value={url}
+                    onChange={e => {
+                      const urls = [...(form.imageUrls || [])];
+                      urls[i] = e.target.value;
+                      setForm(f => ({ ...f, imageUrls: urls }));
+                    }}
+                    placeholder="https://..."
+                  />
+                  <button
+                    onClick={() => setForm(f => ({ ...f, imageUrls: (f.imageUrls || []).filter((_, j) => j !== i) }))}
+                    style={{ ...btn('#ffebee', '#c62828'), padding: '8px 12px', flexShrink: 0 }}
+                  >✕</button>
+                </div>
+              ))}
+              <button
+                onClick={() => setForm(f => ({ ...f, imageUrls: [...(f.imageUrls || []), ''] }))}
+                style={{ ...btn('#f5f5f5', '#333'), width: '100%', marginTop: '4px' }}
+              >＋ 新增圖片網址</button>
+            </Field>
             <Field label="營業時間"><textarea style={textareaStyle} rows={2} value={form.businessHours} onChange={e => setForm(f => ({ ...f, businessHours: e.target.value }))} /></Field>
             <Field label="設備與服務"><textarea style={textareaStyle} rows={3} value={form.facilities} onChange={e => setForm(f => ({ ...f, facilities: e.target.value }))} /></Field>
             <Field label="使用規範"><textarea style={textareaStyle} rows={3} value={form.rules} onChange={e => setForm(f => ({ ...f, rules: e.target.value }))} /></Field>

@@ -5,6 +5,7 @@ const VenueSchema = new mongoose.Schema({
   address:            { type: String, default: '' },
   transportInfo:      { type: String, default: '' },
   imageUrl:           { type: String, default: '' },
+  imageUrls:          [{ type: String }],
   businessHours:      { type: String, default: '' },
   facilities:         { type: String, default: '' },
   rules:              { type: String, default: '' },
