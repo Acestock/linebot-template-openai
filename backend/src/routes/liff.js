@@ -126,15 +126,22 @@ async function getSlotAvailability(venueId, maxCapacity, dateStr) {
 
   for (const slot of slotKeys) {
     const block = blocks.find(b => b.slots.includes(slot));
-    if (block) {
-      result[slot] = { remaining: 0, total: maxCapacity, blocked: true, eventName: block.eventName };
-      continue;
-    }
     const count = await Reservation.countDocuments({
       venueId, date: { $gte: dateStart, $lt: dateEnd },
       slots: slot,
       status: { $in: ['confirmed', 'checked_in'] }
     });
+    if (block) {
+      const reserved = block.capacity > 0 ? block.capacity : maxCapacity;
+      const remaining = Math.max(0, maxCapacity - count - reserved);
+      result[slot] = {
+        remaining, total: maxCapacity,
+        blocked: remaining === 0,
+        eventName: block.eventName,
+        reservedCapacity: reserved
+      };
+      continue;
+    }
     result[slot] = { remaining: Math.max(0, maxCapacity - count), total: maxCapacity };
   }
   return result;

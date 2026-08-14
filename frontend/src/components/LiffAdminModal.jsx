@@ -37,6 +37,7 @@ function BlockedSlotsSection({ venues }) {
   const [date, setDate]             = useState('');
   const [slots, setSlots]           = useState([]);
   const [eventName, setEventName]   = useState('');
+  const [capacity, setCapacity]     = useState('');
   const [saving, setSaving]         = useState(false);
   const [filterVenue, setFilterVenue] = useState('');
 
@@ -60,9 +61,9 @@ function BlockedSlotsSection({ venues }) {
       await authFetch(`${API_BASE}/api/blocked-slots`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ venueId: selVenue, date, slots, eventName })
+        body: JSON.stringify({ venueId: selVenue, date, slots, eventName, capacity: capacity === '' ? 0 : +capacity })
       });
-      setDate(''); setSlots([]); setEventName('');
+      setDate(''); setSlots([]); setEventName(''); setCapacity('');
       loadBlocks();
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
@@ -78,7 +79,7 @@ function BlockedSlotsSection({ venues }) {
 
   return (
     <div style={{ marginTop: '24px', borderTop: '2px solid #f0f0f0', paddingTop: '20px' }}>
-      <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '14px', color: '#333' }}>包場管理（全時段預約）</div>
+      <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '14px', color: '#333' }}>包場管理</div>
 
       {/* Add form */}
       <div style={{ background: '#f9f9f9', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
@@ -100,6 +101,13 @@ function BlockedSlotsSection({ venues }) {
               </label>
             ))}
           </div>
+        </Field>
+        <Field label="包場人數（留空或 0 = 封鎖整個時段；填數字 = 只佔用指定座位數）">
+          <input
+            type="number" min="0" style={{ ...inputStyle, width: '120px' }}
+            value={capacity} onChange={e => setCapacity(e.target.value)}
+            placeholder="留空=全包"
+          />
         </Field>
         <Field label="活動名稱（選填）">
           <input style={inputStyle} value={eventName} onChange={e => setEventName(e.target.value)} placeholder="例：VIP 包場、企業活動" />
@@ -128,7 +136,8 @@ function BlockedSlotsSection({ venues }) {
                 <div style={{ fontWeight: '600', fontSize: '14px' }}>{venueName} — {dateStr}</div>
                 <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>
                   {(b.slots || []).map(slotLabel).join(' + ')}
-                  {b.eventName ? ` · 活動：${b.eventName}` : ''}
+                  {b.capacity > 0 ? ` · 佔 ${b.capacity} 位` : ' · 全時段封鎖'}
+                  {b.eventName ? ` · ${b.eventName}` : ''}
                 </div>
               </div>
               <button onClick={() => handleDelete(b._id)} style={btn('#ffebee', '#c62828')}>刪除</button>
