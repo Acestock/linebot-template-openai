@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import API_BASE, { authFetch } from '../config';
 
-const TABS = ['場地管理', '時段方案', '公告管理', '預約列表', '系統設定', '任務管理'];
+const TABS = ['場地管理', '時段方案', '公告管理', '預約列表', '系統設定', '任務管理', '營業分析'];
 const SLOT_OPTIONS = [
   { key: 'morning',   label: '早上 (07–12)' },
   { key: 'afternoon', label: '下午 (12–18)' },
@@ -827,6 +827,246 @@ function SystemSettingsTab() {
   );
 }
 
+// ── Tab 7: 營業額分析 ─────────────────────────────────────────────────────────
+const PERIOD_OPTIONS = [
+  { key: 'week',  label: '本週' },
+  { key: 'month', label: '本月' },
+  { key: 'year',  label: '本年' }
+];
+
+function RevenueBarChart({ rows, period }) {
+  if (!rows || rows.length === 0) {
+    return <div style={{ textAlign: 'center', color: '#aaa', padding: '40px 0', fontSize: '13px' }}>尚無收入紀錄</div>;
+  }
+
+  const maxRevenue = Math.max(...rows.map(r => r.revenue), 1);
+  const chartH = 120, barArea = 80, padTop = 10, padBot = 30;
+  const count = rows.length;
+  const vbW = Math.max(count * 28, 300);
+  const barW = Math.max(Math.min(vbW / count * 0.55, 22), 6);
+  const gap   = vbW / count;
+
+  function fmtLabel(p) {
+    if (period === 'year') {
+      const [, m] = p.split('-');
+      return ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'][parseInt(m, 10) - 1] || p;
+    }
+    const d = new Date(p + 'T00:00:00');
+    if (period === 'week') return ['日','一','二','三','四','五','六'][d.getDay()];
+    return String(d.getDate());
+  }
+
+  return (
+    <svg viewBox={`0 0 ${vbW} ${chartH}`} width="100%" style={{ display: 'block', overflow: 'visible' }}>
+      {rows.map((r, i) => {
+        const barH = r.revenue > 0 ? Math.max((r.revenue / maxRevenue) * barArea, 3) : 0;
+        const x    = i * gap + gap / 2;
+        const y    = padTop + barArea - barH;
+        return (
+          <g key={r.period}>
+            {r.revenue > 0 && (
+              <text x={x} y={y - 3} textAnchor="middle" fontSize="8" fill="#888">
+                ${r.revenue >= 1000 ? (r.revenue / 1000).toFixed(1) + 'k' : r.revenue}
+              </text>
+            )}
+            <rect x={x - barW / 2} y={y} width={barW} height={barH} rx="3" fill="#C9A882" opacity="0.85" />
+            <text x={x} y={padTop + barArea + padBot - 16} textAnchor="middle" fontSize="9" fill="#999">
+              {fmtLabel(r.period)}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function AnalyticsTab() {
+  const [period,  setPeriod]  = useState('month');
+  const [data,    setData]    = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [metric,  setMetric]  = useState('revenue'); // 'revenue' | 'visitors'
+
+  const load = useCallback(() => {
+    setLoading(true);
+    authFetch(`${API_BASE}/api/analytics?period=${period}`)
+      .then(r => r.json())
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [period]);
+  useEffect(load, [load]);
+
+  const fmtMoney = n => `$${Number(n).toLocaleString()}`;
+
+  function periodLabel(p, period) {
+    if (period === 'year') {
+      const [, m] = p.split('-');
+      return `${parseInt(m, 10)} 月`;
+    }
+    const d = new Date(p + 'T00:00:00');
+    const day = ['日','一','二','三','四','五','六'][d.getDay()];
+    if (period === 'week') return `${p.slice(5)} (${day})`;
+    return p.slice(5).replace('-', '/') + ` (${day})`;
+  }
+
+  const chartRows = data?.rows?.map(r => ({
+    ...r,
+    value: metric === 'revenue' ? r.revenue : r.visitors
+  })) || [];
+
+  const maxChartVal = Math.max(...chartRows.map(r => r.value), 1);
+
+  return (
+    <div>
+      {/* Period selector */}
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
+        {PERIOD_OPTIONS.map(o => (
+          <button
+            key={o.key}
+            onClick={() => setPeriod(o.key)}
+            style={{
+              padding: '6px 16px', borderRadius: '20px', border: 'none', cursor: 'pointer',
+              fontWeight: '600', fontSize: '13px',
+              background: period === o.key ? '#111' : '#f0f0f0',
+              color:      period === o.key ? '#fff' : '#555'
+            }}
+          >{o.label}</button>
+        ))}
+        <button onClick={load} style={{ marginLeft: 'auto', padding: '6px 12px', borderRadius: '20px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#888' }}>重整</button>
+      </div>
+
+      {loading && <div style={{ textAlign: 'center', padding: '40px', color: '#aaa' }}>載入中...</div>}
+
+      {!loading && data && (
+        <>
+          {/* Summary cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '20px' }}>
+            {[
+              { label: '總營業額', value: fmtMoney(data.summary.totalRevenue), sub: `${data.summary.totalPaidCount} 筆付款`, color: '#1b5e20', bg: '#e8f5e9' },
+              { label: '總入場人次', value: `${data.summary.totalVisitors} 人`, sub: '已入場 + 已完成', color: '#1565c0', bg: '#e3f2fd' },
+              { label: '客單價', value: data.summary.totalVisitors > 0 ? fmtMoney(data.summary.avgRevenuePerVisitor) : '—', sub: '平均每人次', color: '#6a1b9a', bg: '#f3e5f5' }
+            ].map(c => (
+              <div key={c.label} style={{ background: c.bg, borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+                <div style={{ fontSize: '11px', color: c.color, fontWeight: '600', marginBottom: '4px' }}>{c.label}</div>
+                <div style={{ fontSize: '18px', fontWeight: '800', color: c.color }}>{c.value}</div>
+                <div style={{ fontSize: '10px', color: '#999', marginTop: '2px' }}>{c.sub}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Metric toggle */}
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', color: '#888', fontWeight: '600' }}>圖表</span>
+            {[{ key: 'revenue', label: '營業額' }, { key: 'visitors', label: '人次' }].map(m => (
+              <button key={m.key} onClick={() => setMetric(m.key)} style={{
+                padding: '4px 12px', borderRadius: '14px', border: 'none', cursor: 'pointer',
+                fontSize: '12px', fontWeight: '600',
+                background: metric === m.key ? '#C9A882' : '#f0f0f0',
+                color:      metric === m.key ? '#fff' : '#777'
+              }}>{m.label}</button>
+            ))}
+          </div>
+
+          {/* Bar chart */}
+          <div style={{ border: '1px solid #eee', borderRadius: '10px', padding: '12px 8px 4px', marginBottom: '16px', overflowX: 'auto' }}>
+            <div style={{ minWidth: `${Math.max(chartRows.length * 28, 300)}px` }}>
+              {metric === 'revenue'
+                ? <RevenueBarChart rows={data.rows} period={period} />
+                : (
+                  <svg viewBox={`0 0 ${Math.max(chartRows.length * 28, 300)} 120`} width="100%" style={{ display: 'block', overflow: 'visible' }}>
+                    {chartRows.map((r, i) => {
+                      const vbW = Math.max(chartRows.length * 28, 300);
+                      const gap = vbW / chartRows.length;
+                      const barW = Math.max(Math.min(gap * 0.55, 22), 6);
+                      const barH = r.value > 0 ? Math.max((r.value / maxChartVal) * 80, 3) : 0;
+                      const x = i * gap + gap / 2;
+                      const y = 90 - barH;
+                      return (
+                        <g key={r.period}>
+                          {r.value > 0 && <text x={x} y={y - 3} textAnchor="middle" fontSize="8" fill="#888">{r.value}</text>}
+                          <rect x={x - barW / 2} y={y} width={barW} height={barH} rx="3" fill="#1565c0" opacity="0.75" />
+                          <text x={x} y={104} textAnchor="middle" fontSize="9" fill="#999">
+                            {period === 'year'
+                              ? `${parseInt(r.period.split('-')[1], 10)}月`
+                              : period === 'week'
+                                ? ['日','一','二','三','四','五','六'][new Date(r.period + 'T00:00:00').getDay()]
+                                : String(new Date(r.period + 'T00:00:00').getDate())}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                )
+              }
+            </div>
+          </div>
+
+          {/* Venue breakdown */}
+          {data.byVenue.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontWeight: '700', fontSize: '13px', marginBottom: '8px' }}>各場地收入</div>
+              <div style={{ border: '1px solid #eee', borderRadius: '10px', overflow: 'hidden' }}>
+                {data.byVenue.map((v, i) => (
+                  <div key={v.venueName} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '9px 14px',
+                    borderBottom: i < data.byVenue.length - 1 ? '1px solid #f5f5f5' : 'none',
+                    background: i % 2 === 0 ? '#fff' : '#fafafa'
+                  }}>
+                    <span style={{ fontSize: '13px', color: '#333' }}>{v.venueName}</span>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: '14px', fontWeight: '700', color: '#1b5e20' }}>{fmtMoney(v.revenue)}</span>
+                      <span style={{ fontSize: '11px', color: '#aaa', marginLeft: '8px' }}>{v.count} 筆</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Detail table */}
+          <div>
+            <div style={{ fontWeight: '700', fontSize: '13px', marginBottom: '8px' }}>
+              {period === 'year' ? '月別明細' : '日別明細'}
+            </div>
+            {data.rows.length === 0
+              ? <div style={{ textAlign: 'center', color: '#aaa', padding: '16px', fontSize: '13px' }}>本期無資料</div>
+              : (
+                <div style={{ border: '1px solid #eee', borderRadius: '10px', overflow: 'hidden' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', padding: '8px 14px', background: '#fafafa', borderBottom: '1px solid #eee' }}>
+                    {['日期', '營業額', '入場人次', '付款筆數'].map(h => (
+                      <div key={h} style={{ fontSize: '11px', fontWeight: '700', color: '#888' }}>{h}</div>
+                    ))}
+                  </div>
+                  {[...data.rows].reverse().map((r, i) => (
+                    <div key={r.period} style={{
+                      display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr',
+                      padding: '9px 14px',
+                      borderBottom: i < data.rows.length - 1 ? '1px solid #f5f5f5' : 'none',
+                      background: i % 2 === 0 ? '#fff' : '#fafafa'
+                    }}>
+                      <div style={{ fontSize: '12px', color: '#444' }}>{periodLabel(r.period, period)}</div>
+                      <div style={{ fontSize: '13px', fontWeight: r.revenue > 0 ? '700' : '400', color: r.revenue > 0 ? '#1b5e20' : '#ccc' }}>
+                        {r.revenue > 0 ? fmtMoney(r.revenue) : '—'}
+                      </div>
+                      <div style={{ fontSize: '13px', color: r.visitors > 0 ? '#333' : '#ccc' }}>
+                        {r.visitors > 0 ? `${r.visitors} 人` : '—'}
+                      </div>
+                      <div style={{ fontSize: '12px', color: r.paidCount > 0 ? '#555' : '#ccc' }}>
+                        {r.paidCount > 0 ? `${r.paidCount} 筆` : '—'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            }
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Tasks Admin Tab ───────────────────────────────────────────────────────────
 function TasksAdminTab() {
   const [venues, setVenues]         = useState([]);
@@ -1079,6 +1319,7 @@ export default function LiffAdminModal({ onClose }) {
           {tab === 3 && <ReservationsTab />}
           {tab === 4 && <SystemSettingsTab />}
           {tab === 5 && <TasksAdminTab />}
+          {tab === 6 && <AnalyticsTab />}
         </div>
       </div>
     </div>

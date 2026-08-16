@@ -1488,4 +1488,93 @@ router.get('/coupons', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── Analytics ───────────────────────────────────────────────────────────────
+// GET /api/analytics?period=week|month|year[&venueId=...]
+router.get('/analytics', async (req, res) => {
+  try {
+    const { period = 'month', venueId } = req.query;
+
+    const now = new Date();
+    const tz  = 'Asia/Taipei';
+    let startDate, groupFmt;
+
+    if (period === 'week') {
+      startDate = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
+      startDate.setHours(0, 0, 0, 0);
+      groupFmt  = '%Y-%m-%d';
+    } else if (period === 'year') {
+      startDate = new Date(now.getFullYear(), 0, 1);
+      groupFmt  = '%Y-%m';
+    } else {
+      // month = current calendar month
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      groupFmt  = '%Y-%m-%d';
+    }
+
+    const baseMatch = {};
+    if (venueId) baseMatch.venueId = new (require('mongoose').Types.ObjectId)(venueId);
+
+    // ── Revenue: paid reservations ────────────────────────────────────────────
+    const revMatch = { ...baseMatch, paymentStatus: 'paid', paidAt: { $gte: startDate } };
+
+    const [revenueByPeriod, byVenue, visitorsByPeriod, totalPaidCount] = await Promise.all([
+      Reservation.aggregate([
+        { $match: revMatch },
+        { $group: {
+          _id: { $dateToString: { format: groupFmt, date: '$paidAt', timezone: tz } },
+          revenue: { $sum: '$totalPrice' },
+          count:   { $sum: 1 }
+        }},
+        { $sort: { _id: 1 } }
+      ]),
+      Reservation.aggregate([
+        { $match: revMatch },
+        { $group: {
+          _id:     '$venueName',
+          revenue: { $sum: '$totalPrice' },
+          count:   { $sum: 1 }
+        }},
+        { $sort: { revenue: -1 } }
+      ]),
+      // Visitor count: anyone who actually entered (checked_in or completed)
+      Reservation.aggregate([
+        { $match: { ...baseMatch, status: { $in: ['checked_in', 'completed'] }, date: { $gte: startDate } } },
+        { $group: {
+          _id:      { $dateToString: { format: groupFmt, date: '$date', timezone: tz } },
+          visitors: { $sum: 1 }
+        }},
+        { $sort: { _id: 1 } }
+      ]),
+      Reservation.countDocuments(revMatch)
+    ]);
+
+    // Merge by period key
+    const periodMap = {};
+    for (const r of revenueByPeriod)  periodMap[r._id] = { period: r._id, revenue: r.revenue, paidCount: r.count, visitors: 0 };
+    for (const v of visitorsByPeriod) {
+      if (periodMap[v._id]) periodMap[v._id].visitors = v.visitors;
+      else periodMap[v._id] = { period: v._id, revenue: 0, paidCount: 0, visitors: v.visitors };
+    }
+
+    const rows = Object.values(periodMap).sort((a, b) => a.period.localeCompare(b.period));
+    const totalRevenue  = revenueByPeriod.reduce((s, r) => s + r.revenue, 0);
+    const totalVisitors = visitorsByPeriod.reduce((s, v) => s + v.visitors, 0);
+
+    res.json({
+      period,
+      summary: {
+        totalRevenue,
+        totalVisitors,
+        totalPaidCount,
+        avgRevenuePerVisitor: totalVisitors > 0 ? Math.round(totalRevenue / totalVisitors) : 0
+      },
+      rows,
+      byVenue: byVenue.map(v => ({ venueName: v._id || '—', revenue: v.revenue, count: v.count }))
+    });
+  } catch (err) {
+    console.error('[Analytics]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
