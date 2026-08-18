@@ -1,5 +1,6 @@
 const express = require('express');
 const Reservation = require('../models/Reservation');
+const StaffToken  = require('../models/StaffToken');
 
 const router = express.Router();
 
@@ -66,6 +67,16 @@ router.all('/verify', async (req, res) => {
     const r = await Reservation.findOne({ qrToken: id });
 
     if (!r) {
+      // Check if it's a staff door token
+      const st = await StaffToken.findOne({ token: id });
+      if (st) {
+        if (st.expiresAt < new Date()) {
+          console.warn(`[Gate] Staff token expired: ${id.slice(0, 8)}`);
+          return res.json(gateJson(0, readnoN, '員工 QR 已過期', '請重新產生'));
+        }
+        console.log(`[Gate] Staff token OK: ${st.venueName} readno=${readnoN}`);
+        return res.json(gateJson(1, readnoN, '員工入場', st.venueName || '', '工作人員'));
+      }
       console.warn(`[Gate] Unknown qrToken: ${id}`);
       return res.json(gateJson(0, readnoN, '票券無效', '請聯繫工作人員'));
     }

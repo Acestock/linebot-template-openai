@@ -1179,6 +1179,7 @@ const VenuePlan    = require('../models/VenuePlan');
 const Announcement = require('../models/Announcement');
 const Reservation  = require('../models/Reservation');
 const BlockedSlot  = require('../models/BlockedSlot');
+const StaffToken   = require('../models/StaffToken');
 
 router.get('/venues', async (req, res) => {
   try {
@@ -1486,6 +1487,20 @@ router.get('/coupons', async (req, res) => {
     const coupons = await Coupon.find(filter).sort({ createdAt: -1 }).lean();
     res.json(coupons);
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Staff Door Tokens ────────────────────────────────────────────────────────
+// POST /api/staff-tokens  — generate a 5-minute gate-open QR token for staff
+router.post('/staff-tokens', async (req, res) => {
+  try {
+    const { venueId, venueName } = req.body;
+    const token     = require('crypto').randomUUID();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    await StaffToken.create({ token, venueId: venueId || undefined, venueName: venueName || '', expiresAt });
+    res.json({ token, expiresAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── Analytics ───────────────────────────────────────────────────────────────

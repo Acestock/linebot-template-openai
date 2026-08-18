@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import QRCode from 'qrcode';
 import API_BASE, { authFetch } from '../config';
 
 const TABS = ['場地管理', '時段方案', '公告管理', '預約列表', '系統設定', '任務管理', '營業分析'];
@@ -1067,6 +1068,128 @@ function AnalyticsTab() {
   );
 }
 
+// ── Staff Door Modal ──────────────────────────────────────────────────────────
+function StaffDoorModal({ onClose }) {
+  const [venues,    setVenues]    = useState([]);
+  const [venueId,   setVenueId]   = useState('');
+  const [qrImg,     setQrImg]     = useState('');
+  const [expiresAt, setExpiresAt] = useState(null);
+  const [secsLeft,  setSecsLeft]  = useState(0);
+  const [loading,   setLoading]   = useState(false);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    authFetch(`${API_BASE}/api/venues`).then(r => r.json())
+      .then(vs => { setVenues(vs); if (vs.length) setVenueId(vs[0]._id); })
+      .catch(() => {});
+  }, []);
+
+  // countdown
+  useEffect(() => {
+    if (!expiresAt) return;
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      const s = Math.max(0, Math.round((new Date(expiresAt) - Date.now()) / 1000));
+      setSecsLeft(s);
+      if (s === 0) clearInterval(timerRef.current);
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [expiresAt]);
+
+  async function generate() {
+    if (!venueId) return alert('請選擇場地');
+    setLoading(true);
+    setQrImg('');
+    setExpiresAt(null);
+    try {
+      const venue = venues.find(v => v._id === venueId);
+      const res   = await authFetch(`${API_BASE}/api/staff-tokens`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venueId, venueName: venue?.name || '' })
+      });
+      const data = await res.json();
+      const img  = await QRCode.toDataURL(data.token, { width: 240, margin: 2, color: { dark: '#111', light: '#fff' } });
+      setQrImg(img);
+      setExpiresAt(data.expiresAt);
+      setSecsLeft(Math.round((new Date(data.expiresAt) - Date.now()) / 1000));
+    } catch (e) {
+      alert('產生失敗：' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const venueName = venues.find(v => v._id === venueId)?.name || '';
+  const expired   = secsLeft === 0 && !!expiresAt;
+  const mm = String(Math.floor(secsLeft / 60)).padStart(2, '0');
+  const ss = String(secsLeft % 60).padStart(2, '0');
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', width: '340px', maxWidth: '100%', padding: '24px', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <div style={{ fontWeight: '800', fontSize: '16px' }}>員工開門 QR</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✕</button>
+        </div>
+
+        {/* Venue selector */}
+        <div style={{ marginBottom: '14px' }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '4px' }}>選擇場地</label>
+          <select
+            style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '15px' }}
+            value={venueId} onChange={e => setVenueId(e.target.value)}
+          >
+            {venues.map(v => <option key={v._id} value={v._id}>{v.name}</option>)}
+          </select>
+        </div>
+
+        {/* Generate button */}
+        <button
+          onClick={generate}
+          disabled={loading}
+          style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', background: '#111', color: '#fff', fontWeight: '700', fontSize: '15px', cursor: 'pointer', marginBottom: '20px' }}
+        >
+          {loading ? '產生中...' : expired ? '🔄 重新產生 QR' : qrImg ? '🔄 重新產生' : '🚪 產生開門 QR'}
+        </button>
+
+        {/* QR display */}
+        {qrImg && (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>
+              {venueName}・工作人員專用
+            </div>
+            <div style={{
+              display: 'inline-block', padding: '12px', borderRadius: '12px',
+              border: expired ? '3px solid #ffcdd2' : '3px solid #c8e6c9',
+              opacity: expired ? 0.4 : 1, transition: 'opacity 0.3s'
+            }}>
+              <img src={qrImg} alt="Staff QR" style={{ width: '200px', height: '200px', display: 'block' }} />
+            </div>
+
+            {/* Countdown */}
+            <div style={{ marginTop: '12px' }}>
+              {expired ? (
+                <div style={{ fontSize: '13px', color: '#e53935', fontWeight: '700' }}>⚠ QR 已過期，請重新產生</div>
+              ) : (
+                <div style={{ fontSize: '22px', fontWeight: '800', color: secsLeft <= 60 ? '#e53935' : '#2e7d32', fontVariantNumeric: 'tabular-nums' }}>
+                  {mm}:{ss}
+                  <span style={{ fontSize: '12px', fontWeight: '400', color: '#aaa', marginLeft: '6px' }}>剩餘有效時間</span>
+                </div>
+              )}
+            </div>
+
+            <div style={{ fontSize: '11px', color: '#aaa', marginTop: '8px' }}>
+              閘門掃描此 QR 即可開門・5 分鐘內有效
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Tasks Admin Tab ───────────────────────────────────────────────────────────
 function TasksAdminTab() {
   const [venues, setVenues]         = useState([]);
@@ -1284,6 +1407,7 @@ function TasksAdminTab() {
 // ── Main Modal ────────────────────────────────────────────────────────────────
 export default function LiffAdminModal({ onClose }) {
   const [tab, setTab] = useState(0);
+  const [staffDoorOpen, setStaffDoorOpen] = useState(false);
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px' }}>
@@ -1295,8 +1419,16 @@ export default function LiffAdminModal({ onClose }) {
             <div style={{ fontWeight: 'bold', fontSize: '16px' }}>預約管理</div>
             <div style={{ fontSize: '12px', color: '#aaa', marginTop: '2px' }}>LIFF 預約系統設定</div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✕</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={() => setStaffDoorOpen(true)}
+              style={{ padding: '7px 14px', borderRadius: '8px', border: '1.5px solid #333', background: '#111', color: '#fff', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}
+            >🚪 開門</button>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✕</button>
+          </div>
         </div>
+
+        {staffDoorOpen && <StaffDoorModal onClose={() => setStaffDoorOpen(false)} />}
 
         {/* Tabs */}
         <div className="liff-tabs" style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', overflowX: 'auto', scrollbarWidth: 'none', flexShrink: 0 }}>
