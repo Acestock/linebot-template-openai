@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchVenue } from '../api';
+import { fetchVenue, fetchDurationPlans } from '../api';
 
 function Accordion({ title, children }) {
   const [open, setOpen] = useState(false);
@@ -115,18 +115,32 @@ function ImageCarousel({ images }) {
   );
 }
 
+function durationLabel(mins) {
+  if (!mins || mins === 0) return '整天';
+  if (mins < 60) return `${mins}分鐘`;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m ? `${h}小時${m}分` : `${h}小時`;
+}
+
 export default function VenueDetailPage({ venueId, onReserve, onWalkIn }) {
   const [venue, setVenue] = useState(null);
   const [plansOpen, setPlansOpen] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [durationPlans, setDurationPlans] = useState([]);
 
   useEffect(() => {
-    fetchVenue(venueId).then(setVenue).catch(() => {}).finally(() => setLoading(false));
+    fetchVenue(venueId).then(v => {
+      setVenue(v);
+      if ((v.strategy ?? 1) === 2) {
+        fetchDurationPlans(v._id).then(ps => setDurationPlans(ps.filter(p => p.isActive))).catch(() => {});
+      }
+    }).catch(() => {}).finally(() => setLoading(false));
   }, [venueId]);
 
   if (loading) return <div style={{ textAlign: 'center', padding: '60px', color: '#aaa' }}>載入中...</div>;
   if (!venue)  return <div style={{ textAlign: 'center', padding: '60px', color: '#aaa' }}>場地不存在</div>;
 
+  const isS2 = (venue.strategy ?? 1) === 2;
   const singlePlans = (venue.plans || []).filter(p => p.type === 'single');
   const multiPlans  = (venue.plans || []).filter(p => p.type === 'multi');
   const activeAnnouncements = (venue.announcements || []).filter(a => a.isActive);
@@ -173,8 +187,38 @@ export default function VenueDetailPage({ venueId, onReserve, onWalkIn }) {
           </div>
         )}
 
-        {/* Pricing */}
-        {(singlePlans.length > 0 || multiPlans.length > 0) && (
+        {/* Pricing — strategy 2: duration plans */}
+        {isS2 && durationPlans.length > 0 && (
+          <div style={{ border: '1px solid #eee', borderRadius: '12px', marginBottom: '12px', overflow: 'hidden' }}>
+            <button
+              onClick={() => setPlansOpen(o => !o)}
+              style={{
+                width: '100%', padding: '14px 16px', display: 'flex',
+                justifyContent: 'space-between', alignItems: 'center',
+                background: '#fafafa', border: 'none', fontSize: '15px',
+                fontWeight: '600', cursor: 'pointer'
+              }}
+            >
+              方案價目表 <span>{plansOpen ? '−' : '+'}</span>
+            </button>
+            {plansOpen && (
+              <div style={{ padding: '12px 16px' }}>
+                {durationPlans.map(p => (
+                  <div key={p._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid #f5f5f5' }}>
+                    <span style={{ fontSize: '14px', color: '#444' }}>
+                      {p.name}
+                      <span style={{ fontSize: '12px', color: '#999', marginLeft: '6px' }}>（{durationLabel(p.durationMinutes)}）</span>
+                    </span>
+                    <span style={{ fontSize: '14px', fontWeight: '600' }}>${p.price}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Pricing — strategy 1: time-slot plans */}
+        {!isS2 && (singlePlans.length > 0 || multiPlans.length > 0) && (
           <div style={{ border: '1px solid #eee', borderRadius: '12px', marginBottom: '12px', overflow: 'hidden' }}>
             <button
               onClick={() => setPlansOpen(o => !o)}
