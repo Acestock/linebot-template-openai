@@ -43,6 +43,21 @@ function InfoRow({ label, value }) {
   );
 }
 
+// ── Generic confirm modal (no native confirm — avoids URL in title bar) ──────
+function ConfirmModal({ message, onConfirm, onCancel }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', padding: '28px 24px', maxWidth: '320px', width: '100%', textAlign: 'center' }}>
+        <p style={{ fontSize: '15px', color: '#222', marginBottom: '24px', lineHeight: '1.6', whiteSpace: 'pre-line' }}>{message}</p>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button onClick={onCancel} style={{ flex: 1, padding: '12px', border: '1px solid #ddd', borderRadius: '10px', background: '#fff', fontSize: '15px', cursor: 'pointer', color: '#444' }}>取消</button>
+          <button onClick={onConfirm} style={{ flex: 1, padding: '12px', border: 'none', borderRadius: '10px', background: '#111', color: '#fff', fontSize: '15px', fontWeight: '600', cursor: 'pointer' }}>確定</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Booking detail view (shared between tabs, readOnly hides action buttons) ───
 function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const [cancelling, setCancelling]     = useState(false);
@@ -58,6 +73,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const [shortQuote, setShortQuote]             = useState(null);
   const [shortQuoteLoading, setShortQuoteLoading] = useState(false);
   const [showShortConfirm, setShowShortConfirm] = useState(false);
+  const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
 
   const isShortSession = r.mode === 'walkin_short';
   const isUnpaidCheckout = localStatus === 'completed' && r.unpaidExit && localPayStatus !== 'paid';
@@ -103,38 +119,49 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
     finally { setQrLoading(false); }
   }
 
-  async function handleCancel() {
-    if (!confirm('確定要取消此預約嗎？')) return;
-    setCancelling(true);
-    try {
-      await cancelReservation(r._id);
-      setLocalStatus('cancelled');
-      onCancelled?.(r._id);
-    } catch (e) { alert(e.message); }
-    finally { setCancelling(false); }
+  function handleCancel() {
+    setConfirmModal({
+      message: '確定要取消此預約嗎？',
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setCancelling(true);
+        try {
+          await cancelReservation(r._id);
+          setLocalStatus('cancelled');
+          onCancelled?.(r._id);
+        } catch (e) { alert(e.message); }
+        finally { setCancelling(false); }
+      }
+    });
   }
 
-  async function handleCheckout() {
-    if (needsPayment) {
-      alert('請先完成付款才能出場');
-      return;
-    }
-    if (!confirm('確認完成使用並出場？出場後此時段容量將自動釋放。')) return;
-    setCheckingOut(true);
-    try {
-      await checkoutReservation(r._id);
-      setLocalStatus('completed');
-      onCompleted?.(r._id);
-    } catch (e) { alert(e.message); }
-    finally { setCheckingOut(false); }
+  function handleCheckout() {
+    if (needsPayment) { alert('請先完成付款才能出場'); return; }
+    setConfirmModal({
+      message: '確認完成使用並出場？\n出場後此時段容量將自動釋放。',
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setCheckingOut(true);
+        try {
+          await checkoutReservation(r._id);
+          setLocalStatus('completed');
+          onCompleted?.(r._id);
+        } catch (e) { alert(e.message); }
+        finally { setCheckingOut(false); }
+      }
+    });
   }
 
   async function handlePay(skipConfirm = false) {
     if (!skipConfirm) {
       const payLabel = selectedCoupon
         ? `使用折扣券折抵 $${selectedCoupon.discountAmount}，實付 $${effectivePrice}，確認前往付款？`
-        : '確認前往付款？將跳轉至藍新金流付款頁面。';
-      if (!confirm(payLabel)) return;
+        : '確認前往付款？\n將跳轉至藍新金流付款頁面。';
+      setConfirmModal({
+        message: payLabel,
+        onConfirm: () => { setConfirmModal(null); handlePay(true); }
+      });
+      return;
     }
     setPaying(true);
     try {
@@ -358,6 +385,15 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
           style={{ width: '100%', marginTop: '16px', padding: '12px', border: '1px solid #e0e0e0', borderRadius: '10px', background: '#fff', fontSize: '14px', color: '#666', cursor: 'pointer' }}>
           {cancelling ? '取消中...' : '取消此預約'}
         </button>
+      )}
+
+      {/* Custom confirm modal — replaces native confirm() to avoid URL in title */}
+      {confirmModal && (
+        <ConfirmModal
+          message={confirmModal.message}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={() => setConfirmModal(null)}
+        />
       )}
     </div>
   );

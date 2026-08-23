@@ -76,7 +76,13 @@ export default function LiffApp() {
     if (!user || page.name !== 'list') return;
     fetchMyReservations()
       .then(data => {
-        setHasActiveCheckIn((Array.isArray(data) ? data : []).some(r => r.status === 'checked_in'));
+        const today = new Date().toISOString().slice(0, 10);
+        setHasActiveCheckIn((Array.isArray(data) ? data : []).some(r => {
+          if (r.status === 'checked_in') return true;
+          // strategy 2 confirmed bookings for today also show FAB
+          if ((r.strategy ?? 1) === 2 && r.status === 'confirmed' && r.date === today) return true;
+          return false;
+        }));
       })
       .catch(() => {});
   }, [user, page.name]);
