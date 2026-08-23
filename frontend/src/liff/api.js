@@ -132,6 +132,23 @@ export async function fetchMyCoupons() {
   return json;
 }
 
+export async function fetchTodayEvents(venueId) {
+  const r = await fetch(`${BASE}/venues/${venueId}/today-events`);
+  if (!r.ok) throw new Error('無法取得活動資訊');
+  return r.json();
+}
+
+export async function postEventEntry(venueId, password) {
+  const r = await fetch(`${BASE}/venues/${venueId}/event-entry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '密碼不正確');
+  return json;
+}
+
 export async function fetchShortSessionQuote(venueId) {
   const r = await fetch(`${BASE}/venues/${venueId}/short-session-quote`);
   const json = await r.json();

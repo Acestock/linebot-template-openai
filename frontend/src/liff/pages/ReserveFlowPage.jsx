@@ -362,8 +362,8 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
                   >
                     <div style={{ fontSize: '15px', fontWeight: '700' }}>{s.startLabel}</div>
                     <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>→ {s.endLabel}</div>
-                    {isAvail && s.remaining <= 5 && (
-                      <div style={{ fontSize: '10px', marginTop: '3px', color: isSel ? 'rgba(255,255,255,0.8)' : '#e53935' }}>
+                    {isAvail && (
+                      <div style={{ fontSize: '10px', marginTop: '3px', color: isSel ? 'rgba(255,255,255,0.8)' : s.remaining <= 5 ? '#e53935' : '#777' }}>
                         剩 {s.remaining} 位
                       </div>
                     )}

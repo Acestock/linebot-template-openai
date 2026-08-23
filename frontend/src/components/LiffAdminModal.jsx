@@ -38,6 +38,8 @@ function BlockedSlotsSection({ venues }) {
   const [date, setDate]             = useState('');
   const [slots, setSlots]           = useState([]);
   const [eventName, setEventName]   = useState('');
+  const [buttonName, setButtonName] = useState('');
+  const [accessPassword, setAccessPassword] = useState('');
   const [capacity, setCapacity]     = useState('');
   const [saving, setSaving]         = useState(false);
   const [filterVenue, setFilterVenue] = useState('');
@@ -62,9 +64,9 @@ function BlockedSlotsSection({ venues }) {
       await authFetch(`${API_BASE}/api/blocked-slots`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ venueId: selVenue, date, slots, eventName, capacity: capacity === '' ? 0 : +capacity })
+        body: JSON.stringify({ venueId: selVenue, date, slots, eventName, buttonName, accessPassword, capacity: capacity === '' ? 0 : +capacity })
       });
-      setDate(''); setSlots([]); setEventName(''); setCapacity('');
+      setDate(''); setSlots([]); setEventName(''); setButtonName(''); setAccessPassword(''); setCapacity('');
       loadBlocks();
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
@@ -113,6 +115,12 @@ function BlockedSlotsSection({ venues }) {
         <Field label="活動名稱（選填）">
           <input style={inputStyle} value={eventName} onChange={e => setEventName(e.target.value)} placeholder="例：VIP 包場、企業活動" />
         </Field>
+        <Field label="前台按鈕文字（填入後，當天前台會出現此活動按鈕）">
+          <input style={inputStyle} value={buttonName} onChange={e => setButtonName(e.target.value)} placeholder="例：讀享年會・入場" />
+        </Field>
+        <Field label="入場密碼（填入後，使用者需輸入密碼才能取得 QR Code）">
+          <input style={inputStyle} value={accessPassword} onChange={e => setAccessPassword(e.target.value)} placeholder="例：duxiang2024" />
+        </Field>
         <button onClick={handleAdd} disabled={saving} style={{ ...btn('#111'), width: '100%', marginTop: '4px' }}>
           {saving ? '新增中...' : '＋ 新增包場'}
         </button>
@@ -139,6 +147,8 @@ function BlockedSlotsSection({ venues }) {
                   {(b.slots || []).map(slotLabel).join(' + ')}
                   {b.capacity > 0 ? ` · 佔 ${b.capacity} 位` : ' · 全時段封鎖'}
                   {b.eventName ? ` · ${b.eventName}` : ''}
+                  {b.buttonName ? ` · 按鈕：${b.buttonName}` : ''}
+                  {b.accessPassword ? ` · 🔑 已設密碼` : ''}
                 </div>
               </div>
               <button onClick={() => handleDelete(b._id)} style={btn('#ffebee', '#c62828')}>刪除</button>

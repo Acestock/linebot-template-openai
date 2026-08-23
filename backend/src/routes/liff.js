@@ -11,6 +11,7 @@ const Task = require('../models/Task');
 const TaskSubmission = require('../models/TaskSubmission');
 const Coupon = require('../models/Coupon');
 const DurationPlan = require('../models/DurationPlan');
+const StaffToken   = require('../models/StaffToken');
 const { getAvailableSlots, checkSlotAvailability } = require('../services/strategy2Service');
 const { createOrderParams: _ecpayCreateOrder }   = require('../services/ecpayService');
 const { createOrderParams: _newebpayCreateOrder } = require('../services/newebpayService');
@@ -321,6 +322,70 @@ router.get('/venues/:id/duration-plans', async (req, res) => {
     const plans = await DurationPlan.find({ venueId: req.params.id, isActive: true })
       .sort({ order: 1, createdAt: 1 }).lean();
     res.json(plans);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── GET /api/liff/venues/:id/today-events ─────────────────────────────────────
+// Returns today's BlockedSlots that have a buttonName (for event entry button)
+// Does NOT expose accessPassword
+router.get('/venues/:id/today-events', async (req, res) => {
+  try {
+    const venue = await Venue.findById(req.params.id).lean();
+    if (!venue || !venue.isActive) return res.status(404).json({ error: 'Venue not found' });
+
+    // Today in Asia/Taipei (UTC+8)
+    const nowTW = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const dateStr = nowTW.toISOString().slice(0, 10);
+    const dateStart = new Date(dateStr + 'T00:00:00+08:00');
+    const dateEnd   = new Date(dateStr + 'T23:59:59+08:00');
+
+    const blocks = await BlockedSlot.find({
+      venueId: req.params.id, isActive: true,
+      buttonName: { $ne: '' },
+      date: { $gte: dateStart, $lte: dateEnd }
+    }).lean();
+
+    res.json(blocks.map(b => ({
+      _id:       b._id,
+      eventName: b.eventName,
+      buttonName: b.buttonName,
+      slots:     b.slots
+    })));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── POST /api/liff/venues/:id/event-entry ─────────────────────────────────────
+// Verify event password and return a 5-minute QR token
+router.post('/venues/:id/event-entry', async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: '請輸入密碼' });
+
+    const venue = await Venue.findById(req.params.id).lean();
+    if (!venue || !venue.isActive) return res.status(404).json({ error: 'Venue not found' });
+
+    const nowTW = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const dateStr = nowTW.toISOString().slice(0, 10);
+    const dateStart = new Date(dateStr + 'T00:00:00+08:00');
+    const dateEnd   = new Date(dateStr + 'T23:59:59+08:00');
+
+    const block = await BlockedSlot.findOne({
+      venueId: req.params.id, isActive: true,
+      accessPassword: password,
+      date: { $gte: dateStart, $lte: dateEnd }
+    }).lean();
+
+    if (!block) return res.status(401).json({ error: '密碼不正確' });
+
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    await StaffToken.create({
+      token, venueId: venue._id, venueName: venue.name,
+      label: block.eventName || block.buttonName || '活動入場',
+      expiresAt
+    });
+
+    res.json({ qrToken: token, expiresAt, eventName: block.eventName || block.buttonName });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchVenue, fetchDurationPlans } from '../api';
+import QRCode from 'qrcode';
+import { fetchVenue, fetchDurationPlans, fetchTodayEvents, postEventEntry } from '../api';
 
 function Accordion({ title, children }) {
   const [open, setOpen] = useState(false);
@@ -122,11 +123,97 @@ function durationLabel(mins) {
   return m ? `${h}小時${m}分` : `${h}小時`;
 }
 
+// ── Event entry modal (password → QR) ────────────────────────────────────────
+function EventEntryModal({ venueId, event, onClose }) {
+  const [password, setPassword] = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState('');
+  const [qrImg, setQrImg]       = useState('');
+  const [expiresAt, setExpiresAt] = useState(null);
+  const [countdown, setCountdown] = useState('');
+
+  useEffect(() => {
+    if (!expiresAt) return;
+    function tick() {
+      const remaining = Math.max(0, new Date(expiresAt).getTime() - Date.now());
+      const m = Math.floor(remaining / 60000);
+      const s = Math.floor((remaining % 60000) / 1000);
+      setCountdown(remaining > 0 ? `${m}:${String(s).padStart(2,'0')}` : '已過期');
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setLoading(true); setError('');
+    try {
+      const data = await postEventEntry(venueId, password);
+      const img = await QRCode.toDataURL(data.qrToken, { width: 220, margin: 2 });
+      setQrImg(img);
+      setExpiresAt(data.expiresAt);
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  const expired = countdown === '已過期';
+  const isRed   = !expired && expiresAt && new Date(expiresAt).getTime() - Date.now() < 60000;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', padding: '24px', maxWidth: '340px', width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div style={{ fontWeight: '700', fontSize: '16px' }}>{event.buttonName}</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✕</button>
+        </div>
+
+        {!qrImg ? (
+          <form onSubmit={handleSubmit}>
+            <div style={{ fontSize: '14px', color: '#666', marginBottom: '14px' }}>
+              {event.eventName && <div style={{ fontWeight: '600', marginBottom: '4px' }}>{event.eventName}</div>}
+              請輸入活動入場密碼：
+            </div>
+            <input
+              type="password" value={password} onChange={e => setPassword(e.target.value)}
+              placeholder="輸入密碼"
+              style={{ width: '100%', padding: '12px', border: '1.5px solid #ddd', borderRadius: '10px', fontSize: '16px', marginBottom: '12px', boxSizing: 'border-box' }}
+              autoFocus
+            />
+            {error && <div style={{ color: '#c62828', fontSize: '13px', marginBottom: '10px' }}>{error}</div>}
+            <button type="submit" disabled={loading || !password}
+              style={{ width: '100%', padding: '14px', border: 'none', borderRadius: '10px', background: '#111', color: '#fff', fontSize: '15px', fontWeight: '600', cursor: 'pointer', opacity: (loading || !password) ? 0.5 : 1 }}>
+              {loading ? '驗證中...' : '確認入場'}
+            </button>
+          </form>
+        ) : (
+          <div style={{ textAlign: 'center' }}>
+            {expired ? (
+              <div style={{ color: '#c62828', fontSize: '15px', fontWeight: '600', padding: '20px' }}>QR Code 已過期，請重新操作</div>
+            ) : (
+              <>
+                <div style={{ fontSize: '13px', color: '#888', marginBottom: '8px' }}>出示給工作人員掃描</div>
+                <img src={qrImg} alt="QR" style={{ width: '220px', height: '220px' }} />
+                <div style={{ marginTop: '10px', fontSize: '15px', fontWeight: '700', color: isRed ? '#c62828' : '#2e7d32' }}>
+                  有效時間 {countdown}
+                </div>
+                <div style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>QR Code 5 分鐘後失效</div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function VenueDetailPage({ venueId, onReserve, onWalkIn }) {
   const [venue, setVenue] = useState(null);
   const [plansOpen, setPlansOpen] = useState(true);
   const [loading, setLoading] = useState(true);
   const [durationPlans, setDurationPlans] = useState([]);
+  const [todayEvents, setTodayEvents] = useState([]);
+  const [eventModal, setEventModal] = useState(null); // the event object
 
   useEffect(() => {
     fetchVenue(venueId).then(v => {
@@ -135,6 +222,7 @@ export default function VenueDetailPage({ venueId, onReserve, onWalkIn }) {
         fetchDurationPlans(v._id).then(ps => setDurationPlans(ps.filter(p => p.isActive))).catch(() => {});
       }
     }).catch(() => {}).finally(() => setLoading(false));
+    fetchTodayEvents(venueId).then(setTodayEvents).catch(() => {});
   }, [venueId]);
 
   if (loading) return <div style={{ textAlign: 'center', padding: '60px', color: '#aaa' }}>載入中...</div>;
@@ -277,26 +365,46 @@ export default function VenueDetailPage({ venueId, onReserve, onWalkIn }) {
       {/* Fixed bottom buttons */}
       <div style={{
         position: 'fixed', bottom: 0, left: 0, right: 0,
-        padding: '12px 16px', background: '#fff',
-        borderTop: '1px solid #f0f0f0', display: 'flex', gap: '10px'
+        background: '#fff', borderTop: '1px solid #f0f0f0'
       }}>
-        <button
-          onClick={() => onWalkIn(venue)}
-          style={{
-            flex: 1, padding: '14px', borderRadius: '10px',
-            border: '1.5px solid var(--brand-border)', background: 'var(--brand-light)',
-            fontSize: '15px', fontWeight: '600', cursor: 'pointer', color: 'var(--brand-text)'
-          }}
-        >立即入場</button>
-        <button
-          onClick={() => onReserve(venue)}
-          style={{
-            flex: 1, padding: '14px', borderRadius: '10px',
-            border: 'none', background: 'var(--brand-color)',
-            fontSize: '15px', fontWeight: '600', cursor: 'pointer', color: 'var(--brand-text)'
-          }}
-        >預約入場</button>
+        {/* Today's event buttons */}
+        {todayEvents.length > 0 && (
+          <div style={{ padding: '8px 16px 0', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {todayEvents.map(ev => (
+              <button key={ev._id} onClick={() => setEventModal(ev)}
+                style={{
+                  padding: '8px 16px', borderRadius: '20px', border: '1.5px solid #8d6e63',
+                  background: '#efebe9', color: '#4e342e', fontSize: '13px', fontWeight: '600', cursor: 'pointer'
+                }}>
+                🎫 {ev.buttonName}
+              </button>
+            ))}
+          </div>
+        )}
+        <div style={{ padding: '12px 16px', display: 'flex', gap: '10px' }}>
+          <button
+            onClick={() => onWalkIn(venue)}
+            style={{
+              flex: 1, padding: '14px', borderRadius: '10px',
+              border: '1.5px solid var(--brand-border)', background: 'var(--brand-light)',
+              fontSize: '15px', fontWeight: '600', cursor: 'pointer', color: 'var(--brand-text)'
+            }}
+          >立即入場</button>
+          <button
+            onClick={() => onReserve(venue)}
+            style={{
+              flex: 1, padding: '14px', borderRadius: '10px',
+              border: 'none', background: 'var(--brand-color)',
+              fontSize: '15px', fontWeight: '600', cursor: 'pointer', color: 'var(--brand-text)'
+            }}
+          >預約入場</button>
+        </div>
       </div>
+
+      {/* Event entry password modal */}
+      {eventModal && (
+        <EventEntryModal venueId={venue._id} event={eventModal} onClose={() => setEventModal(null)} />
+      )}
     </div>
   );
 }

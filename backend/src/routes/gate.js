@@ -74,8 +74,8 @@ router.all('/verify', async (req, res) => {
           console.warn(`[Gate] Staff token expired: ${id.slice(0, 8)}`);
           return res.json(gateJson(0, readnoN, '員工 QR 已過期', '請重新產生'));
         }
-        console.log(`[Gate] Staff token OK: ${st.venueName} readno=${readnoN}`);
-        return res.json(gateJson(1, readnoN, '員工入場', st.venueName || '', '工作人員'));
+        console.log(`[Gate] Staff token OK: ${st.venueName} label=${st.label} readno=${readnoN}`);
+        return res.json(gateJson(1, readnoN, '入場通行', st.venueName || '', st.label || '工作人員'));
       }
       console.warn(`[Gate] Unknown qrToken: ${id}`);
       return res.json(gateJson(0, readnoN, '票券無效', '請聯繫工作人員'));

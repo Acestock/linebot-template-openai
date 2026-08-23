@@ -4,6 +4,7 @@ const StaffTokenSchema = new mongoose.Schema({
   token:     { type: String, required: true, unique: true },
   venueId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Venue' },
   venueName: { type: String, default: '' },
+  label:     { type: String, default: '工作人員' }, // display name for gate response
   expiresAt: { type: Date, required: true },
   createdAt: { type: Date, default: Date.now }
 });
