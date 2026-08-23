@@ -76,8 +76,13 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
 
   const isShortSession = r.mode === 'walkin_short';
+  const isStrategy2    = (r.strategy ?? 1) === 2;
   const isUnpaidCheckout = localStatus === 'completed' && r.unpaidExit && localPayStatus !== 'paid';
-  const canQr = !readOnly && (localStatus === 'confirmed' || localStatus === 'checked_in');
+  // Strategy 2: QR only available from expectedCheckIn (startTime - 15min); checked_in always OK
+  const s2EntryOpen = !isStrategy2 || localStatus === 'checked_in' ||
+    (r.expectedCheckIn && Date.now() >= new Date(r.expectedCheckIn).getTime());
+  const s2TooEarly  = isStrategy2 && localStatus === 'confirmed' && !s2EntryOpen;
+  const canQr = !readOnly && (localStatus === 'confirmed' || localStatus === 'checked_in') && !s2TooEarly;
   const isPaidPendingExit = localStatus === 'checked_in' && localPayStatus === 'paid' && !!r.paidAt;
 
   const [countdown, setCountdown] = useState('');
@@ -257,6 +262,17 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
       {localStatus === 'cancelled' ? (
         <div style={{ background: '#ffebee', borderRadius: '10px', padding: '16px', textAlign: 'center', color: '#c62828', fontSize: '14px' }}>
           此預約已取消，無法顯示 QR Code
+        </div>
+      ) : s2TooEarly ? (
+        <div style={{ background: '#fff8e1', borderRadius: '10px', padding: '16px', textAlign: 'center' }}>
+          <div style={{ fontSize: '15px', fontWeight: '700', color: '#5d4037', marginBottom: '6px' }}>尚未到入場時間</div>
+          <div style={{ fontSize: '13px', color: '#795548', lineHeight: '1.6' }}>
+            入場 QR 開放時間：<br />
+            <span style={{ fontWeight: '600', color: '#444' }}>
+              {new Date(r.expectedCheckIn).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <span style={{ color: '#999', marginLeft: '6px', fontSize: '12px' }}>（預約時間前 15 分鐘）</span>
+          </div>
         </div>
       ) : canQr ? (
         <div style={{ background: '#fff', borderRadius: '12px', padding: '16px', boxShadow: '0 1px 6px rgba(0,0,0,0.08)', textAlign: 'center' }}>
