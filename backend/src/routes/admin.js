@@ -1318,13 +1318,15 @@ router.get('/blocked-slots', async (req, res) => {
 
 router.post('/blocked-slots', async (req, res) => {
   try {
-    const { venueId, date, slots, eventName, capacity } = req.body;
+    const { venueId, date, slots, eventName, buttonName, accessPassword, capacity } = req.body;
     if (!venueId || !date || !slots || !slots.length) {
       return res.status(400).json({ error: 'venueId, date, slots 為必填' });
     }
     const item = await BlockedSlot.create({
       venueId, date: new Date(date), slots,
-      eventName: eventName || '',
+      eventName:      eventName      || '',
+      buttonName:     buttonName     || '',
+      accessPassword: accessPassword || '',
       capacity: Math.max(0, parseInt(capacity, 10) || 0)
     });
     res.json(item);
