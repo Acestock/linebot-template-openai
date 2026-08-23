@@ -166,3 +166,16 @@ export function submitPaymentForm(action, fields) {
 
 // Kept for backward compatibility
 export const submitEcpayForm = submitPaymentForm;
+
+// ── Strategy 2 API ────────────────────────────────────────────────────────────
+export async function fetchDurationPlans(venueId) {
+  const r = await fetch(`${BASE}/venues/${venueId}/duration-plans`);
+  if (!r.ok) throw new Error('無法取得時長方案');
+  return r.json();
+}
+
+export async function fetchStrategy2Slots(venueId, date, durationMinutes) {
+  const r = await fetch(`${BASE}/venues/${venueId}/strategy2-slots?date=${date}&durationMinutes=${durationMinutes}`);
+  if (!r.ok) throw new Error('無法取得可用時段');
+  return r.json(); // { slots: [...] }
+}

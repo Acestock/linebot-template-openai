@@ -24,7 +24,14 @@ const ReservationSchema = new mongoose.Schema({
   appliedCouponId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null },
   discountAmount:   { type: Number, default: 0 },
   paidAt:           { type: Date, default: null },
-  createdAt:        { type: Date, default: Date.now }
+  createdAt:        { type: Date, default: Date.now },
+  // ── 策略二欄位 ───────────────────────────────────────────────────────────────
+  strategy:         { type: Number, enum: [1, 2], default: 1 },
+  startTime:        { type: Date, default: null },
+  endTime:          { type: Date, default: null },
+  durationMinutes:  { type: Number, default: 0 },
+  durationPlanId:   { type: mongoose.Schema.Types.ObjectId, ref: 'DurationPlan', default: null },
+  durationPlanName: { type: String, default: '' }
 });
 
 module.exports = mongoose.model('Reservation', ReservationSchema);

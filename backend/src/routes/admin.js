@@ -1178,8 +1178,9 @@ const Venue        = require('../models/Venue');
 const VenuePlan    = require('../models/VenuePlan');
 const Announcement = require('../models/Announcement');
 const Reservation  = require('../models/Reservation');
-const BlockedSlot  = require('../models/BlockedSlot');
-const StaffToken   = require('../models/StaffToken');
+const BlockedSlot    = require('../models/BlockedSlot');
+const StaffToken     = require('../models/StaffToken');
+const DurationPlan   = require('../models/DurationPlan');
 
 router.get('/venues', async (req, res) => {
   try {
@@ -1486,6 +1487,47 @@ router.get('/coupons', async (req, res) => {
     if (req.query.status) filter.status = req.query.status;
     const coupons = await Coupon.find(filter).sort({ createdAt: -1 }).lean();
     res.json(coupons);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Duration Plans (策略二方案) ──────────────────────────────────────────────
+router.get('/venues/:venueId/duration-plans', async (req, res) => {
+  try {
+    const plans = await DurationPlan.find({ venueId: req.params.venueId }).sort({ order: 1, createdAt: 1 }).lean();
+    res.json(plans);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/venues/:venueId/duration-plans', async (req, res) => {
+  try {
+    const { name, durationMinutes, price, order } = req.body;
+    if (!name || durationMinutes === undefined || price === undefined)
+      return res.status(400).json({ error: 'name, durationMinutes, price 為必填' });
+    const plan = await DurationPlan.create({
+      venueId: req.params.venueId, name,
+      durationMinutes: +durationMinutes, price: +price,
+      order: order ?? 0
+    });
+    res.json(plan);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.patch('/venues/:venueId/duration-plans/:planId', async (req, res) => {
+  try {
+    const plan = await DurationPlan.findOneAndUpdate(
+      { _id: req.params.planId, venueId: req.params.venueId },
+      { $set: req.body },
+      { new: true }
+    );
+    if (!plan) return res.status(404).json({ error: '找不到方案' });
+    res.json(plan);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.delete('/venues/:venueId/duration-plans/:planId', async (req, res) => {
+  try {
+    await DurationPlan.findOneAndDelete({ _id: req.params.planId, venueId: req.params.venueId });
+    res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

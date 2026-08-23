@@ -161,7 +161,7 @@ function VenueTab() {
   }, []);
   useEffect(load, [load]);
 
-  const emptyForm = { name: '', address: '', transportInfo: '', imageUrl: '', imageUrls: [], businessHours: '', facilities: '', rules: '', howToUse: '', color: '#2196F3', maxCapacityPerSlot: 10, isActive: true, shortSession: { enabled: false, minHourPrice: 40, ratio1h: 0.25, ratio2h: 0.60, ratio3h: 0.80, maxCapacityBlock: 2 } };
+  const emptyForm = { name: '', address: '', transportInfo: '', imageUrl: '', imageUrls: [], businessHours: '', facilities: '', rules: '', howToUse: '', color: '#2196F3', maxCapacityPerSlot: 10, isActive: true, strategy: 1, s2OpenHour: 7, s2CloseHour: 22, shortSession: { enabled: false, minHourPrice: 40, ratio1h: 0.25, ratio2h: 0.60, ratio3h: 0.80, maxCapacityBlock: 2 } };
 
   async function save() {
     if (!form.name) return alert('請輸入場地名稱');
@@ -255,6 +255,34 @@ function VenueTab() {
                 <input type="number" min="1" style={{ ...inputStyle, width: '100px' }} value={form.maxCapacityPerSlot} onChange={e => setForm(f => ({ ...f, maxCapacityPerSlot: +e.target.value }))} />
               </Field>
             </div>
+            {/* Strategy selector */}
+            <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ fontWeight: '600', fontSize: '13px', color: '#555', marginBottom: '10px' }}>預約策略</div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                {[{ v: 1, label: '策略一：時段制（早午晚）' }, { v: 2, label: '策略二：自由時段制（每 30 分鐘）' }].map(o => (
+                  <label key={o.v} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer', flex: 1 }}>
+                    <input type="radio" name="strategy" checked={(form.strategy ?? 1) === o.v}
+                      onChange={() => setForm(f => ({ ...f, strategy: o.v }))} />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+              {(form.strategy ?? 1) === 2 && (
+                <div style={{ marginTop: '12px', display: 'flex', gap: '12px' }}>
+                  <Field label="開館時間（整點）">
+                    <input type="number" min="0" max="23" style={{ ...inputStyle, width: '80px' }}
+                      value={form.s2OpenHour ?? 7}
+                      onChange={e => setForm(f => ({ ...f, s2OpenHour: +e.target.value }))} />
+                  </Field>
+                  <Field label="閉館時間（整點，>24=次日）">
+                    <input type="number" min="1" max="30" style={{ ...inputStyle, width: '80px' }}
+                      value={form.s2CloseHour ?? 22}
+                      onChange={e => setForm(f => ({ ...f, s2CloseHour: +e.target.value }))} />
+                  </Field>
+                </div>
+              )}
+            </div>
+
             {/* Short-session settings */}
             <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #f0f0f0' }}>
               <div style={{ fontWeight: '600', fontSize: '13px', color: '#555', marginBottom: '10px' }}>計時入場設定</div>
@@ -312,13 +340,102 @@ function VenueTab() {
   );
 }
 
+// ── DurationPlans section (for strategy-2 venues) ────────────────────────────
+function DurationPlansSection({ venueId }) {
+  const [dPlans, setDPlans] = useState([]);
+  const [dForm,  setDForm]  = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(() => {
+    authFetch(`${API_BASE}/api/venues/${venueId}/duration-plans`).then(r => r.json()).then(setDPlans).catch(() => {});
+  }, [venueId]);
+  useEffect(load, [load]);
+
+  const emptyDForm = { name: '', durationMinutes: 90, price: '', order: 0 };
+
+  async function dSave() {
+    if (!dForm.name || dForm.price === '') return alert('請填寫方案名稱和價格');
+    setSaving(true);
+    try {
+      const method = dForm._id ? 'PATCH' : 'POST';
+      const url    = dForm._id
+        ? `${API_BASE}/api/venues/${venueId}/duration-plans/${dForm._id}`
+        : `${API_BASE}/api/venues/${venueId}/duration-plans`;
+      await authFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dForm, durationMinutes: +dForm.durationMinutes, price: +dForm.price }) });
+      setDForm(null); load();
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function dDel(planId) {
+    if (!confirm('確定刪除此方案？')) return;
+    await authFetch(`${API_BASE}/api/venues/${venueId}/duration-plans/${planId}`, { method: 'DELETE' });
+    load();
+  }
+
+  const PRESETS = [{ v: 90, label: '90 分鐘' }, { v: 180, label: '3 小時' }, { v: 360, label: '6 小時' }, { v: 0, label: '整天' }];
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+        <div style={{ fontSize: '13px', fontWeight: '700', color: '#555' }}>策略二方案（時長定價）</div>
+        <button onClick={() => setDForm(emptyDForm)} style={btn('#111', '#fff')}>＋ 新增</button>
+      </div>
+      {dPlans.length === 0 && <div style={{ color: '#aaa', textAlign: 'center', padding: '16px', fontSize: '13px' }}>尚無方案</div>}
+      {dPlans.map(p => (
+        <div key={p._id} style={{ border: '1px solid #eee', borderRadius: '10px', padding: '10px 14px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontWeight: '600', fontSize: '14px' }}>{p.name}</div>
+            <div style={{ fontSize: '12px', color: '#888' }}>
+              {p.durationMinutes === 0 ? '整天' : `${p.durationMinutes} 分鐘`} · ${p.price}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button onClick={() => setDForm({ ...p, price: String(p.price) })} style={btn('#f5f5f5', '#333')}>編輯</button>
+            <button onClick={() => dDel(p._id)} style={btn('#ffebee', '#c62828')}>刪除</button>
+          </div>
+        </div>
+      ))}
+      {dForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px' }}>
+          <div style={{ background: '#fff', borderRadius: '12px', width: '380px', maxWidth: '100%', padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <div style={{ fontWeight: '700', fontSize: '15px' }}>{dForm._id ? '編輯' : '新增'}時長方案</div>
+              <button onClick={() => setDForm(null)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✕</button>
+            </div>
+            <Field label="方案名稱 *"><input style={inputStyle} value={dForm.name} onChange={e => setDForm(f => ({ ...f, name: e.target.value }))} placeholder="90 分鐘 / 3 小時 / 整天" /></Field>
+            <Field label="使用時長（分鐘，0 = 整天至閉館）">
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                {PRESETS.map(p => (
+                  <button key={p.v} onClick={() => setDForm(f => ({ ...f, durationMinutes: p.v }))}
+                    style={{ ...btn(dForm.durationMinutes === p.v ? '#111' : '#f0f0f0', dForm.durationMinutes === p.v ? '#fff' : '#555'), padding: '6px 12px' }}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <input type="number" min="0" style={{ ...inputStyle, width: '120px' }}
+                value={dForm.durationMinutes} onChange={e => setDForm(f => ({ ...f, durationMinutes: +e.target.value }))} />
+            </Field>
+            <Field label="價格 *"><input type="number" min="0" style={inputStyle} value={dForm.price} onChange={e => setDForm(f => ({ ...f, price: e.target.value }))} /></Field>
+            <Field label="排序（數字越小越前）"><input type="number" style={{ ...inputStyle, width: '80px' }} value={dForm.order} onChange={e => setDForm(f => ({ ...f, order: +e.target.value }))} /></Field>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '14px' }}>
+              <button onClick={() => setDForm(null)} style={btn('#f5f5f5', '#333')}>取消</button>
+              <button onClick={dSave} disabled={saving} style={btn('#111')}>{saving ? '儲存中...' : '儲存'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Tab 2: 時段方案 ──────────────────────────────────────────────────────────
 function PlansTab() {
-  const [venues, setVenues]   = useState([]);
+  const [venues,   setVenues]   = useState([]);
   const [selVenue, setSelVenue] = useState('');
-  const [plans, setPlans]     = useState([]);
-  const [form, setForm]       = useState(null);
-  const [saving, setSaving]   = useState(false);
+  const [plans,    setPlans]    = useState([]);
+  const [form,     setForm]     = useState(null);
+  const [saving,   setSaving]   = useState(false);
 
   useEffect(() => {
     authFetch(`${API_BASE}/api/venues`).then(r => r.json()).then(v => { setVenues(v); if (v.length) setSelVenue(v[0]._id); }).catch(() => {});
@@ -357,20 +474,33 @@ function PlansTab() {
     setForm(f => ({ ...f, slots: f.slots.includes(key) ? f.slots.filter(s => s !== key) : [...f.slots, key] }));
   }
 
+  const selVenueObj = venues.find(v => v._id === selVenue);
+  const isS2 = (selVenueObj?.strategy ?? 1) === 2;
+
   return (
     <div>
       <Field label="選擇場地">
         <select style={inputStyle} value={selVenue} onChange={e => setSelVenue(e.target.value)}>
-          {venues.map(v => <option key={v._id} value={v._id}>{v.name}</option>)}
+          {venues.map(v => <option key={v._id} value={v._id}>{v.name}（策略{v.strategy ?? 1}）</option>)}
         </select>
       </Field>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-        <button onClick={() => setForm(emptyForm)} style={btn('#111')} disabled={!selVenue}>＋ 新增方案</button>
-      </div>
 
-      {plans.length === 0 && <div style={{ color: '#aaa', textAlign: 'center', padding: '24px' }}>此場地尚無方案</div>}
+      {/* Strategy 2: show DurationPlans section */}
+      {isS2 && selVenue && (
+        <DurationPlansSection venueId={selVenue} />
+      )}
 
-      {plans.map(p => (
+      {/* Strategy 1: show legacy VenuePlans */}
+      {!isS2 && (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+            <button onClick={() => setForm(emptyForm)} style={btn('#111')} disabled={!selVenue}>＋ 新增方案</button>
+          </div>
+          {plans.length === 0 && <div style={{ color: '#aaa', textAlign: 'center', padding: '24px' }}>此場地尚無方案</div>}
+        </>
+      )}
+
+      {!isS2 && plans.map(p => (
         <div key={p._id} style={{ border: '1px solid #eee', borderRadius: '10px', padding: '10px 14px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontWeight: '600', fontSize: '14px' }}>{p.icon} {p.name}</div>
@@ -383,7 +513,7 @@ function PlansTab() {
         </div>
       ))}
 
-      {form && (
+      {!isS2 && form && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px' }}>
           <div style={{ background: '#fff', borderRadius: '12px', width: '440px', maxWidth: '100%', maxHeight: 'calc(100dvh - 20px)', overflowY: 'auto', padding: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>

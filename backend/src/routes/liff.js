@@ -10,6 +10,8 @@ const BlockedSlot = require('../models/BlockedSlot');
 const Task = require('../models/Task');
 const TaskSubmission = require('../models/TaskSubmission');
 const Coupon = require('../models/Coupon');
+const DurationPlan = require('../models/DurationPlan');
+const { getAvailableSlots, checkSlotAvailability } = require('../services/strategy2Service');
 const { createOrderParams: _ecpayCreateOrder }   = require('../services/ecpayService');
 const { createOrderParams: _newebpayCreateOrder } = require('../services/newebpayService');
 // Switch gateway via env: PAYMENT_GATEWAY=ecpay to fall back to ECPay (default: newebpay)
@@ -290,21 +292,122 @@ router.get('/venues/:id/short-session-quote', async (req, res) => {
   }
 });
 
+// ── GET /api/liff/venues/:id/strategy2-slots ──────────────────────────────────
+// ?date=YYYY-MM-DD&durationMinutes=180
+router.get('/venues/:id/strategy2-slots', async (req, res) => {
+  try {
+    const venue = await Venue.findById(req.params.id).lean();
+    if (!venue || !venue.isActive) return res.status(404).json({ error: '場地不存在' });
+    if (venue.strategy !== 2) return res.status(400).json({ error: '此場地非策略二' });
+
+    const { date, durationMinutes } = req.query;
+    if (!date) return res.status(400).json({ error: 'date 為必填' });
+    const dur = parseInt(durationMinutes, 10) || 90;
+
+    const slots = await getAvailableSlots(
+      venue._id, date,
+      venue.s2OpenHour  ?? 7,
+      venue.s2CloseHour ?? 22,
+      dur,
+      venue.maxCapacityPerSlot
+    );
+    res.json({ slots });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── GET /api/liff/venues/:id/duration-plans ───────────────────────────────────
+router.get('/venues/:id/duration-plans', async (req, res) => {
+  try {
+    const plans = await DurationPlan.find({ venueId: req.params.id, isActive: true })
+      .sort({ order: 1, createdAt: 1 }).lean();
+    res.json(plans);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── POST /api/liff/reservations ───────────────────────────────────────────────
 router.post('/reservations', liffAuth, async (req, res) => {
   try {
-    const { venueId, planId, date, slots, expectedCheckIn, expectedCheckOut, note, mode } = req.body;
-    if (!venueId || !date || !slots || !slots.length)
-      return res.status(400).json({ error: 'venueId, date, slots required' });
+    const {
+      venueId, planId, date, slots, expectedCheckIn, expectedCheckOut, note, mode,
+      // Strategy 2 fields
+      durationPlanId, startTime, endTime, durationMinutes: durMins
+    } = req.body;
 
     const venue = await Venue.findById(venueId).lean();
     if (!venue || !venue.isActive) return res.status(404).json({ error: 'Venue not found' });
 
-    // Check availability for each requested slot
-    const dateStr = typeof date === 'string' ? date : new Date(date).toISOString().slice(0, 10);
-    const avail = await getSlotAvailability(venueId, venue.maxCapacityPerSlot, dateStr);
+    const lineUserId = req.liffUser.lineUserId;
 
-    // Short-session walk-in: validate config and capacity
+    // ── 未付款鎖定 ──────────────────────────────────────────────────────────
+    const hasUnpaidExit = await Reservation.findOne({ lineUserId, unpaidExit: true });
+    if (hasUnpaidExit)
+      return res.status(403).json({ error: '您有未完成付款的記錄，暫時無法預約。請先至預約紀錄完成補付款，或聯絡工作人員處理。' });
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 策略二：自由時段制（固定起始 + 固定時長）
+    // ══════════════════════════════════════════════════════════════════════════
+    if (venue.strategy === 2) {
+      if (!startTime || !endTime || !durationPlanId)
+        return res.status(400).json({ error: 'strategy 2: startTime, endTime, durationPlanId required' });
+
+      const dPlan = await DurationPlan.findById(durationPlanId).lean();
+      if (!dPlan || !dPlan.isActive) return res.status(404).json({ error: '方案不存在' });
+
+      const sTime = new Date(startTime);
+      const eTime = new Date(endTime);
+
+      // 容量檢查
+      const avail = await checkSlotAvailability(venueId, sTime, eTime, venue.maxCapacityPerSlot);
+      if (!avail.available)
+        return res.status(409).json({ error: '此時段座位已滿，請選擇其他時間' });
+
+      // 重複預約防呆：同用戶同場地時間重疊
+      const dupS2 = await Reservation.findOne({
+        lineUserId, venueId, strategy: 2,
+        status: { $in: ['confirmed', 'checked_in'] },
+        startTime: { $lt: eTime },
+        endTime:   { $gt: sTime }
+      });
+      if (dupS2) return res.status(409).json({ error: '您在此時段已有預約，請勿重複預約' });
+
+      // 入場時間範圍：提前 15 分鐘到延後 30 分鐘
+      const checkIn15Min = new Date(sTime.getTime() - 15 * 60 * 1000);
+
+      const reservation = await Reservation.create({
+        lineUserId,
+        displayName:      req.liffUser.displayName,
+        pictureUrl:       req.liffUser.pictureUrl,
+        venueId,
+        venueName:        venue.name,
+        date:             sTime,
+        durationPlanId:   dPlan._id,
+        durationPlanName: dPlan.name,
+        durationMinutes:  dPlan.durationMinutes,
+        slots:            [],
+        totalPrice:       dPlan.price,
+        startTime:        sTime,
+        endTime:          eTime,
+        expectedCheckIn:  checkIn15Min,
+        expectedCheckOut: eTime,
+        strategy:         2,
+        note:             note || '',
+        mode:             'normal',
+        status:           'confirmed',
+        paymentStatus:    dPlan.price > 0 ? 'unpaid' : 'free',
+        qrToken:          crypto.randomUUID()
+      });
+      return res.json(reservation);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 策略一：原有時段制
+    // ══════════════════════════════════════════════════════════════════════════
+    if (!date || !slots || !slots.length)
+      return res.status(400).json({ error: 'venueId, date, slots required' });
+
+    const dateStr = typeof date === 'string' ? date : new Date(date).toISOString().slice(0, 10);
+    const avail   = await getSlotAvailability(venueId, venue.maxCapacityPerSlot, dateStr);
+
     const isShortSession = mode === 'walkin_short';
     if (isShortSession) {
       if (!venue.shortSession?.enabled)
@@ -323,18 +426,10 @@ router.post('/reservations', liffAuth, async (req, res) => {
       }
     }
 
-    // 未成功結帳鎖定：有 unpaidExit 記錄則不允許新預約
-    const lineUserId = req.liffUser.lineUserId;
-    const hasUnpaidExit = await Reservation.findOne({ lineUserId, unpaidExit: true });
-    if (hasUnpaidExit) {
-      return res.status(403).json({ error: '您有未完成付款的記錄，暫時無法預約。請先至預約紀錄完成補付款，或聯絡工作人員處理。' });
-    }
-
-    // 重複預約防呆：同一用戶 + 同場地 + 同日 + 時段有交集
     const dateStart = new Date(dateStr + 'T00:00:00+08:00');
     const dateEnd   = new Date(dateStr + 'T23:59:59+08:00');
     const dup = await Reservation.findOne({
-      lineUserId: req.liffUser.lineUserId,
+      lineUserId,
       venueId,
       date: { $gte: dateStart, $lte: dateEnd },
       slots: { $in: slots },
@@ -342,14 +437,11 @@ router.post('/reservations', liffAuth, async (req, res) => {
     });
     if (dup) return res.status(409).json({ error: '您已預約此場地的相同時段，請勿重複預約' });
 
-    let planName = '';
-    let totalPrice = 0;
-    let initialStatus = 'confirmed';
-    let checkInTime = expectedCheckIn ? new Date(expectedCheckIn) : undefined;
+    let planName = '', totalPrice = 0, initialStatus = 'confirmed';
+    let checkInTime  = expectedCheckIn  ? new Date(expectedCheckIn)  : undefined;
     let checkOutTime = expectedCheckOut ? new Date(expectedCheckOut) : undefined;
 
     if (isShortSession) {
-      // Short-session: check in immediately, price calculated at checkout
       initialStatus = 'checked_in';
       checkInTime   = new Date();
       checkOutTime  = undefined;
@@ -360,7 +452,7 @@ router.post('/reservations', liffAuth, async (req, res) => {
     }
 
     const reservation = await Reservation.create({
-      lineUserId:      req.liffUser.lineUserId,
+      lineUserId,
       displayName:     req.liffUser.displayName,
       pictureUrl:      req.liffUser.pictureUrl,
       venueId,
@@ -374,6 +466,7 @@ router.post('/reservations', liffAuth, async (req, res) => {
       expectedCheckOut: checkOutTime,
       note:            note || '',
       mode:            isShortSession ? 'walkin_short' : 'normal',
+      strategy:        1,
       status:          initialStatus,
       paymentStatus:   totalPrice > 0 ? 'unpaid' : (isShortSession ? 'unpaid' : 'free'),
       qrToken:         crypto.randomUUID()

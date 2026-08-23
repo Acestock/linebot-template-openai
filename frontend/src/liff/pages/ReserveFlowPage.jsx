@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchVenue, fetchAvailability, createReservation, getSessionToken, fetchShortSessionQuote } from '../api';
+import { fetchVenue, fetchAvailability, createReservation, getSessionToken, fetchShortSessionQuote, fetchDurationPlans, fetchStrategy2Slots } from '../api';
 
 const SLOTS = [
   { key: 'morning',   label: '早上', range: '07:00–12:00', icon: '🌅' },
@@ -181,7 +181,245 @@ export default function ReserveFlowPage({ venue, mode, onBack, onDone }) {
   if (mode === 'walkin_short') {
     return <WalkInShortFlow venue={venue} onBack={onBack} onDone={onDone} />;
   }
+  if (venue?.strategy === 2) {
+    return <Strategy2Flow venue={venue} onBack={onBack} onDone={onDone} />;
+  }
   return <RegularReserveFlow venue={venue} mode={mode} onBack={onBack} onDone={onDone} />;
+}
+
+// ── 策略二：自由時段制預約流程 ─────────────────────────────────────────────────
+function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
+  const [step,          setStep]          = useState(0);  // 0=日期 1=時長 2=時段 3=確認
+  const [date,          setDate]          = useState(toDateStr(new Date()));
+  const [plans,         setPlans]         = useState([]);
+  const [selPlan,       setSelPlan]       = useState(null);
+  const [slots,         setSlots]         = useState([]);
+  const [selSlot,       setSelSlot]       = useState(null);
+  const [slotsLoading,  setSlotsLoading]  = useState(false);
+  const [submitting,    setSubmitting]    = useState(false);
+  const [error,         setError]         = useState('');
+  const [done,          setDone]          = useState(false);
+  const venue = initialVenue;
+
+  const today = toDateStr(new Date());
+
+  // Load duration plans
+  useEffect(() => {
+    fetchDurationPlans(venue._id).then(ps => {
+      setPlans(ps.filter(p => p.isActive));
+    }).catch(() => {});
+  }, [venue._id]);
+
+  // Load available slots when date or plan changes
+  useEffect(() => {
+    if (!selPlan || !date) return;
+    setSlotsLoading(true);
+    setSlots([]);
+    setSelSlot(null);
+    fetchStrategy2Slots(venue._id, date, selPlan.durationMinutes)
+      .then(r => setSlots(r.slots || []))
+      .catch(() => {})
+      .finally(() => setSlotsLoading(false));
+  }, [selPlan, date, venue._id]);
+
+  async function handleSubmit() {
+    if (!selSlot || !selPlan) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      await createReservation({
+        venueId:         venue._id,
+        durationPlanId:  selPlan._id,
+        startTime:       selSlot.startTime,
+        endTime:         selSlot.endTime,
+        durationMinutes: selPlan.durationMinutes,
+        date:            selSlot.startTime,
+        slots:           []
+      });
+      setDone(true);
+    } catch (e) {
+      setError(e.message || '預約失敗，請重試');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (done) {
+    return (
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 16px', textAlign: 'center' }}>
+        <div style={{ fontSize: '52px', marginBottom: '16px' }}>✅</div>
+        <div style={{ fontWeight: '800', fontSize: '20px', marginBottom: '8px' }}>預約成功！</div>
+        <div style={{ fontSize: '14px', color: '#666', marginBottom: '4px' }}>{venue.name}</div>
+        <div style={{ fontSize: '14px', color: '#666', marginBottom: '4px' }}>{date}</div>
+        <div style={{ fontSize: '15px', fontWeight: '600', marginBottom: '4px' }}>
+          {selSlot?.startLabel} – {selSlot?.endLabel}（{selPlan?.name}）
+        </div>
+        <div style={{ fontSize: '14px', color: '#888', marginBottom: '24px' }}>
+          可提前 15 分鐘入場，請於開始後 30 分鐘內完成報到
+        </div>
+        <button onClick={onDone} style={nextBtnStyle}>查看預約紀錄</button>
+        <button onClick={onBack} style={{ ...backBtnStyle, display: 'block', width: '100%', marginTop: '10px' }}>返回場地</button>
+      </div>
+    );
+  }
+
+  const STEP_LABELS = ['選擇日期', '選擇時長', '選擇時段', '確認預約'];
+
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+      <StepBar step={step} total={4} />
+
+      {/* Step 0: 選擇日期 */}
+      {step === 0 && (
+        <div>
+          <div style={{ fontWeight: '700', fontSize: '16px', marginBottom: '16px' }}>選擇日期</div>
+          <input
+            type="date"
+            min={today}
+            value={date}
+            onChange={e => setDate(e.target.value)}
+            style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: '10px', border: '1.5px solid #e0e0e0', fontSize: '16px' }}
+          />
+          <button onClick={() => setStep(1)} disabled={!date} style={{ ...nextBtnStyle, marginTop: '20px', opacity: date ? 1 : 0.4 }}>
+            下一步
+          </button>
+        </div>
+      )}
+
+      {/* Step 1: 選擇時長 */}
+      {step === 1 && (
+        <div>
+          <div style={{ fontWeight: '700', fontSize: '16px', marginBottom: '16px' }}>選擇使用時長</div>
+          {plans.length === 0 && <div style={{ color: '#aaa', textAlign: 'center', padding: '40px' }}>尚未設定方案，請洽場地管理員</div>}
+          {plans.map(p => {
+            const isSel = selPlan?._id === p._id;
+            return (
+              <button
+                key={p._id}
+                onClick={() => setSelPlan(p)}
+                style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  width: '100%', boxSizing: 'border-box',
+                  padding: '16px', marginBottom: '10px', borderRadius: '12px',
+                  border: isSel ? '2px solid var(--brand-color)' : '1.5px solid #e0e0e0',
+                  background: isSel ? 'var(--brand-light)' : '#fff',
+                  cursor: 'pointer', textAlign: 'left'
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#222' }}>{p.name}</div>
+                  <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>
+                    {p.durationMinutes === 0 ? '開館至閉館' : `${p.durationMinutes} 分鐘`}
+                  </div>
+                </div>
+                <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--brand-color)' }}>
+                  ${p.price.toLocaleString()}
+                </div>
+              </button>
+            );
+          })}
+          <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+            <button onClick={() => setStep(0)} style={backBtnStyle}>返回</button>
+            <button onClick={() => selPlan && setStep(2)} disabled={!selPlan}
+              style={{ ...nextBtnStyle, flex: 1, margin: 0, opacity: selPlan ? 1 : 0.4 }}>下一步</button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: 選擇時段 */}
+      {step === 2 && (
+        <div>
+          <div style={{ fontWeight: '700', fontSize: '16px', marginBottom: '4px' }}>
+            選擇開始時間
+          </div>
+          <div style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>
+            {date}・{selPlan?.name}（{selPlan?.durationMinutes === 0 ? '至閉館' : `${selPlan?.durationMinutes} 分鐘`}）
+          </div>
+
+          {slotsLoading && <div style={{ textAlign: 'center', color: '#aaa', padding: '40px' }}>載入中...</div>}
+
+          {!slotsLoading && slots.length === 0 && (
+            <div style={{ textAlign: 'center', color: '#aaa', padding: '40px' }}>當日無可用時段</div>
+          )}
+
+          {!slotsLoading && slots.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px' }}>
+              {slots.map((s, i) => {
+                const isSel  = selSlot?.startTime === s.startTime;
+                const isAvail = s.available;
+                return (
+                  <button
+                    key={i}
+                    disabled={!isAvail}
+                    onClick={() => setSelSlot(s)}
+                    style={{
+                      padding: '12px 6px', borderRadius: '10px', border: 'none',
+                      background: isSel ? 'var(--brand-color)' : isAvail ? '#f5f5f5' : '#f0f0f0',
+                      color:  isSel ? 'var(--brand-text)' : isAvail ? '#222' : '#bbb',
+                      cursor: isAvail ? 'pointer' : 'default',
+                      textAlign: 'center', transition: 'all 0.15s'
+                    }}
+                  >
+                    <div style={{ fontSize: '15px', fontWeight: '700' }}>{s.startLabel}</div>
+                    <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>→ {s.endLabel}</div>
+                    {isAvail && s.remaining <= 5 && (
+                      <div style={{ fontSize: '10px', marginTop: '3px', color: isSel ? 'rgba(255,255,255,0.8)' : '#e53935' }}>
+                        剩 {s.remaining} 位
+                      </div>
+                    )}
+                    {!isAvail && <div style={{ fontSize: '10px', marginTop: '3px' }}>已滿</div>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={() => setStep(1)} style={backBtnStyle}>返回</button>
+            <button onClick={() => selSlot && setStep(3)} disabled={!selSlot}
+              style={{ ...nextBtnStyle, flex: 1, margin: 0, opacity: selSlot ? 1 : 0.4 }}>下一步</button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: 確認預約 */}
+      {step === 3 && selSlot && selPlan && (
+        <div>
+          <div style={{ fontWeight: '700', fontSize: '16px', marginBottom: '16px' }}>確認預約資訊</div>
+          <div style={{ border: '1px solid #eee', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+            <Row label="場地"   value={venue.name} />
+            <Row label="日期"   value={date} />
+            <Row label="時長"   value={selPlan.name} />
+            <Row label="入場時間" value={selSlot.startLabel} />
+            <Row label="離場時間" value={selSlot.endLabel} />
+            <div style={{ borderTop: '1px solid #f0f0f0', marginTop: '10px', paddingTop: '10px' }}>
+              <Row label="費用" value={`$${selPlan.price.toLocaleString()}`} />
+            </div>
+          </div>
+          <div style={{ background: '#fff8e1', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px', fontSize: '13px', color: '#5d4037' }}>
+            <div style={{ fontWeight: '600', marginBottom: '4px' }}>入場提醒</div>
+            <div>• 可提前 <strong>15 分鐘</strong>（{toEarlyTime(selSlot.startTime, 15)}）掃碼入場</div>
+            <div>• 請於 <strong>{toEarlyTime(selSlot.startTime, -30)}</strong> 前完成報到，逾時自動取消</div>
+          </div>
+          {error && <div style={{ color: '#e53935', fontSize: '13px', marginBottom: '10px' }}>{error}</div>}
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={() => setStep(2)} style={backBtnStyle}>返回</button>
+            <button onClick={handleSubmit} disabled={submitting}
+              style={{ ...nextBtnStyle, flex: 1, margin: 0, opacity: submitting ? 0.6 : 1 }}>
+              {submitting ? '預約中...' : '確認預約並付款'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function toEarlyTime(isoStr, offsetMin) {
+  const d = new Date(new Date(isoStr).getTime() - offsetMin * 60 * 1000);
+  const h = String(d.getUTCHours() + 8 > 23 ? d.getUTCHours() + 8 - 24 : d.getUTCHours() + 8).padStart(2, '0');
+  const m = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
 }
 
 function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
