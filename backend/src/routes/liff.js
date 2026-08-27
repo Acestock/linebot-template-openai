@@ -303,7 +303,8 @@ router.get('/venues/:id/strategy2-slots', async (req, res) => {
 
     const { date, durationMinutes } = req.query;
     if (!date) return res.status(400).json({ error: 'date 為必填' });
-    const dur = parseInt(durationMinutes, 10) || 90;
+    // durationMinutes=0 means all-day; must handle 0 explicitly (falsy)
+    const dur = durationMinutes !== undefined ? parseInt(durationMinutes, 10) : 90;
 
     const slots = await getAvailableSlots(
       venue._id, date,
