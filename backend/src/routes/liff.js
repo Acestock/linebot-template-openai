@@ -450,7 +450,7 @@ router.post('/reservations', liffAuth, async (req, res) => {
         durationPlanName: dPlan.name,
         durationMinutes:  dPlan.durationMinutes,
         slots:            [],
-        totalPrice:       dPlan.price,
+        totalPrice:       (dPlan.onSale && dPlan.salePrice > 0) ? dPlan.salePrice : dPlan.price,
         startTime:        sTime,
         endTime:          eTime,
         expectedCheckIn:  checkIn15Min,
@@ -514,7 +514,7 @@ router.post('/reservations', liffAuth, async (req, res) => {
       planName      = '計時入場';
     } else if (planId) {
       const plan = await VenuePlan.findById(planId).lean();
-      if (plan) { planName = plan.name; totalPrice = plan.price; }
+      if (plan) { planName = plan.name; totalPrice = (plan.onSale && plan.salePrice > 0) ? plan.salePrice : plan.price; }
     }
 
     const reservation = await Reservation.create({

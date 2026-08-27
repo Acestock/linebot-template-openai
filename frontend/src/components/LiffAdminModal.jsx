@@ -361,7 +361,7 @@ function DurationPlansSection({ venueId }) {
   }, [venueId]);
   useEffect(load, [load]);
 
-  const emptyDForm = { name: '', durationMinutes: 90, price: '', order: 0 };
+  const emptyDForm = { name: '', durationMinutes: 90, price: '', onSale: false, salePrice: '', order: 0 };
 
   async function dSave() {
     if (!dForm.name || dForm.price === '') return alert('請填寫方案名稱和價格');
@@ -371,7 +371,7 @@ function DurationPlansSection({ venueId }) {
       const url    = dForm._id
         ? `${API_BASE}/api/venues/${venueId}/duration-plans/${dForm._id}`
         : `${API_BASE}/api/venues/${venueId}/duration-plans`;
-      await authFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dForm, durationMinutes: +dForm.durationMinutes, price: +dForm.price }) });
+      await authFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dForm, durationMinutes: +dForm.durationMinutes, price: +dForm.price, salePrice: dForm.onSale ? +dForm.salePrice : 0 }) });
       setDForm(null); load();
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
@@ -426,7 +426,16 @@ function DurationPlansSection({ venueId }) {
               <input type="number" min="0" style={{ ...inputStyle, width: '120px' }}
                 value={dForm.durationMinutes} onChange={e => setDForm(f => ({ ...f, durationMinutes: +e.target.value }))} />
             </Field>
-            <Field label="價格 *"><input type="number" min="0" style={inputStyle} value={dForm.price} onChange={e => setDForm(f => ({ ...f, price: e.target.value }))} /></Field>
+            <Field label="原價 *"><input type="number" min="0" style={inputStyle} value={dForm.price} onChange={e => setDForm(f => ({ ...f, price: e.target.value }))} /></Field>
+            <Field label="特價設定">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', marginBottom: dForm.onSale ? '8px' : 0 }}>
+                <input type="checkbox" checked={!!dForm.onSale} onChange={e => setDForm(f => ({ ...f, onSale: e.target.checked }))} />
+                開啟特價
+              </label>
+              {dForm.onSale && (
+                <input type="number" min="0" style={inputStyle} placeholder="特價金額" value={dForm.salePrice} onChange={e => setDForm(f => ({ ...f, salePrice: e.target.value }))} />
+              )}
+            </Field>
             <Field label="排序（數字越小越前）"><input type="number" style={{ ...inputStyle, width: '80px' }} value={dForm.order} onChange={e => setDForm(f => ({ ...f, order: +e.target.value }))} /></Field>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '14px' }}>
               <button onClick={() => setDForm(null)} style={btn('#f5f5f5', '#333')}>取消</button>
@@ -457,7 +466,7 @@ function PlansTab() {
   }, [selVenue]);
   useEffect(loadPlans, [loadPlans]);
 
-  const emptyForm = { name: '', type: 'single', slots: [], price: '', icon: '', startHour: 0, endHour: 24, isActive: true };
+  const emptyForm = { name: '', type: 'single', slots: [], price: '', onSale: false, salePrice: '', icon: '', startHour: 0, endHour: 24, isActive: true };
 
   async function save() {
     if (!form.name || !form.price) return alert('請填寫方案名稱和價格');
@@ -468,7 +477,7 @@ function PlansTab() {
       const url = form._id
         ? `${API_BASE}/api/venues/${selVenue}/plans/${form._id}`
         : `${API_BASE}/api/venues/${selVenue}/plans`;
-      await authFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, price: +form.price }) });
+      await authFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, price: +form.price, salePrice: form.onSale ? +form.salePrice : 0 }) });
       setForm(null); loadPlans();
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
@@ -554,7 +563,16 @@ function PlansTab() {
                 ))}
               </div>
             </Field>
-            <Field label="價格 *"><input type="number" min="0" style={inputStyle} value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} /></Field>
+            <Field label="原價 *"><input type="number" min="0" style={inputStyle} value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} /></Field>
+            <Field label="特價設定">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', marginBottom: form.onSale ? '8px' : 0 }}>
+                <input type="checkbox" checked={!!form.onSale} onChange={e => setForm(f => ({ ...f, onSale: e.target.checked }))} />
+                開啟特價
+              </label>
+              {form.onSale && (
+                <input type="number" min="0" style={inputStyle} placeholder="特價金額" value={form.salePrice} onChange={e => setForm(f => ({ ...f, salePrice: e.target.value }))} />
+              )}
+            </Field>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }}>
               <button onClick={() => setForm(null)} style={btn('#f5f5f5', '#333')}>取消</button>
               <button onClick={save} disabled={saving} style={btn('#111')}>{saving ? '儲存中...' : '儲存'}</button>

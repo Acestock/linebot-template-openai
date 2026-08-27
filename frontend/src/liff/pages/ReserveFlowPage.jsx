@@ -20,6 +20,23 @@ function getCurrentSlot() {
   return 'evening';
 }
 
+function getPlanPrice(plan) {
+  if (!plan) return 0;
+  return plan.onSale && plan.salePrice > 0 ? plan.salePrice : plan.price ?? 0;
+}
+
+function PriceTag({ plan, style }) {
+  if (plan?.onSale && plan?.salePrice > 0) {
+    return (
+      <span style={style}>
+        <span style={{ fontSize: '12px', color: '#bbb', textDecoration: 'line-through', marginRight: '4px' }}>${plan.price}</span>
+        <span style={{ fontWeight: '700', color: '#c62828' }}>${plan.salePrice}</span>
+      </span>
+    );
+  }
+  return <span style={{ ...style, fontWeight: '700' }}>${plan?.price ?? 0}</span>;
+}
+
 function toDateStr(d) {
   const yyyy = d.getFullYear();
   const mm   = String(d.getMonth() + 1).padStart(2, '0');
@@ -393,7 +410,11 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
             <Row label="入場時間" value={selSlot.startLabel} />
             <Row label="離場時間" value={selSlot.endLabel} />
             <div style={{ borderTop: '1px solid #f0f0f0', marginTop: '10px', paddingTop: '10px' }}>
-              <Row label="費用" value={`$${selPlan.price.toLocaleString()}`} />
+              <Row label="費用" value={
+                selPlan.onSale && selPlan.salePrice > 0
+                  ? <span><span style={{ fontSize:'12px',color:'#bbb',textDecoration:'line-through',marginRight:'5px' }}>${selPlan.price}</span><span style={{color:'#c62828',fontWeight:'700'}}>${selPlan.salePrice}</span></span>
+                  : `$${selPlan.price.toLocaleString()}`
+              } />
             </div>
           </div>
           <div style={{ background: '#fff8e1', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px', fontSize: '13px', color: '#5d4037' }}>
@@ -487,7 +508,7 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
     ? plans.find(p => p.type === 'single' && p.slots?.[0] === selectedSlots[0])
     : null;
   const effectivePlan = selectedPlan || autoMatchPlan;
-  const totalPrice = effectivePlan ? effectivePlan.price : 0;
+  const totalPrice = effectivePlan ? getPlanPrice(effectivePlan) : 0;
   const planName   = effectivePlan ? effectivePlan.name  : '';
 
   // Check-in/out times
@@ -584,7 +605,7 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
                       {plan.slots?.map(s => SLOT_LABEL[s]).join(' + ')}
                     </div>
                   </div>
-                  <span style={{ fontSize: '16px', fontWeight: '700' }}>${plan.price}</span>
+                  <PriceTag plan={plan} style={{ fontSize: '16px' }} />
                 </div>
               );
             })
@@ -677,7 +698,7 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
                             : full ? '已額滿' : `剩 ${slotAvail.remaining}`}
                         </span>
                       )}
-                      <span style={{ fontWeight: '700' }}>${plan.price}</span>
+                      <PriceTag plan={plan} style={{}} />
                     </div>
                   </div>
                 ) : null;
@@ -701,7 +722,7 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
                         }}
                       >
                         <span style={{ fontSize: '14px' }}>{plan.name}</span>
-                        <span style={{ fontWeight: '700' }}>${plan.price}</span>
+                        <PriceTag plan={plan} style={{}} />
                       </div>
                     );
                   })}

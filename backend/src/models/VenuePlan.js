@@ -10,6 +10,8 @@ const VenuePlanSchema = new mongoose.Schema({
   startHour:  { type: Number, default: 0 },
   endHour:    { type: Number, default: 24 },
   price:      { type: Number, required: true },
+  onSale:     { type: Boolean, default: false },
+  salePrice:  { type: Number, default: 0 },
   isActive:   { type: Boolean, default: true },
   order:      { type: Number, default: 0 }
 });

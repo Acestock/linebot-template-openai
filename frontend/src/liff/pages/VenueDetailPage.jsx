@@ -297,7 +297,16 @@ export default function VenueDetailPage({ venueId, onReserve, onWalkIn }) {
                       {p.name}
                       <span style={{ fontSize: '12px', color: '#999', marginLeft: '6px' }}>（{durationLabel(p.durationMinutes)}）</span>
                     </span>
-                    <span style={{ fontSize: '14px', fontWeight: '600' }}>${p.price}</span>
+                    <span>
+                      {p.onSale && p.salePrice > 0 ? (
+                        <>
+                          <span style={{ fontSize: '12px', color: '#bbb', textDecoration: 'line-through', marginRight: '6px' }}>${p.price}</span>
+                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#c62828' }}>${p.salePrice}</span>
+                        </>
+                      ) : (
+                        <span style={{ fontSize: '14px', fontWeight: '600' }}>${p.price}</span>
+                      )}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -332,7 +341,16 @@ export default function VenueDetailPage({ venueId, onReserve, onWalkIn }) {
                           <span style={{ fontSize: '14px', color: '#444' }}>
                             {info.icon || ''} {p.name || `${info.label} ${info.range}`}
                           </span>
-                          <span style={{ fontSize: '14px', fontWeight: '600' }}>${p.price}</span>
+                          <span>
+                            {p.onSale && p.salePrice > 0 ? (
+                              <>
+                                <span style={{ fontSize: '12px', color: '#bbb', textDecoration: 'line-through', marginRight: '6px' }}>${p.price}</span>
+                                <span style={{ fontSize: '14px', fontWeight: '700', color: '#c62828' }}>${p.salePrice}</span>
+                              </>
+                            ) : (
+                              <span style={{ fontSize: '14px', fontWeight: '600' }}>${p.price}</span>
+                            )}
+                          </span>
                         </div>
                       );
                     })}
