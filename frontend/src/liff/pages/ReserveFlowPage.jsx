@@ -329,8 +329,15 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
                     {p.durationMinutes === 0 ? '開館至閉館' : `${p.durationMinutes} 分鐘`}
                   </div>
                 </div>
-                <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--brand-color)' }}>
-                  ${p.price.toLocaleString()}
+                <div style={{ fontSize: '18px', color: 'var(--brand-color)', textAlign: 'right' }}>
+                  {p.onSale && p.salePrice > 0 ? (
+                    <>
+                      <div style={{ fontSize: '12px', color: '#bbb', textDecoration: 'line-through', fontWeight: '400' }}>${p.price.toLocaleString()}</div>
+                      <div style={{ fontWeight: '800' }}>${p.salePrice.toLocaleString()}</div>
+                    </>
+                  ) : (
+                    <div style={{ fontWeight: '800' }}>${p.price.toLocaleString()}</div>
+                  )}
                 </div>
               </button>
             );
