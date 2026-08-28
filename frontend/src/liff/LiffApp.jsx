@@ -176,7 +176,7 @@ export default function LiffApp() {
           venue={page.params.venue}
           mode={page.params.mode}
           onBack={handleBack}
-          onDone={() => navigate('list')}
+          onDone={() => navigate('profile')}
         />
       )}
       {page.name === 'my' && (
