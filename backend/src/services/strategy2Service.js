@@ -27,17 +27,14 @@ function generateStartSlots(dateStr, openHour, closeHour, durationMinutes) {
   while (curUTC < closeUTC) {
     let endUTC;
     if (durationMinutes === 0) {
-      // 整天：起始由使用者選，結束固定為閉館
+      // 整天方案：任何時間點入場，結束固定為閉館
       endUTC = closeUTC;
     } else {
       endUTC = curUTC + durationMinutes * 60 * 1000;
+      if (endUTC > closeUTC) break; // 一般時長：超出閉館時間不顯示
     }
 
-    if (endUTC > closeUTC) break;
-
     slots.push({ startTime: new Date(curUTC), endTime: new Date(endUTC) });
-
-    if (durationMinutes === 0) break; // 整天只有一個起始點（開館）
     curUTC += 30 * 60 * 1000; // next 30-min slot
   }
 
