@@ -219,6 +219,7 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
   const venue = initialVenue;
 
   const today = toDateStr(new Date());
+  const maxDate = toDateStr(new Date(Date.now() + 6 * 24 * 60 * 60 * 1000));
 
   // Load duration plans
   useEffect(() => {
@@ -293,6 +294,7 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
           <input
             type="date"
             min={today}
+            max={maxDate}
             value={date}
             onChange={e => setDate(e.target.value)}
             style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: '10px', border: '1.5px solid #e0e0e0', fontSize: '16px' }}
@@ -496,7 +498,7 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
     ? plans.filter(p => p.isActive !== false && p.slots?.includes(currentSlotKey))
     : [];
   const today = toDateStr(new Date());
-  const maxDate = toDateStr(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
+  const maxDate = toDateStr(new Date(Date.now() + 6 * 24 * 60 * 60 * 1000));
 
   function toggleSlot(key) {
     setSelectedSlots(prev =>
