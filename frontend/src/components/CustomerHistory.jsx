@@ -49,7 +49,7 @@ function CustomerHistory({ lineUserId, displayName, onClose }) {
     setLoading(true);
     authFetch(`${API_BASE}/api/customers/${encodeURIComponent(lineUserId)}/history`)
       .then(r => r.json())
-      .then(data => { setHistory(data); setLoading(false); })
+      .then(data => { setHistory(Array.isArray(data) ? data : []); setLoading(false); })
       .catch(() => setLoading(false));
   }, [lineUserId]);
 

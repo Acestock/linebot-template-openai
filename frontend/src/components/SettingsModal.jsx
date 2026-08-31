@@ -169,11 +169,11 @@ function KeywordTab() {
 
   async function loadKeywords() {
     const res = await authFetch(`${API_BASE}/api/keywords`);
-    setKeywords(await res.json());
+    const d = await res.json(); setKeywords(Array.isArray(d) ? d : []);
   }
   async function loadCards() {
     const res = await authFetch(`${API_BASE}/api/cards`);
-    setCards(await res.json());
+    const d = await res.json(); setCards(Array.isArray(d) ? d : []);
   }
 
   function openNew() {
@@ -497,7 +497,7 @@ function CardTab() {
   useEffect(() => { load(); }, []);
   async function load() {
     const res = await authFetch(`${API_BASE}/api/cards`);
-    setCards(await res.json());
+    const d = await res.json(); setCards(Array.isArray(d) ? d : []);
   }
 
   function openNew() {
@@ -834,7 +834,7 @@ function OrderItemsTab() {
   async function loadItems() {
     try {
       const res = await authFetch(`${API_BASE}/api/order-items`);
-      setItems(await res.json());
+      const d = await res.json(); setItems(Array.isArray(d) ? d : []);
     } catch {}
   }
 
@@ -965,7 +965,7 @@ function FAQTab() {
   async function loadFaqs() {
     try {
       const res = await authFetch(`${API_BASE}/api/faqs`);
-      setFaqs(await res.json());
+      const d = await res.json(); setFaqs(Array.isArray(d) ? d : []);
     } catch {}
   }
 
@@ -1102,7 +1102,7 @@ function LabelTab() {
 
   async function load() {
     const res = await authFetch(`${API_BASE}/api/labels`);
-    setLabels(await res.json());
+    const d = await res.json(); setLabels(Array.isArray(d) ? d : []);
   }
 
   function openNew() { setEditing(null); setForm({ name: '', color: '#2196F3' }); setShowForm(true); }

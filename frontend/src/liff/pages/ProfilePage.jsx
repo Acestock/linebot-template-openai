@@ -190,7 +190,8 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
 
   async function openHourDeduction() {
     try {
-      const purchases = await fetchMyHourPurchases();
+      const raw = await fetchMyHourPurchases();
+      const purchases = Array.isArray(raw) ? raw : [];
       const total = purchases.reduce((s, p) => s + (p.totalMinutes - p.usedMinutes), 0);
       setHourBalance(total);
       setShowHourConfirm(true);
@@ -594,8 +595,8 @@ function HourBalanceTab() {
 
   useEffect(() => {
     fetchMyHourPurchases()
-      .then(setPurchases)
-      .catch(() => {})
+      .then(data => setPurchases(Array.isArray(data) ? data : []))
+      .catch(() => setPurchases([]))
       .finally(() => setLoading(false));
   }, []);
 

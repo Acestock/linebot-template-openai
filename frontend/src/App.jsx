@@ -107,7 +107,7 @@ function App() {
       const res = await authFetch(`${API_BASE}/api/conversations`);
       if (handle401(res)) return;
       const data = await res.json();
-      setConversations(data);
+      setConversations(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Failed to fetch conversations:', err);
     }
@@ -133,8 +133,10 @@ function App() {
         authFetch(`${API_BASE}/api/customers/labels`)
       ]);
       if (handle401(labelsRes) || handle401(clRes)) return;
-      setLabels(await labelsRes.json());
-      setCustomerLabels(await clRes.json());
+      const labelsData = await labelsRes.json();
+      const clData = await clRes.json();
+      setLabels(Array.isArray(labelsData) ? labelsData : []);
+      setCustomerLabels(clData && typeof clData === 'object' && !Array.isArray(clData) ? clData : {});
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
