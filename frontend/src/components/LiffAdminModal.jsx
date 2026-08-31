@@ -997,8 +997,11 @@ function HourPackagesTab() {
   const [saving, setSaving]     = useState(false);
 
   function reload() {
-    authFetch(`${API_BASE}/api/admin/hour-packages`)
-      .then(r => r.json()).then(setPackages).catch(() => {}).finally(() => setLoading(false));
+    authFetch(`${API_BASE}/api/hour-packages`)
+      .then(r => r.json())
+      .then(data => setPackages(Array.isArray(data) ? data : []))
+      .catch(() => setPackages([]))
+      .finally(() => setLoading(false));
   }
 
   useEffect(() => { reload(); }, []);
@@ -1016,9 +1019,9 @@ function HourPackagesTab() {
     const body = { ...form, hours: Number(form.hours), price: Number(form.price), validDays: Number(form.validDays), order: Number(form.order) };
     try {
       if (editing) {
-        await authFetch(`${API_BASE}/api/admin/hour-packages/${editing}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        await authFetch(`${API_BASE}/api/hour-packages/${editing}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       } else {
-        await authFetch(`${API_BASE}/api/admin/hour-packages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        await authFetch(`${API_BASE}/api/hour-packages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       }
       handleCancel();
       reload();
@@ -1028,7 +1031,7 @@ function HourPackagesTab() {
 
   async function handleDelete(id) {
     if (!confirm('確定要刪除此方案？')) return;
-    await authFetch(`${API_BASE}/api/admin/hour-packages/${id}`, { method: 'DELETE' });
+    await authFetch(`${API_BASE}/api/hour-packages/${id}`, { method: 'DELETE' });
     reload();
   }
 
@@ -1200,7 +1203,7 @@ function AnalyticsTab() {
 
       {loading && <div style={{ textAlign: 'center', padding: '40px', color: '#aaa' }}>載入中...</div>}
 
-      {!loading && data && (
+      {!loading && data && data.summary && (
         <>
           {/* Summary cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '20px' }}>
