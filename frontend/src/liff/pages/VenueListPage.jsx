@@ -73,7 +73,31 @@ function VenueCard({ venue, dateKey, onClick }) {
   );
 }
 
-export default function VenueListPage({ onSelect }) {
+function HourPackageCard({ onClick }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        background: '#fff', borderRadius: '12px', padding: '16px 16px 16px 20px',
+        marginBottom: '10px', cursor: 'pointer',
+        borderLeft: '4px solid #7B61FF',
+        boxShadow: '0 1px 6px rgba(0,0,0,0.07)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+      }}
+    >
+      <div>
+        <div style={{ fontWeight: '700', fontSize: '16px', marginBottom: '4px' }}>⏱ 預購時數</div>
+        <div style={{ fontSize: '13px', color: '#888' }}>購買時數方案，出場時可折抵費用</div>
+      </div>
+      <span style={{
+        background: '#f3f0ff', color: '#7B61FF', borderRadius: '20px',
+        padding: '3px 12px', fontSize: '13px', fontWeight: '600', flexShrink: 0
+      }}>查看方案</span>
+    </div>
+  );
+}
+
+export default function VenueListPage({ onSelect, onHourPackage }) {
   const [venues, setVenues] = useState([]);
   const [tab, setTab]       = useState(0);
   const [loading, setLoading] = useState(true);
@@ -114,6 +138,7 @@ export default function VenueListPage({ onSelect }) {
       ) : venues.map(v => (
         <VenueCard key={v._id} venue={v} dateKey={days[tab].key} onClick={() => onSelect(v._id)} />
       ))}
+      {!loading && onHourPackage && <HourPackageCard onClick={onHourPackage} />}
 
       {/* Brand tagline — stretches to fill remaining space and self-centers */}
       {!loading && (

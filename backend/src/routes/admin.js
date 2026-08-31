@@ -1636,4 +1636,36 @@ router.get('/analytics', async (req, res) => {
   }
 });
 
+// ─── Hour Packages ────────────────────────────────────────────────────────────
+const HourPackage = require('../models/HourPackage');
+
+router.get('/hour-packages', async (req, res) => {
+  try {
+    const pkgs = await HourPackage.find().sort({ order: 1, createdAt: 1 });
+    res.json(pkgs);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/hour-packages', async (req, res) => {
+  try {
+    const { name, hours, price, validDays, isActive, order } = req.body;
+    const pkg = await HourPackage.create({ name, hours, price, validDays, isActive, order: order || 0 });
+    res.json(pkg);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.patch('/hour-packages/:id', async (req, res) => {
+  try {
+    const pkg = await HourPackage.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(pkg);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/hour-packages/:id', async (req, res) => {
+  try {
+    await HourPackage.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

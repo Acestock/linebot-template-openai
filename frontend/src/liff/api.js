@@ -184,6 +184,40 @@ export function submitPaymentForm(action, fields) {
 // Kept for backward compatibility
 export const submitEcpayForm = submitPaymentForm;
 
+// ── Hour Packages ─────────────────────────────────────────────────────────────
+export async function fetchHourPackages() {
+  const r = await fetch(`${BASE}/hour-packages`);
+  if (!r.ok) throw new Error('無法取得時數方案');
+  return r.json();
+}
+
+export async function fetchMyHourPurchases() {
+  const r = await fetch(`${BASE}/hour-purchases`, { headers: authHeaders() });
+  if (!r.ok) throw new Error('無法取得時數餘額');
+  return r.json();
+}
+
+export async function buyHourPackage(packageId) {
+  const r = await fetch(`${BASE}/hour-purchases`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ packageId })
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '購買失敗');
+  return json;
+}
+
+export async function payWithHours(reservationId) {
+  const r = await fetch(`${BASE}/reservations/${reservationId}/pay-with-hours`, {
+    method: 'POST',
+    headers: authHeaders()
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '折抵失敗');
+  return json;
+}
+
 // ── Strategy 2 API ────────────────────────────────────────────────────────────
 export async function fetchDurationPlans(venueId) {
   const r = await fetch(`${BASE}/venues/${venueId}/duration-plans`);

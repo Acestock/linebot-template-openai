@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import QRCode from 'qrcode';
 import API_BASE, { authFetch } from '../config';
 
-const TABS = ['場地管理', '時段方案', '公告管理', '預約列表', '系統設定', '任務管理', '營業分析'];
+const TABS = ['場地管理', '時段方案', '公告管理', '預約列表', '系統設定', '任務管理', '營業分析', '預購時數'];
 const SLOT_OPTIONS = [
   { key: 'morning',   label: '早上 (07–12)' },
   { key: 'afternoon', label: '下午 (12–18)' },
@@ -986,6 +986,110 @@ function SystemSettingsTab() {
   );
 }
 
+// ── Tab 8: 預購時數 ──────────────────────────────────────────────────────────
+const emptyHPkg = { name: '', hours: '', price: '', validDays: '', isActive: true, order: 0 };
+
+function HourPackagesTab() {
+  const [packages, setPackages] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [form, setForm]         = useState(emptyHPkg);
+  const [editing, setEditing]   = useState(null);
+  const [saving, setSaving]     = useState(false);
+
+  function reload() {
+    authFetch(`${API_BASE}/api/admin/hour-packages`)
+      .then(r => r.json()).then(setPackages).catch(() => {}).finally(() => setLoading(false));
+  }
+
+  useEffect(() => { reload(); }, []);
+
+  function handleEdit(pkg) {
+    setEditing(pkg._id);
+    setForm({ name: pkg.name, hours: pkg.hours, price: pkg.price, validDays: pkg.validDays, isActive: pkg.isActive, order: pkg.order ?? 0 });
+  }
+
+  function handleCancel() { setEditing(null); setForm(emptyHPkg); }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    setSaving(true);
+    const body = { ...form, hours: Number(form.hours), price: Number(form.price), validDays: Number(form.validDays), order: Number(form.order) };
+    try {
+      if (editing) {
+        await authFetch(`${API_BASE}/api/admin/hour-packages/${editing}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      } else {
+        await authFetch(`${API_BASE}/api/admin/hour-packages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      }
+      handleCancel();
+      reload();
+    } catch (err) { alert('儲存失敗'); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('確定要刪除此方案？')) return;
+    await authFetch(`${API_BASE}/api/admin/hour-packages/${id}`, { method: 'DELETE' });
+    reload();
+  }
+
+  const inp = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px', marginBottom: '10px' };
+  const hourlyRate = form.hours && form.price ? Math.ceil(Number(form.price) / Number(form.hours)) : null;
+
+  return (
+    <div>
+      <h3 style={{ fontWeight: '700', marginBottom: '16px', fontSize: '15px' }}>預購時數方案</h3>
+      <form onSubmit={handleSave} style={{ background: '#f9f9f9', borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
+        <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '14px', color: '#444' }}>{editing ? '編輯方案' : '新增方案'}</div>
+        <input placeholder="方案名稱，例：10小時時數包" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inp} required />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <input type="number" min="1" placeholder="時數（小時）" value={form.hours} onChange={e => setForm(f => ({ ...f, hours: e.target.value }))} style={{ ...inp, marginBottom: 0 }} required />
+          <input type="number" min="0" placeholder="售價（$）" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} style={{ ...inp, marginBottom: 0 }} required />
+        </div>
+        {hourlyRate && <div style={{ fontSize: '12px', color: '#7B61FF', margin: '6px 0 10px', fontWeight: '600' }}>≈ ${hourlyRate} / 小時</div>}
+        <input type="number" min="1" placeholder="有效天數（購買後幾天到期）" value={form.validDays} onChange={e => setForm(f => ({ ...f, validDays: e.target.value }))} style={inp} required />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px', marginBottom: '12px' }}>
+          <label style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} />
+            上架顯示
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '13px', color: '#888' }}>排序：</span>
+            <input type="number" value={form.order} onChange={e => setForm(f => ({ ...f, order: e.target.value }))} style={{ width: '60px', padding: '5px 8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px' }} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button type="submit" disabled={saving} style={{ background: '#111', color: '#fff', border: 'none', borderRadius: '8px', padding: '9px 20px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
+            {saving ? '儲存中...' : editing ? '更新方案' : '新增方案'}
+          </button>
+          {editing && <button type="button" onClick={handleCancel} style={{ background: '#fff', color: '#555', border: '1px solid #ddd', borderRadius: '8px', padding: '9px 16px', fontSize: '14px', cursor: 'pointer' }}>取消</button>}
+        </div>
+      </form>
+
+      {loading ? <div style={{ color: '#aaa', textAlign: 'center', padding: '20px' }}>載入中...</div>
+        : packages.length === 0 ? <div style={{ color: '#aaa', textAlign: 'center', padding: '20px' }}>尚無方案</div>
+        : packages.map(pkg => {
+          const rate = Math.ceil(pkg.price / pkg.hours);
+          return (
+            <div key={pkg._id} style={{ background: '#fff', border: '1px solid #eee', borderRadius: '10px', padding: '14px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '4px' }}>
+                  {pkg.name}
+                  {!pkg.isActive && <span style={{ marginLeft: '6px', fontSize: '11px', color: '#aaa', background: '#f5f5f5', padding: '1px 6px', borderRadius: '4px' }}>已下架</span>}
+                </div>
+                <div style={{ fontSize: '13px', color: '#666' }}>{pkg.hours} 小時・${pkg.price}・有效 {pkg.validDays} 天</div>
+                <div style={{ fontSize: '12px', color: '#7B61FF', marginTop: '2px' }}>≈ ${rate} / 小時</div>
+              </div>
+              <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                <button onClick={() => handleEdit(pkg)} style={{ background: '#f0f0f0', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}>編輯</button>
+                <button onClick={() => handleDelete(pkg._id)} style={{ background: '#ffebee', color: '#c62828', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}>刪除</button>
+              </div>
+            </div>
+          );
+        })}
+    </div>
+  );
+}
+
 // ── Tab 7: 營業額分析 ─────────────────────────────────────────────────────────
 const PERIOD_OPTIONS = [
   { key: 'week',  label: '本週' },
@@ -1610,6 +1714,7 @@ export default function LiffAdminModal({ onClose }) {
           {tab === 4 && <SystemSettingsTab />}
           {tab === 5 && <TasksAdminTab />}
           {tab === 6 && <AnalyticsTab />}
+          {tab === 7 && <HourPackagesTab />}
         </div>
       </div>
     </div>

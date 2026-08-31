@@ -4,8 +4,9 @@ import { liffAuth, setSessionToken, fetchMyReservations } from './api';
 import VenueListPage   from './pages/VenueListPage';
 import VenueDetailPage from './pages/VenueDetailPage';
 import ReserveFlowPage from './pages/ReserveFlowPage';
-import MyBookingsPage  from './pages/MyBookingsPage';
-import ProfilePage     from './pages/ProfilePage';
+import MyBookingsPage    from './pages/MyBookingsPage';
+import ProfilePage       from './pages/ProfilePage';
+import HourPurchasePage  from './pages/HourPurchasePage';
 
 // LIFF ID must be set in environment variable VITE_LIFF_ID
 const LIFF_ID = import.meta.env.VITE_LIFF_ID || '';
@@ -120,10 +121,11 @@ export default function LiffApp() {
   const showFab     = hasActiveCheckIn && page.name === 'list' && !!user;
 
   function handleBack() {
-    if (page.name === 'profile') return navigate('list');
-    if (page.name === 'my')      return navigate('list');
-    if (page.name === 'detail')  return navigate('list');
-    if (page.name === 'reserve') return navigate('detail', { venueId: page.params.venue?._id });
+    if (page.name === 'profile')      return navigate('list');
+    if (page.name === 'my')           return navigate('list');
+    if (page.name === 'detail')       return navigate('list');
+    if (page.name === 'reserve')      return navigate('detail', { venueId: page.params.venue?._id });
+    if (page.name === 'hour-package') return navigate('list');
     navigate('list');
   }
 
@@ -140,11 +142,12 @@ export default function LiffApp() {
             <button onClick={handleBack} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', padding: '0 4px' }}>‹</button>
           )}
           <div style={{ fontWeight: '800', fontSize: '17px', letterSpacing: '-0.3px' }}>
-            {page.name === 'list'    ? '預約入場'   : ''}
-            {page.name === 'detail'  ? '場地詳情'   : ''}
-            {page.name === 'reserve' ? (page.params.mode === 'walkin_short' ? '計時入場' : page.params.mode === 'walkin' ? '立即入場' : '預約入場') : ''}
-            {page.name === 'my'      ? '我的預約'   : ''}
-            {page.name === 'profile' ? '預約紀錄'   : ''}
+            {page.name === 'list'         ? '預約入場'   : ''}
+            {page.name === 'detail'       ? '場地詳情'   : ''}
+            {page.name === 'reserve'      ? (page.params.mode === 'walkin_short' ? '計時入場' : page.params.mode === 'walkin' ? '立即入場' : '預約入場') : ''}
+            {page.name === 'my'           ? '我的預約'   : ''}
+            {page.name === 'profile'      ? '預約紀錄'   : ''}
+            {page.name === 'hour-package' ? '預購時數'   : ''}
           </div>
         </div>
         {showMyBtn && (
@@ -162,7 +165,11 @@ export default function LiffApp() {
         <VenueListPage
           onSelect={(venueId) => navigate('detail', { venueId })}
           onMyBookings={() => navigate('my')}
+          onHourPackage={() => navigate('hour-package')}
         />
+      )}
+      {page.name === 'hour-package' && (
+        <HourPurchasePage onBack={() => navigate('list')} />
       )}
       {page.name === 'detail' && (
         <VenueDetailPage

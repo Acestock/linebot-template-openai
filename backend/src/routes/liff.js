@@ -926,4 +926,96 @@ router.get('/coupons', liffAuth, async (req, res) => {
   }
 });
 
+// ─── Hour Packages ────────────────────────────────────────────────────────────
+const HourPackage  = require('../models/HourPackage');
+const HourPurchase = require('../models/HourPurchase');
+const { createHourOrderParams } = require('../services/ecpayService');
+
+router.get('/hour-packages', async (req, res) => {
+  try {
+    const pkgs = await HourPackage.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+    res.json(pkgs);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/hour-purchases', liffAuth, async (req, res) => {
+  try {
+    const now = new Date();
+    const purchases = await HourPurchase.find({
+      lineUserId: req.liffUser.lineUserId,
+      paymentStatus: 'paid',
+      expiresAt: { $gt: now },
+    }).sort({ expiresAt: 1 });
+    res.json(purchases);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/hour-purchases', liffAuth, async (req, res) => {
+  try {
+    const { packageId } = req.body;
+    const pkg = await HourPackage.findById(packageId);
+    if (!pkg || !pkg.isActive) return res.status(404).json({ error: '方案不存在' });
+
+    const expiresAt = new Date(Date.now() + pkg.validDays * 24 * 60 * 60 * 1000);
+    const purchase = await HourPurchase.create({
+      lineUserId:    req.liffUser.lineUserId,
+      packageId:     pkg._id,
+      packageName:   pkg.name,
+      totalMinutes:  pkg.hours * 60,
+      usedMinutes:   0,
+      totalPrice:    pkg.price,
+      paymentStatus: 'unpaid',
+      expiresAt,
+    });
+
+    const { params, apiUrl, tradeNo } = createHourOrderParams(purchase);
+    purchase.paymentRef = tradeNo;
+    await purchase.save();
+
+    res.json({ form: { action: apiUrl, fields: params } });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/reservations/:id/pay-with-hours', liffAuth, async (req, res) => {
+  try {
+    const r = await Reservation.findById(req.params.id);
+    if (!r) return res.status(404).json({ error: '預約不存在' });
+    if (r.lineUserId !== req.liffUser.lineUserId) return res.status(403).json({ error: '無權限' });
+    if (r.paymentStatus === 'paid') return res.status(400).json({ error: '已付款' });
+    if (r.totalPrice <= 0) return res.status(400).json({ error: '此預約不需付款' });
+
+    const startMs  = new Date(r.startTime || r.expectedCheckIn || r.createdAt).getTime();
+    const endMs    = new Date(r.endTime   || r.expectedCheckOut || (startMs + 60 * 60 * 1000)).getTime();
+    const neededMinutes = Math.ceil((endMs - startMs) / 60000);
+
+    const now = new Date();
+    const purchases = await HourPurchase.find({
+      lineUserId:    req.liffUser.lineUserId,
+      paymentStatus: 'paid',
+      expiresAt:     { $gt: now },
+    }).sort({ expiresAt: 1 });
+
+    const totalRemaining = purchases.reduce((s, p) => s + (p.totalMinutes - p.usedMinutes), 0);
+    if (totalRemaining < neededMinutes) {
+      return res.status(400).json({ error: '時數不足', neededMinutes, remainingMinutes: totalRemaining });
+    }
+
+    let toDeduct = neededMinutes;
+    for (const p of purchases) {
+      if (toDeduct <= 0) break;
+      const avail = p.totalMinutes - p.usedMinutes;
+      const use   = Math.min(avail, toDeduct);
+      p.usedMinutes += use;
+      toDeduct -= use;
+      await p.save();
+    }
+
+    r.paymentStatus = 'paid';
+    r.status        = 'completed';
+    await r.save();
+
+    res.json({ ok: true, deductedMinutes: neededMinutes });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

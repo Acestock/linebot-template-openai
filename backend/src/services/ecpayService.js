@@ -73,4 +73,34 @@ function createOrderParams(reservation) {
   return { params, apiUrl: cfg.apiUrl, tradeNo };
 }
 
-module.exports = { createOrderParams, verifyCheckMac };
+function createHourOrderParams(purchase) {
+  const cfg = getCfg();
+  const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+
+  const now = new Date();
+  const p = n => String(n).padStart(2, '0');
+  const dateStr = `${now.getFullYear()}/${p(now.getMonth() + 1)}/${p(now.getDate())} ${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`;
+
+  const tradeNo = ('H' + purchase._id.toString() + Date.now().toString(36))
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .slice(0, 20);
+
+  const params = {
+    MerchantID:        cfg.MerchantID,
+    MerchantTradeNo:   tradeNo,
+    MerchantTradeDate: dateStr,
+    PaymentType:       'aio',
+    TotalAmount:       String(Math.max(1, Math.round(purchase.totalPrice))),
+    TradeDesc:         '預購時數',
+    ItemName:          (purchase.packageName || '預購時數').slice(0, 100),
+    ReturnURL:         `${appUrl}/api/ecpay/callback`,
+    ClientBackURL:     `${appUrl}/ecpay/result?hourPurchaseId=${purchase._id}${process.env.LIFF_ID ? '&liffId=' + process.env.LIFF_ID : ''}`,
+    ChoosePayment:     'Credit',
+    EncryptType:       '1',
+  };
+
+  params.CheckMacValue = genCheckMacValue(params);
+  return { params, apiUrl: cfg.apiUrl, tradeNo };
+}
+
+module.exports = { createOrderParams, createHourOrderParams, verifyCheckMac };

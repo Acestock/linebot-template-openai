@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitPaymentForm, fetchMyCoupons, fetchShortSessionPrice } from '../api';
+import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitPaymentForm, fetchMyCoupons, fetchShortSessionPrice, fetchMyHourPurchases, payWithHours } from '../api';
 import TasksTab from './TasksTab';
 
 const STATUS_MAP = {
@@ -74,6 +74,9 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const [shortQuoteLoading, setShortQuoteLoading] = useState(false);
   const [showShortConfirm, setShowShortConfirm] = useState(false);
   const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
+  const [hourBalance, setHourBalance]   = useState(null);
+  const [showHourConfirm, setShowHourConfirm] = useState(false);
+  const [deducting, setDeducting]       = useState(false);
 
   const isShortSession = r.mode === 'walkin_short';
   const isStrategy2    = (r.strategy ?? 1) === 2;
@@ -182,6 +185,32 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
     } catch (e) {
       alert(e.message);
       setPaying(false);
+    }
+  }
+
+  async function openHourDeduction() {
+    try {
+      const purchases = await fetchMyHourPurchases();
+      const total = purchases.reduce((s, p) => s + (p.totalMinutes - p.usedMinutes), 0);
+      setHourBalance(total);
+      setShowHourConfirm(true);
+    } catch (e) {
+      alert('無法取得時數餘額：' + e.message);
+    }
+  }
+
+  async function handlePayWithHours() {
+    setShowHourConfirm(false);
+    setDeducting(true);
+    try {
+      await payWithHours(r._id);
+      setLocalStatus('completed');
+      setLocalPayStatus('paid');
+      onCompleted?.(r._id, { unpaidExit: false });
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setDeducting(false);
     }
   }
 
@@ -344,12 +373,42 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
 
       {/* Payment button — shown when checked_in + has charge + not yet paid */}
       {needsPayment && (
-        <button type="button"
-          onClick={isShortSession ? handleShortSessionCheckout : handlePay}
-          disabled={paying || shortQuoteLoading}
-          style={{ width: '100%', marginTop: '16px', padding: '14px', border: 'none', borderRadius: '10px', background: (paying || shortQuoteLoading) ? '#ccc' : '#e65100', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: (paying || shortQuoteLoading) ? 'not-allowed' : 'pointer', lineHeight: '1.4' }}>
-          {payBtnLabel()}
-        </button>
+        <>
+          <button type="button"
+            onClick={isShortSession ? handleShortSessionCheckout : handlePay}
+            disabled={paying || shortQuoteLoading || deducting}
+            style={{ width: '100%', marginTop: '16px', padding: '14px', border: 'none', borderRadius: '10px', background: (paying || shortQuoteLoading || deducting) ? '#ccc' : '#e65100', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: (paying || shortQuoteLoading || deducting) ? 'not-allowed' : 'pointer', lineHeight: '1.4' }}>
+            {payBtnLabel()}
+          </button>
+          {!isShortSession && (
+            <button type="button" onClick={openHourDeduction} disabled={paying || deducting}
+              style={{ width: '100%', marginTop: '10px', padding: '13px', border: '1.5px solid #7B61FF', borderRadius: '10px', background: '#fff', fontSize: '14px', fontWeight: '600', color: '#7B61FF', cursor: (paying || deducting) ? 'not-allowed' : 'pointer' }}>
+              {deducting ? '折抵中...' : '使用預購時數折抵'}
+            </button>
+          )}
+        </>
+      )}
+
+      {/* Hour deduction confirm modal */}
+      {showHourConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', padding: '24px 20px', width: '100%', maxWidth: '320px' }}>
+            <div style={{ fontWeight: '700', fontSize: '16px', marginBottom: '12px' }}>使用預購時數折抵</div>
+            <div style={{ fontSize: '14px', color: '#555', lineHeight: 1.6, marginBottom: '16px' }}>
+              <div>費用：<strong>${r.totalPrice}</strong></div>
+              <div>時數餘額：<strong>{hourBalance != null ? `${Math.floor(hourBalance / 60)} 小時 ${hourBalance % 60} 分鐘（${hourBalance} 分鐘）` : '...'}</strong></div>
+              <div style={{ marginTop: '8px', color: '#888', fontSize: '13px' }}>折抵後此預約將自動標記為已完成，無需另外付款。</div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setShowHourConfirm(false)} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #ddd', background: '#fff', fontSize: '14px', cursor: 'pointer', color: '#555' }}>
+                取消
+              </button>
+              <button onClick={handlePayWithHours} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', background: '#7B61FF', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
+                確認折抵
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Short-session checkout confirmation modal */}
@@ -528,7 +587,74 @@ function PersonalInfoTab({ user }) {
 }
 
 // ── Main ProfilePage ─────────────────────────────────────────────────────────
-const SUB_TABS = ['當前預約', '任務', '預約紀錄', '個人資料'];
+// ── Sub-tab: 時數餘額 ─────────────────────────────────────────────────────────
+function HourBalanceTab() {
+  const [purchases, setPurchases] = useState([]);
+  const [loading, setLoading]     = useState(true);
+
+  useEffect(() => {
+    fetchMyHourPurchases()
+      .then(setPurchases)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const totalRemaining = purchases.reduce((s, p) => s + (p.totalMinutes - p.usedMinutes), 0);
+
+  function fmtMinutes(m) {
+    const h = Math.floor(m / 60);
+    const min = m % 60;
+    if (h > 0 && min > 0) return `${h} 小時 ${min} 分鐘`;
+    if (h > 0) return `${h} 小時`;
+    return `${min} 分鐘`;
+  }
+
+  return (
+    <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '60px', color: '#aaa' }}>載入中...</div>
+      ) : (
+        <>
+          <div style={{ background: '#7B61FF', borderRadius: '14px', padding: '20px', color: '#fff', textAlign: 'center', marginBottom: '16px' }}>
+            <div style={{ fontSize: '13px', opacity: 0.85, marginBottom: '6px' }}>目前可用時數餘額</div>
+            <div style={{ fontSize: '36px', fontWeight: '800' }}>{totalRemaining > 0 ? fmtMinutes(totalRemaining) : '0 分鐘'}</div>
+            {purchases.length > 0 && (
+              <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '6px' }}>共 {purchases.length} 筆有效方案</div>
+            )}
+          </div>
+
+          {purchases.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px 16px', color: '#aaa', fontSize: '14px' }}>
+              目前沒有有效的預購時數<br />
+              <span style={{ fontSize: '13px' }}>可於首頁「⏱ 預購時數」購買方案</span>
+            </div>
+          ) : purchases.map(p => {
+            const remaining = p.totalMinutes - p.usedMinutes;
+            const pct = Math.round((remaining / p.totalMinutes) * 100);
+            const expiry = new Date(p.expiresAt).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' });
+            return (
+              <div key={p._id} style={{ background: '#fff', borderRadius: '12px', padding: '14px 16px', marginBottom: '10px', boxShadow: '0 1px 5px rgba(0,0,0,0.07)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <div style={{ fontWeight: '600', fontSize: '15px' }}>{p.packageName}</div>
+                  <div style={{ fontSize: '13px', color: '#888' }}>到期：{expiry}</div>
+                </div>
+                <div style={{ fontSize: '13px', color: '#666', marginBottom: '8px' }}>
+                  剩餘 <strong style={{ color: '#7B61FF' }}>{fmtMinutes(remaining)}</strong>
+                  <span style={{ color: '#bbb' }}> / {fmtMinutes(p.totalMinutes)}</span>
+                </div>
+                <div style={{ height: '6px', background: '#f0f0f0', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: pct > 30 ? '#7B61FF' : '#e65100', borderRadius: '3px' }} />
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
+}
+
+const SUB_TABS = ['當前預約', '任務', '時數', '預約紀錄', '個人資料'];
 
 export default function ProfilePage({ user }) {
   const [subTab, setSubTab] = useState(0);
@@ -569,8 +695,9 @@ export default function ProfilePage({ user }) {
       {/* Sub-tab content */}
       {subTab === 0 && <ActiveBookingsTab list={list} loading={loading} onStatusChanged={handleStatusChanged} />}
       {subTab === 1 && <TasksTab />}
-      {subTab === 2 && <HistoryTab list={list} loading={loading} />}
-      {subTab === 3 && <PersonalInfoTab user={user} />}
+      {subTab === 2 && <HourBalanceTab />}
+      {subTab === 3 && <HistoryTab list={list} loading={loading} />}
+      {subTab === 4 && <PersonalInfoTab user={user} />}
     </div>
   );
 }

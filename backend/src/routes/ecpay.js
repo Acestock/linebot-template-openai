@@ -1,6 +1,7 @@
 const express = require('express');
-const Reservation = require('../models/Reservation');
-const Coupon = require('../models/Coupon');
+const Reservation  = require('../models/Reservation');
+const Coupon       = require('../models/Coupon');
+const HourPurchase = require('../models/HourPurchase');
 const { verifyCheckMac } = require('../services/ecpayService');
 
 const router = express.Router();
@@ -18,29 +19,40 @@ router.post('/callback', async (req, res) => {
 
     // RtnCode === '1' means payment succeeded
     if (body.RtnCode === '1') {
-      // Find reservation by paymentRef (MerchantTradeNo stored at pay-initiation time)
-      const r = await Reservation.findOne({ paymentRef: body.MerchantTradeNo });
-      if (r && r.paymentStatus !== 'paid') {
-        r.paymentStatus = 'paid';
-        r.paidAt        = new Date();
-        r.unpaidExit    = false;
-        // Keep status as checked_in — cron archives to completed after 10-min grace.
-        await r.save();
-        // Mark applied coupon as used
-        if (r.appliedCouponId) {
-          await Coupon.findByIdAndUpdate(r.appliedCouponId, {
-            status: 'used', usedAt: new Date(), usedForReservationId: r._id
-          });
+      // Try HourPurchase first (tradeNo starts with 'H')
+      const hp = await HourPurchase.findOne({ paymentRef: body.MerchantTradeNo });
+      if (hp && hp.paymentStatus !== 'paid') {
+        hp.paymentStatus = 'paid';
+        hp.purchasedAt   = new Date();
+        await hp.save();
+        console.log(`[ECPay] HourPurchase confirmed for ${hp._id}`);
+      } else {
+        const r = await Reservation.findOne({ paymentRef: body.MerchantTradeNo });
+        if (r && r.paymentStatus !== 'paid') {
+          r.paymentStatus = 'paid';
+          r.paidAt        = new Date();
+          r.unpaidExit    = false;
+          await r.save();
+          if (r.appliedCouponId) {
+            await Coupon.findByIdAndUpdate(r.appliedCouponId, {
+              status: 'used', usedAt: new Date(), usedForReservationId: r._id
+            });
+          }
+          console.log(`[ECPay] Payment confirmed for reservation ${r._id}`);
         }
-        console.log(`[ECPay] Payment confirmed for reservation ${r._id}`);
       }
     } else {
-      // Payment failed/cancelled — clear paymentRef so user can retry and cron can eventually clean up
       try {
-        const r = await Reservation.findOne({ paymentRef: body.MerchantTradeNo });
-        if (r && r.status === 'checked_in' && r.paymentStatus !== 'paid') {
-          r.paymentRef = '';
-          await r.save();
+        const hp = await HourPurchase.findOne({ paymentRef: body.MerchantTradeNo });
+        if (hp && hp.paymentStatus !== 'paid') {
+          hp.paymentRef = '';
+          await hp.save();
+        } else {
+          const r = await Reservation.findOne({ paymentRef: body.MerchantTradeNo });
+          if (r && r.status === 'checked_in' && r.paymentStatus !== 'paid') {
+            r.paymentRef = '';
+            await r.save();
+          }
         }
       } catch (_) {}
       console.log(`[ECPay] Payment failed/cancelled, RtnCode=${body.RtnCode}, TradeNo=${body.MerchantTradeNo}`);
@@ -57,11 +69,22 @@ router.post('/callback', async (req, res) => {
 // User browser return page after ECPay payment flow
 // (registered at app level as /ecpay/result, not /api/ecpay/result)
 router.get('/result', async (req, res) => {
-  const { reservationId, liffId } = req.query;
+  const { reservationId, hourPurchaseId, liffId } = req.query;
   let paid = false;
   let venueName = '';
+  let isHour = false;
+  let hourLabel = '';
 
-  if (reservationId) {
+  if (hourPurchaseId) {
+    isHour = true;
+    try {
+      const hp = await HourPurchase.findById(hourPurchaseId).lean();
+      if (hp) {
+        paid = hp.paymentStatus === 'paid';
+        hourLabel = hp.packageName || '預購時數';
+      }
+    } catch (_) {}
+  } else if (reservationId) {
     try {
       const r = await Reservation.findById(reservationId).lean();
       if (r) {
@@ -74,8 +97,10 @@ router.get('/result', async (req, res) => {
   const title   = paid ? '付款成功！' : '付款結果';
   const icon    = paid ? '✅' : '⏳';
   const mainMsg = paid
-    ? `您在「${venueName || '場地'}」的預約已完成結帳，感謝使用！`
-    : '付款仍在處理中，請稍後至「個人資料 → 預約紀錄」確認狀態。';
+    ? (isHour
+        ? `「${hourLabel}」購買成功！時數已加入您的帳戶，可於出場結帳時折抵使用。`
+        : `您在「${venueName || '場地'}」的預約已完成結帳，感謝使用！`)
+    : '付款仍在處理中，請稍後至「個人資料 → 時數」確認狀態。';
 
   const liffAppUrl = liffId ? `https://liff.line.me/${liffId}` : '';
   const redirectScript = liffAppUrl ? `
