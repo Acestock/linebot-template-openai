@@ -1699,8 +1699,8 @@ export default function LiffAdminModal({ onClose }) {
         <div className="liff-tabs" style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', overflowX: 'auto', scrollbarWidth: 'none', flexShrink: 0 }}>
           {TABS.map((t, i) => (
             <button type="button" key={t} onClick={() => setTab(i)} style={{
-              padding: '10px 16px', border: 'none', background: 'none', cursor: 'pointer',
-              fontSize: '13px', fontWeight: tab === i ? '700' : '400',
+              padding: '10px 10px', border: 'none', background: 'none', cursor: 'pointer',
+              fontSize: '12px', fontWeight: tab === i ? '700' : '400',
               color: tab === i ? '#111' : '#888',
               borderBottom: tab === i ? '2px solid #111' : '2px solid transparent',
               whiteSpace: 'nowrap', flexShrink: 0
