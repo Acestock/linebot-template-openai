@@ -1,6 +1,7 @@
 const express = require('express');
-const Reservation = require('../models/Reservation');
-const Coupon      = require('../models/Coupon');
+const Reservation  = require('../models/Reservation');
+const Coupon       = require('../models/Coupon');
+const HourPurchase = require('../models/HourPurchase');
 const { verifyAndDecrypt } = require('../services/newebpayService');
 
 const router = express.Router();
@@ -24,6 +25,26 @@ router.post('/notify', async (req, res) => {
 
     if (!MerchantOrderNo) {
       console.warn('[NewebPay] Missing MerchantOrderNo in tradeData:', JSON.stringify(tradeData));
+      return res.send('SUCCESS');
+    }
+
+    // Check HourPurchase first (order nos start with 'H'), then Reservation
+    const hp = await HourPurchase.findOne({ paymentRef: MerchantOrderNo });
+    if (hp) {
+      if (Status === 'SUCCESS') {
+        if (hp.paymentStatus !== 'paid') {
+          hp.paymentStatus = 'paid';
+          hp.purchasedAt   = new Date();
+          await hp.save();
+          console.log(`[NewebPay] HourPurchase confirmed for ${hp._id}`);
+        }
+      } else {
+        if (hp.paymentStatus !== 'paid') {
+          hp.paymentRef = '';
+          await hp.save();
+        }
+        console.log(`[NewebPay] HourPurchase payment failed: Status=${Status}, OrderNo=${MerchantOrderNo}`);
+      }
       return res.send('SUCCESS');
     }
 
@@ -67,29 +88,43 @@ router.post('/notify', async (req, res) => {
 
 // ── GET|POST /newebpay/result ─────────────────────────────────────────────────
 // User browser return page after NewebPay payment flow.
-// NewebPay may redirect with GET or POST; reservationId is always in the query string.
+// NewebPay may redirect with GET or POST; reservationId/hourPurchaseId is in the query string.
 router.all('/result', async (req, res) => {
-  const { reservationId, liffId } = req.query;
+  const { reservationId, hourPurchaseId, liffId } = req.query;
   let paid = false;
-  let venueName = '';
+  let mainMsg = '';
 
-  if (reservationId) {
+  // Give NotifyURL up to 2 seconds to finish processing before checking status
+  await new Promise(r => setTimeout(r, 1500));
+
+  if (hourPurchaseId) {
     try {
-      // Give NotifyURL up to 2 seconds to finish processing before checking status
-      await new Promise(r => setTimeout(r, 1500));
+      const hp = await HourPurchase.findById(hourPurchaseId).lean();
+      if (hp) {
+        paid    = hp.paymentStatus === 'paid';
+        mainMsg = paid
+          ? `「${hp.packageName || '時數方案'}」購買成功！時數已加入您的帳戶，感謝使用！`
+          : '付款仍在處理中，請稍後至「預約紀錄 → 時數」確認狀態。';
+      }
+    } catch (_) {}
+  } else if (reservationId) {
+    try {
       const r = await Reservation.findById(reservationId).lean();
       if (r) {
-        paid      = r.paymentStatus === 'paid';
-        venueName = r.venueName || '';
+        paid    = r.paymentStatus === 'paid';
+        mainMsg = paid
+          ? `您在「${r.venueName || '場地'}」的預約已完成結帳，感謝使用！`
+          : '付款仍在處理中，請稍後至「預約紀錄」確認狀態。';
       }
     } catch (_) {}
   }
 
-  const title   = paid ? '付款成功！' : '付款結果';
-  const icon    = paid ? '✅' : '⏳';
-  const mainMsg = paid
-    ? `您在「${venueName || '場地'}」的預約已完成結帳，感謝使用！`
-    : '付款仍在處理中，請稍後至「預約紀錄」確認狀態。';
+  if (!mainMsg) {
+    mainMsg = paid ? '付款已完成，感謝使用！' : '付款仍在處理中，請稍後確認狀態。';
+  }
+
+  const title = paid ? '付款成功！' : '付款結果';
+  const icon  = paid ? '✅' : '⏳';
 
   // Redirect back to LIFF app (reservation system) instead of closing the window
   const liffAppUrl = liffId ? `https://liff.line.me/${liffId}` : '';

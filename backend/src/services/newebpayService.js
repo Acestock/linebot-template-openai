@@ -129,4 +129,59 @@ function verifyAndDecrypt(body) {
   return { valid: true, tradeData };
 }
 
-module.exports = { createOrderParams, verifyAndDecrypt };
+/**
+ * Build the form POST params for a HourPurchase payment via NewebPay.
+ * Returns { params, apiUrl, tradeNo } — same shape as createOrderParams.
+ * Mutates purchase.paymentRef with the MerchantOrderNo (caller must save).
+ */
+function createHourOrderParams(purchase) {
+  const cfg = getCfg();
+  if (!cfg.MerchantID || !cfg.HashKey || !cfg.HashIV) {
+    throw new Error('NEWEBPAY_MERCHANT_ID / NEWEBPAY_HASH_KEY / NEWEBPAY_HASH_IV 未設定');
+  }
+  if (cfg.HashKey.length !== 32 || cfg.HashIV.length !== 16) {
+    throw new Error('NEWEBPAY_HASH_KEY 須為 32 字元，NEWEBPAY_HASH_IV 須為 16 字元');
+  }
+
+  const appUrl    = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const liffId    = process.env.LIFF_ID || '';
+  const timeStamp = Math.floor(Date.now() / 1000);
+
+  // Prefix with 'H' to distinguish from reservation orders; max 30 chars
+  const tradeNo = ('H' + String(timeStamp) + String(purchase._id).slice(-16))
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .slice(0, 30);
+
+  const itemDesc = (purchase.packageName || '預購時數').slice(0, 50);
+  const clientBackURL = `${appUrl}/newebpay/result?hourPurchaseId=${purchase._id}${liffId ? `&liffId=${liffId}` : ''}`;
+
+  const tradeParams = new URLSearchParams({
+    MerchantID:      cfg.MerchantID,
+    RespondType:     'JSON',
+    TimeStamp:       String(timeStamp),
+    Version:         '2.0',
+    MerchantOrderNo: tradeNo,
+    Amt:             String(Math.max(1, Math.round(purchase.totalPrice))),
+    ItemDesc:        itemDesc,
+    TradeLimit:      '900',
+    ReturnURL:       clientBackURL,
+    NotifyURL:       `${appUrl}/api/newebpay/notify`,
+    LoginType:       '0',
+    CREDIT:          '1',
+    APPLEPAY:        '1',
+  }).toString();
+
+  const tradeInfo = aesEncrypt(tradeParams, cfg.HashKey, cfg.HashIV);
+  const tradeSha  = genTradeSha(tradeInfo, cfg.HashKey, cfg.HashIV);
+
+  const params = {
+    MerchantID: cfg.MerchantID,
+    TradeInfo:  tradeInfo,
+    TradeSha:   tradeSha,
+    Version:    '2.0',
+  };
+
+  return { params, apiUrl: cfg.apiUrl, tradeNo };
+}
+
+module.exports = { createOrderParams, createHourOrderParams, verifyAndDecrypt };

@@ -929,7 +929,12 @@ router.get('/coupons', liffAuth, async (req, res) => {
 // ─── Hour Packages ────────────────────────────────────────────────────────────
 const HourPackage  = require('../models/HourPackage');
 const HourPurchase = require('../models/HourPurchase');
-const { createHourOrderParams } = require('../services/ecpayService');
+const { createHourOrderParams: _ecpayHourOrder }   = require('../services/ecpayService');
+const { createHourOrderParams: _newebpayHourOrder } = require('../services/newebpayService');
+const createHourOrderParams = (purchase) =>
+  (process.env.PAYMENT_GATEWAY || 'newebpay').toLowerCase() === 'ecpay'
+    ? _ecpayHourOrder(purchase)
+    : _newebpayHourOrder(purchase);
 
 router.get('/hour-packages', async (req, res) => {
   try {
