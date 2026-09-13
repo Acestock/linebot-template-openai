@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import liff from '@line/liff';
-import { liffAuth, setSessionToken } from './api';
+import { liffAuth, setSessionToken, fetchMyReservations } from './api';
 import VenueListPage   from './pages/VenueListPage';
 import VenueDetailPage from './pages/VenueDetailPage';
 import ReserveFlowPage from './pages/ReserveFlowPage';
-import MyBookingsPage  from './pages/MyBookingsPage';
-import ProfilePage     from './pages/ProfilePage';
+import MyBookingsPage    from './pages/MyBookingsPage';
+import ProfilePage       from './pages/ProfilePage';
+import HourPurchasePage  from './pages/HourPurchasePage';
 
 // LIFF ID must be set in environment variable VITE_LIFF_ID
 const LIFF_ID = import.meta.env.VITE_LIFF_ID || '';
@@ -15,11 +16,24 @@ export default function LiffApp() {
   const [user, setUser]     = useState(null);
   const [initError, setInitError] = useState('');
   const [initing, setIniting]     = useState(true);
+  const [hasActiveCheckIn, setHasActiveCheckIn] = useState(false);
 
   useEffect(() => {
     fetch('/api/liff/config')
       .then(r => r.json())
-      .then(cfg => { if (cfg.liffTitle) document.title = cfg.liffTitle; })
+      .then(cfg => {
+        if (cfg.liffTitle) document.title = cfg.liffTitle;
+        const color = cfg.brandColor || '#C9A882';
+        const text  = cfg.brandTextColor || '#3E2723';
+        const r = parseInt(color.slice(1, 3), 16);
+        const g = parseInt(color.slice(3, 5), 16);
+        const b = parseInt(color.slice(5, 7), 16);
+        const root = document.documentElement;
+        root.style.setProperty('--brand-color', color);
+        root.style.setProperty('--brand-text',  text);
+        root.style.setProperty('--brand-light',  `rgba(${r},${g},${b},0.15)`);
+        root.style.setProperty('--brand-border', `rgba(${r},${g},${b},0.65)`);
+      })
       .catch(() => {});
   }, []);
 
@@ -58,6 +72,22 @@ export default function LiffApp() {
     init();
   }, []);
 
+  // Check if user has an active check-in; refresh whenever returning to the venue list
+  useEffect(() => {
+    if (!user || page.name !== 'list') return;
+    fetchMyReservations()
+      .then(data => {
+        const today = new Date().toISOString().slice(0, 10);
+        setHasActiveCheckIn((Array.isArray(data) ? data : []).some(r => {
+          if (r.status === 'checked_in') return true;
+          // strategy 2 confirmed bookings for today also show FAB
+          if ((r.strategy ?? 1) === 2 && r.status === 'confirmed' && r.date === today) return true;
+          return false;
+        }));
+      })
+      .catch(() => {});
+  }, [user, page.name]);
+
   function navigate(name, params = {}) {
     setPage({ name, params });
   }
@@ -87,12 +117,15 @@ export default function LiffApp() {
 
   const showBack    = page.name !== 'list';
   const showMyBtn   = page.name !== 'profile' && !!user;
+  // FAB only on venue list — other pages have fixed bottom bars that conflict
+  const showFab     = hasActiveCheckIn && page.name === 'list' && !!user;
 
   function handleBack() {
-    if (page.name === 'profile') return navigate('list');
-    if (page.name === 'my')      return navigate('list');
-    if (page.name === 'detail')  return navigate('list');
-    if (page.name === 'reserve') return navigate('detail', { venueId: page.params.venue?._id });
+    if (page.name === 'profile')      return navigate('list');
+    if (page.name === 'my')           return navigate('list');
+    if (page.name === 'detail')       return navigate('list');
+    if (page.name === 'reserve')      return navigate('detail', { venueId: page.params.venue?._id });
+    if (page.name === 'hour-package') return navigate('list');
     navigate('list');
   }
 
@@ -109,19 +142,20 @@ export default function LiffApp() {
             <button onClick={handleBack} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', padding: '0 4px' }}>‹</button>
           )}
           <div style={{ fontWeight: '800', fontSize: '17px', letterSpacing: '-0.3px' }}>
-            {page.name === 'list'    ? '預約入場'   : ''}
-            {page.name === 'detail'  ? '場地詳情'   : ''}
-            {page.name === 'reserve' ? (page.params.mode === 'walkin' ? '立即入場' : '預約入場') : ''}
-            {page.name === 'my'      ? '我的預約'   : ''}
-            {page.name === 'profile' ? '個人資料'   : ''}
+            {page.name === 'list'         ? '預約入場'   : ''}
+            {page.name === 'detail'       ? '場地詳情'   : ''}
+            {page.name === 'reserve'      ? (page.params.mode === 'walkin_short' ? '計時入場' : page.params.mode === 'walkin' ? '立即入場' : '預約入場') : ''}
+            {page.name === 'my'           ? '我的預約'   : ''}
+            {page.name === 'profile'      ? '預約紀錄'   : ''}
+            {page.name === 'hour-package' ? '預購時數'   : ''}
           </div>
         </div>
         {showMyBtn && (
           <button
             onClick={() => navigate('profile')}
-            style={{ background: 'none', border: '1px solid #ddd', borderRadius: '20px', padding: '5px 14px', fontSize: '13px', cursor: 'pointer', color: '#555' }}
+            style={{ background: 'var(--brand-light)', border: '1px solid var(--brand-border)', borderRadius: '20px', padding: '5px 14px', fontSize: '13px', cursor: 'pointer', color: 'var(--brand-text)', fontWeight: '500' }}
           >
-            個人資料
+            預約紀錄
           </button>
         )}
       </div>
@@ -131,13 +165,17 @@ export default function LiffApp() {
         <VenueListPage
           onSelect={(venueId) => navigate('detail', { venueId })}
           onMyBookings={() => navigate('my')}
+          onHourPackage={() => navigate('hour-package')}
         />
+      )}
+      {page.name === 'hour-package' && (
+        <HourPurchasePage onBack={() => navigate('list')} />
       )}
       {page.name === 'detail' && (
         <VenueDetailPage
           venueId={page.params.venueId}
           onReserve={(venue) => navigate('reserve', { venue, mode: 'advance' })}
-          onWalkIn={(venue)  => navigate('reserve', { venue, mode: 'walkin' })}
+          onWalkIn={(venue)  => navigate('reserve', { venue, mode: venue.shortSession?.enabled ? 'walkin_short' : 'walkin' })}
         />
       )}
       {page.name === 'reserve' && (
@@ -145,7 +183,7 @@ export default function LiffApp() {
           venue={page.params.venue}
           mode={page.params.mode}
           onBack={handleBack}
-          onDone={() => navigate('list')}
+          onDone={() => navigate('profile')}
         />
       )}
       {page.name === 'my' && (
@@ -153,6 +191,34 @@ export default function LiffApp() {
       )}
       {page.name === 'profile' && (
         <ProfilePage user={user} />
+      )}
+
+      {/* Floating action button — visible when user has an active check-in */}
+      {showFab && (
+        <button
+          onClick={() => navigate('profile')}
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '16px',
+            zIndex: 999,
+            background: 'var(--brand-color)',
+            color: 'var(--brand-text)',
+            border: 'none',
+            borderRadius: '28px',
+            padding: '12px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            boxShadow: '0 4px 16px var(--brand-light)',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: '700',
+          }}
+        >
+          <span style={{ fontSize: '17px' }}>⏱</span>
+          進場中・當前預約
+        </button>
       )}
     </div>
   );

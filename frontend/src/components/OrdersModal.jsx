@@ -75,10 +75,10 @@ function OrderCard({ order, onUpdate }) {
       {/* Items */}
       <div style={{ padding: '10px 14px', borderBottom: '1px solid #f5f5f5' }}>
         <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '6px' }}>品項（供參考，需與客戶確認數量）</div>
-        {order.items.length === 0 ? (
+        {(order.items || []).length === 0 ? (
           <div style={{ fontSize: '13px', color: '#bbb' }}>無品項記錄</div>
         ) : (
-          order.items.map((item, i) => (
+          (order.items || []).map((item, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#444', padding: '2px 0' }}>
               <span>{item.name}{item.unit ? ` (${item.unit})` : ''}</span>
               <span style={{ color: '#00B900', fontWeight: '600' }}>{item.price}</span>
@@ -113,7 +113,7 @@ function OrderCard({ order, onUpdate }) {
       {/* Actions */}
       <div style={{ padding: '8px 14px', display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
         <button onClick={deleteOrder} style={{ padding: '4px 10px', borderRadius: '5px', border: '1px solid #ffcdd2', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#e53935' }}>刪除</button>
-        {statusActions[order.status].map(([s, label]) => (
+        {(statusActions[order.status] || []).map(([s, label]) => (
           <button key={s} onClick={() => updateStatus(s)} style={{
             padding: '4px 12px', borderRadius: '5px', border: 'none', fontSize: '12px', cursor: 'pointer',
             backgroundColor: STATUS_COLOR[s], color: '#fff', fontWeight: '600'

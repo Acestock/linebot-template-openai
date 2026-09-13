@@ -73,7 +73,31 @@ function VenueCard({ venue, dateKey, onClick }) {
   );
 }
 
-export default function VenueListPage({ onSelect }) {
+function HourPackageCard({ onClick }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        background: '#fff', borderRadius: '12px', padding: '16px 16px 16px 20px',
+        marginBottom: '10px', cursor: 'pointer',
+        borderLeft: '4px solid #7B61FF',
+        boxShadow: '0 1px 6px rgba(0,0,0,0.07)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+      }}
+    >
+      <div>
+        <div style={{ fontWeight: '700', fontSize: '16px', marginBottom: '4px' }}>⏱ 預購時數</div>
+        <div style={{ fontSize: '13px', color: '#888' }}>購買時數方案，出場時可折抵費用</div>
+      </div>
+      <span style={{
+        background: '#f3f0ff', color: '#7B61FF', borderRadius: '20px',
+        padding: '3px 12px', fontSize: '13px', fontWeight: '600', flexShrink: 0
+      }}>查看方案</span>
+    </div>
+  );
+}
+
+export default function VenueListPage({ onSelect, onHourPackage }) {
   const [venues, setVenues] = useState([]);
   const [tab, setTab]       = useState(0);
   const [loading, setLoading] = useState(true);
@@ -86,7 +110,7 @@ export default function VenueListPage({ onSelect }) {
   }, []);
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 0', display: 'flex', flexDirection: 'column' }}>
       {/* Date tabs — scrollable */}
       <div
         ref={tabBarRef}
@@ -114,6 +138,34 @@ export default function VenueListPage({ onSelect }) {
       ) : venues.map(v => (
         <VenueCard key={v._id} venue={v} dateKey={days[tab].key} onClick={() => onSelect(v._id)} />
       ))}
+      {!loading && onHourPackage && <HourPackageCard onClick={onHourPackage} />}
+
+      {/* Brand tagline — stretches to fill remaining space and self-centers */}
+      {!loading && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '160px', padding: '24px 16px 80px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center', marginBottom: '14px' }}>
+            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to right, transparent, var(--brand-border))' }} />
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--brand-color)' }} />
+            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to left, transparent, var(--brand-border))' }} />
+          </div>
+          <div style={{
+            fontFamily: "'Noto Serif TC', 'Noto Serif', Georgia, serif",
+            fontSize: '15px',
+            color: 'var(--brand-text)',
+            letterSpacing: '0.15em',
+            lineHeight: '1.9',
+            fontWeight: '400',
+            opacity: 0.7,
+          }}>
+            讀一本書，享一段自己
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center', marginTop: '14px' }}>
+            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to right, transparent, var(--brand-border))' }} />
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--brand-color)' }} />
+            <div style={{ flex: 1, maxWidth: '48px', height: '1px', background: 'linear-gradient(to left, transparent, var(--brand-border))' }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -7,7 +7,28 @@ const Reservation = require('../models/Reservation');
 const Announcement = require('../models/Announcement');
 const BusinessProfile = require('../models/BusinessProfile');
 const BlockedSlot = require('../models/BlockedSlot');
-const { createOrderParams } = require('../services/ecpayService');
+const Task = require('../models/Task');
+const TaskSubmission = require('../models/TaskSubmission');
+const Coupon = require('../models/Coupon');
+const DurationPlan = require('../models/DurationPlan');
+const StaffToken   = require('../models/StaffToken');
+const { getAvailableSlots, checkSlotAvailability } = require('../services/strategy2Service');
+const { createOrderParams: _ecpayCreateOrder }   = require('../services/ecpayService');
+const { createOrderParams: _newebpayCreateOrder } = require('../services/newebpayService');
+// Switch gateway via env: PAYMENT_GATEWAY=ecpay to fall back to ECPay (default: newebpay)
+const createOrderParams = (reservation) =>
+  (process.env.PAYMENT_GATEWAY || 'newebpay').toLowerCase() === 'ecpay'
+    ? _ecpayCreateOrder(reservation)
+    : _newebpayCreateOrder(reservation);
+const { pushMessage } = require('../services/lineService');
+const {
+  timeToMinutes,
+  billedHours,
+  calcShortSessionPrice,
+  calcPreviewTiers,
+  findCheapestCoverage,
+  minutesToTimeStr
+} = require('../services/shortSessionService');
 
 const router = express.Router();
 
@@ -108,15 +129,22 @@ async function getSlotAvailability(venueId, maxCapacity, dateStr) {
 
   for (const slot of slotKeys) {
     const block = blocks.find(b => b.slots.includes(slot));
-    if (block) {
-      result[slot] = { remaining: 0, total: maxCapacity, blocked: true, eventName: block.eventName };
-      continue;
-    }
     const count = await Reservation.countDocuments({
       venueId, date: { $gte: dateStart, $lt: dateEnd },
       slots: slot,
       status: { $in: ['confirmed', 'checked_in'] }
     });
+    if (block) {
+      const reserved = block.capacity > 0 ? block.capacity : maxCapacity;
+      const remaining = Math.max(0, maxCapacity - count - reserved);
+      result[slot] = {
+        remaining, total: maxCapacity,
+        blocked: remaining === 0,
+        eventName: block.eventName,
+        reservedCapacity: reserved
+      };
+      continue;
+    }
     result[slot] = { remaining: Math.max(0, maxCapacity - count), total: maxCapacity };
   }
   return result;
@@ -127,9 +155,13 @@ async function getSlotAvailability(venueId, maxCapacity, dateStr) {
 router.get('/config', async (req, res) => {
   try {
     const profile = await BusinessProfile.findOne().lean();
-    res.json({ liffTitle: profile?.liffTitle || '預約入場系統' });
+    res.json({
+      liffTitle:      profile?.liffTitle      || '預約入場系統',
+      brandColor:     profile?.brandColor     || '#C9A882',
+      brandTextColor: profile?.brandTextColor || '#3E2723',
+    });
   } catch (err) {
-    res.json({ liffTitle: '預約入場系統' });
+    res.json({ liffTitle: '預約入場系統', brandColor: '#C9A882', brandTextColor: '#3E2723' });
   }
 });
 
@@ -207,29 +239,263 @@ router.get('/venues/:id/availability', async (req, res) => {
   }
 });
 
+// ── GET /api/liff/venues/:id/short-session-quote ──────────────────────────────
+router.get('/venues/:id/short-session-quote', async (req, res) => {
+  try {
+    const venue = await Venue.findById(req.params.id).lean();
+    if (!venue || !venue.isActive) return res.status(404).json({ error: 'Venue not found' });
+    if (!venue.shortSession?.enabled) return res.status(404).json({ error: '此場地未開放計時入場' });
+
+    const config = venue.shortSession;
+    const now = new Date();
+
+    // All time calculations use Taiwan time (UTC+8)
+    const taipei = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    const dateStr = taipei.toISOString().slice(0, 10);
+    const h = taipei.getUTCHours();
+    const currentSlot = h >= 7 && h < 12 ? 'morning' : h >= 12 && h < 18 ? 'afternoon' : 'evening';
+
+    const [avail, allPlans] = await Promise.all([
+      getSlotAvailability(venue._id, venue.maxCapacityPerSlot, dateStr),
+      VenuePlan.find({ venueId: venue._id, isActive: true }).lean()
+    ]);
+
+    const slotAvail = avail[currentSlot] || { remaining: 0 };
+    const available = !slotAvail.blocked && slotAvail.remaining > (config.maxCapacityBlock || 2);
+
+    const singlePlans = allPlans.filter(p => p.type === 'single');
+    const checkInMinute = timeToMinutes(now);
+
+    const tiers = calcPreviewTiers(singlePlans, checkInMinute, config);
+
+    // Find cheapest over-3hr coverage: simulate entering just past the 190-min grace window
+    const overResult = findCheapestCoverage(allPlans, checkInMinute, checkInMinute + 200, config);
+
+    res.json({
+      available,
+      remaining: slotAvail.remaining,
+      currentSlot,
+      checkInMinute,
+      tiers: tiers.map(t => ({
+        hours: t.hours,
+        price: t.price,
+        exitMinute: t.exitMinute,
+        exitTimeStr: minutesToTimeStr(t.exitMinute)
+      })),
+      overThreeHours: overResult.minCost !== null ? {
+        minPrice: overResult.minCost,
+        validUntil: overResult.validUntil,
+        validUntilStr: minutesToTimeStr(overResult.validUntil)
+      } : null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/liff/venues/:id/strategy2-slots ──────────────────────────────────
+// ?date=YYYY-MM-DD&durationMinutes=180
+router.get('/venues/:id/strategy2-slots', async (req, res) => {
+  try {
+    const venue = await Venue.findById(req.params.id).lean();
+    if (!venue || !venue.isActive) return res.status(404).json({ error: '場地不存在' });
+    if (venue.strategy !== 2) return res.status(400).json({ error: '此場地非策略二' });
+
+    const { date, durationMinutes } = req.query;
+    if (!date) return res.status(400).json({ error: 'date 為必填' });
+    // durationMinutes=0 means all-day; must handle 0 explicitly (falsy)
+    const dur = durationMinutes !== undefined ? parseInt(durationMinutes, 10) : 90;
+
+    const slots = await getAvailableSlots(
+      venue._id, date,
+      venue.s2OpenHour  ?? 7,
+      venue.s2CloseHour ?? 22,
+      dur,
+      venue.maxCapacityPerSlot
+    );
+    res.json({ slots });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── GET /api/liff/venues/:id/duration-plans ───────────────────────────────────
+router.get('/venues/:id/duration-plans', async (req, res) => {
+  try {
+    const plans = await DurationPlan.find({ venueId: req.params.id, isActive: true })
+      .sort({ order: 1, createdAt: 1 }).lean();
+    res.json(plans);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── GET /api/liff/venues/:id/today-events ─────────────────────────────────────
+// Returns today's BlockedSlots that have a buttonName (for event entry button)
+// Does NOT expose accessPassword
+router.get('/venues/:id/today-events', async (req, res) => {
+  try {
+    const venue = await Venue.findById(req.params.id).lean();
+    if (!venue || !venue.isActive) return res.status(404).json({ error: 'Venue not found' });
+
+    // Today in Asia/Taipei (UTC+8)
+    const nowTW = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const dateStr = nowTW.toISOString().slice(0, 10);
+    const dateStart = new Date(dateStr + 'T00:00:00+08:00');
+    const dateEnd   = new Date(dateStr + 'T23:59:59+08:00');
+
+    const blocks = await BlockedSlot.find({
+      venueId: req.params.id, isActive: true,
+      buttonName: { $ne: '' },
+      date: { $gte: dateStart, $lte: dateEnd }
+    }).lean();
+
+    res.json(blocks.map(b => ({
+      _id:       b._id,
+      eventName: b.eventName,
+      buttonName: b.buttonName,
+      slots:     b.slots
+    })));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── POST /api/liff/venues/:id/event-entry ─────────────────────────────────────
+// Verify event password and return a 5-minute QR token
+router.post('/venues/:id/event-entry', async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: '請輸入密碼' });
+
+    const venue = await Venue.findById(req.params.id).lean();
+    if (!venue || !venue.isActive) return res.status(404).json({ error: 'Venue not found' });
+
+    const nowTW = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const dateStr = nowTW.toISOString().slice(0, 10);
+    const dateStart = new Date(dateStr + 'T00:00:00+08:00');
+    const dateEnd   = new Date(dateStr + 'T23:59:59+08:00');
+
+    const block = await BlockedSlot.findOne({
+      venueId: req.params.id, isActive: true,
+      accessPassword: password,
+      date: { $gte: dateStart, $lte: dateEnd }
+    }).lean();
+
+    if (!block) return res.status(401).json({ error: '密碼不正確' });
+
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    await StaffToken.create({
+      token, venueId: venue._id, venueName: venue.name,
+      label: block.eventName || block.buttonName || '活動入場',
+      expiresAt
+    });
+
+    res.json({ qrToken: token, expiresAt, eventName: block.eventName || block.buttonName });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── POST /api/liff/reservations ───────────────────────────────────────────────
 router.post('/reservations', liffAuth, async (req, res) => {
   try {
-    const { venueId, planId, date, slots, expectedCheckIn, expectedCheckOut, note, mode } = req.body;
-    if (!venueId || !date || !slots || !slots.length)
-      return res.status(400).json({ error: 'venueId, date, slots required' });
+    const {
+      venueId, planId, date, slots, expectedCheckIn, expectedCheckOut, note, mode,
+      // Strategy 2 fields
+      durationPlanId, startTime, endTime, durationMinutes: durMins
+    } = req.body;
 
     const venue = await Venue.findById(venueId).lean();
     if (!venue || !venue.isActive) return res.status(404).json({ error: 'Venue not found' });
 
-    // Check availability for each requested slot
-    const dateStr = typeof date === 'string' ? date : new Date(date).toISOString().slice(0, 10);
-    const avail = await getSlotAvailability(venueId, venue.maxCapacityPerSlot, dateStr);
-    for (const slot of slots) {
-      if (avail[slot] && avail[slot].remaining <= 0)
-        return res.status(409).json({ error: `${slot} 時段已額滿` });
+    const lineUserId = req.liffUser.lineUserId;
+
+    // ── 未付款鎖定 ──────────────────────────────────────────────────────────
+    const hasUnpaidExit = await Reservation.findOne({ lineUserId, unpaidExit: true });
+    if (hasUnpaidExit)
+      return res.status(403).json({ error: '您有未完成付款的記錄，暫時無法預約。請先至預約紀錄完成補付款，或聯絡工作人員處理。' });
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 策略二：自由時段制（固定起始 + 固定時長）
+    // ══════════════════════════════════════════════════════════════════════════
+    if (venue.strategy === 2) {
+      if (!startTime || !endTime || !durationPlanId)
+        return res.status(400).json({ error: 'strategy 2: startTime, endTime, durationPlanId required' });
+
+      const dPlan = await DurationPlan.findById(durationPlanId).lean();
+      if (!dPlan || !dPlan.isActive) return res.status(404).json({ error: '方案不存在' });
+
+      const sTime = new Date(startTime);
+      const eTime = new Date(endTime);
+
+      // 容量檢查
+      const avail = await checkSlotAvailability(venueId, sTime, eTime, venue.maxCapacityPerSlot);
+      if (!avail.available)
+        return res.status(409).json({ error: '此時段座位已滿，請選擇其他時間' });
+
+      // 重複預約防呆：同用戶同場地時間重疊
+      const dupS2 = await Reservation.findOne({
+        lineUserId, venueId, strategy: 2,
+        status: { $in: ['confirmed', 'checked_in'] },
+        startTime: { $lt: eTime },
+        endTime:   { $gt: sTime }
+      });
+      if (dupS2) return res.status(409).json({ error: '您在此時段已有預約，請勿重複預約' });
+
+      // 入場時間範圍：提前 15 分鐘到延後 30 分鐘
+      const checkIn15Min = new Date(sTime.getTime() - 15 * 60 * 1000);
+
+      const reservation = await Reservation.create({
+        lineUserId,
+        displayName:      req.liffUser.displayName,
+        pictureUrl:       req.liffUser.pictureUrl,
+        venueId,
+        venueName:        venue.name,
+        date:             sTime,
+        durationPlanId:   dPlan._id,
+        durationPlanName: dPlan.name,
+        durationMinutes:  dPlan.durationMinutes,
+        slots:            [],
+        totalPrice:       (dPlan.onSale && dPlan.salePrice > 0) ? dPlan.salePrice : dPlan.price,
+        startTime:        sTime,
+        endTime:          eTime,
+        expectedCheckIn:  checkIn15Min,
+        expectedCheckOut: eTime,
+        strategy:         2,
+        note:             note || '',
+        mode:             'normal',
+        status:           'confirmed',
+        paymentStatus:    dPlan.price > 0 ? 'unpaid' : 'free',
+        qrToken:          crypto.randomUUID()
+      });
+      return res.json(reservation);
     }
 
-    // 重複預約防呆：同一用戶 + 同場地 + 同日 + 時段有交集
+    // ══════════════════════════════════════════════════════════════════════════
+    // 策略一：原有時段制
+    // ══════════════════════════════════════════════════════════════════════════
+    if (!date || !slots || !slots.length)
+      return res.status(400).json({ error: 'venueId, date, slots required' });
+
+    const dateStr = typeof date === 'string' ? date : new Date(date).toISOString().slice(0, 10);
+    const avail   = await getSlotAvailability(venueId, venue.maxCapacityPerSlot, dateStr);
+
+    const isShortSession = mode === 'walkin_short';
+    if (isShortSession) {
+      if (!venue.shortSession?.enabled)
+        return res.status(400).json({ error: '此場地未開放計時入場' });
+      const cfg = venue.shortSession;
+      const currentSlot = slots[0];
+      const slotAvail = avail[currentSlot] || {};
+      if (slotAvail.blocked)
+        return res.status(409).json({ error: '此時段已包場，無法計時入場' });
+      if ((slotAvail.remaining ?? 0) <= (cfg.maxCapacityBlock || 2))
+        return res.status(409).json({ error: '目前人數已達上限，暫停計時入場' });
+    } else {
+      for (const slot of slots) {
+        if (avail[slot] && avail[slot].remaining <= 0)
+          return res.status(409).json({ error: `${slot} 時段已額滿` });
+      }
+    }
+
     const dateStart = new Date(dateStr + 'T00:00:00+08:00');
     const dateEnd   = new Date(dateStr + 'T23:59:59+08:00');
     const dup = await Reservation.findOne({
-      lineUserId: req.liffUser.lineUserId,
+      lineUserId,
       venueId,
       date: { $gte: dateStart, $lte: dateEnd },
       slots: { $in: slots },
@@ -237,15 +503,22 @@ router.post('/reservations', liffAuth, async (req, res) => {
     });
     if (dup) return res.status(409).json({ error: '您已預約此場地的相同時段，請勿重複預約' });
 
-    let planName = '';
-    let totalPrice = 0;
-    if (planId) {
+    let planName = '', totalPrice = 0, initialStatus = 'confirmed';
+    let checkInTime  = expectedCheckIn  ? new Date(expectedCheckIn)  : undefined;
+    let checkOutTime = expectedCheckOut ? new Date(expectedCheckOut) : undefined;
+
+    if (isShortSession) {
+      initialStatus = 'checked_in';
+      checkInTime   = new Date();
+      checkOutTime  = undefined;
+      planName      = '計時入場';
+    } else if (planId) {
       const plan = await VenuePlan.findById(planId).lean();
-      if (plan) { planName = plan.name; totalPrice = plan.price; }
+      if (plan) { planName = plan.name; totalPrice = (plan.onSale && plan.salePrice > 0) ? plan.salePrice : plan.price; }
     }
 
     const reservation = await Reservation.create({
-      lineUserId:      req.liffUser.lineUserId,
+      lineUserId,
       displayName:     req.liffUser.displayName,
       pictureUrl:      req.liffUser.pictureUrl,
       venueId,
@@ -255,11 +528,13 @@ router.post('/reservations', liffAuth, async (req, res) => {
       planName,
       slots,
       totalPrice,
-      expectedCheckIn:  expectedCheckIn ? new Date(expectedCheckIn) : undefined,
-      expectedCheckOut: expectedCheckOut ? new Date(expectedCheckOut) : undefined,
+      expectedCheckIn:  checkInTime,
+      expectedCheckOut: checkOutTime,
       note:            note || '',
-      status:          'confirmed',
-      paymentStatus:   totalPrice > 0 ? 'unpaid' : 'free',
+      mode:            isShortSession ? 'walkin_short' : 'normal',
+      strategy:        1,
+      status:          initialStatus,
+      paymentStatus:   totalPrice > 0 ? 'unpaid' : (isShortSession ? 'unpaid' : 'free'),
       qrToken:         crypto.randomUUID()
     });
     res.json(reservation);
@@ -296,18 +571,84 @@ router.delete('/reservations/:id', liffAuth, async (req, res) => {
   }
 });
 
+// ── GET /api/liff/reservations/:id/short-session-price ───────────────────────
+// Returns the estimated price for an active short-session walk-in based on current time
+router.get('/reservations/:id/short-session-price', liffAuth, async (req, res) => {
+  try {
+    const r = await Reservation.findById(req.params.id).lean();
+    if (!r) return res.status(404).json({ error: 'Not found' });
+    if (r.lineUserId !== req.liffUser.lineUserId)
+      return res.status(403).json({ error: 'Forbidden' });
+    if (r.mode !== 'walkin_short')
+      return res.status(400).json({ error: '此預約不是計時入場' });
+    if (!r.expectedCheckIn)
+      return res.status(400).json({ error: '尚未記錄入場時間' });
+
+    const venue = await Venue.findById(r.venueId).lean();
+    if (!venue) return res.status(404).json({ error: 'Venue not found' });
+    const config = venue.shortSession || {};
+
+    const allPlans = await VenuePlan.find({ venueId: r.venueId, isActive: true }).lean();
+    const singlePlans = allPlans.filter(p => p.type === 'single');
+
+    const now = new Date();
+    const checkInMinute = timeToMinutes(new Date(r.expectedCheckIn));
+    const nowMinute = timeToMinutes(now);
+    const actualMinutes = Math.max(1, nowMinute - checkInMinute);
+    const isOver = actualMinutes > 190;
+
+    let price, bh;
+    if (isOver) {
+      const result = findCheapestCoverage(allPlans, checkInMinute, nowMinute, config);
+      price = result.minCost || 0;
+      bh = null;
+    } else {
+      const result = calcShortSessionPrice(singlePlans, checkInMinute, actualMinutes, config);
+      price = result.price;
+      bh = result.billedHours;
+    }
+
+    res.json({ actualMinutes, billedHours: bh, price, isOverThreeHours: isOver });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/liff/reservations/:id/payment ───────────────────────────────────
-// Initiate ECPay payment; returns form data for client to submit
+// Initiate payment (NewebPay by default; set PAYMENT_GATEWAY=ecpay to use ECPay)
+// Returns { form: { action, fields } } for the client to POST via hidden form
+// Accepts optional body.couponId to apply a discount coupon
 router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
   try {
     const r = await Reservation.findById(req.params.id);
     if (!r) return res.status(404).json({ error: 'Not found' });
     if (r.lineUserId !== req.liffUser.lineUserId)
       return res.status(403).json({ error: 'Forbidden' });
-    if (r.status !== 'checked_in')
-      return res.status(400).json({ error: '只有進場中的預約才能付款' });
+    if (r.status !== 'checked_in' && !(r.status === 'completed' && r.unpaidExit))
+      return res.status(400).json({ error: '此預約狀態無法付款' });
     if (r.paymentStatus === 'paid')
       return res.status(400).json({ error: '此預約已完成付款' });
+
+    // Short-session: always recalculate price at payment time (covers multi-attempt retries)
+    if (r.mode === 'walkin_short') {
+      const venue = await Venue.findById(r.venueId).lean();
+      const config = (venue && venue.shortSession) || {};
+      const allPlans = await VenuePlan.find({ venueId: r.venueId, isActive: true }).lean();
+      const singlePlans = allPlans.filter(p => p.type === 'single');
+      const checkInMinute = timeToMinutes(new Date(r.expectedCheckIn));
+      const nowMinute = timeToMinutes(new Date());
+      const actualMinutes = Math.max(1, nowMinute - checkInMinute);
+      let price;
+      if (actualMinutes > 190) {
+        const result = findCheapestCoverage(allPlans, checkInMinute, nowMinute, config);
+        price = result.minCost || config.minHourPrice || 40;
+      } else {
+        price = calcShortSessionPrice(singlePlans, checkInMinute, actualMinutes, config).price;
+      }
+      r.totalPrice = price;
+      r.paymentStatus = 'unpaid';
+      await r.save();
+    }
 
     // Free reservation — skip payment, auto checkout
     if (r.totalPrice <= 0) {
@@ -317,7 +658,38 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
       return res.json({ skip: true });
     }
 
-    const { params, apiUrl, tradeNo } = createOrderParams(r);
+    // Apply coupon if provided
+    const { couponId } = req.body;
+    let effectivePrice = r.totalPrice;
+    let coupon = null;
+    if (couponId) {
+      coupon = await Coupon.findOne({ _id: couponId, lineUserId: req.liffUser.lineUserId, status: 'valid' });
+      if (coupon) {
+        effectivePrice = Math.max(0, r.totalPrice - coupon.discountAmount);
+        r.appliedCouponId = coupon._id;
+        r.discountAmount = coupon.discountAmount;
+        await r.save();
+
+        if (effectivePrice === 0) {
+          // Full discount — no ECPay needed
+          coupon.status = 'used';
+          coupon.usedAt = new Date();
+          coupon.usedForReservationId = r._id;
+          await coupon.save();
+          r.paymentStatus = 'paid';
+          r.status = 'completed';
+          r.unpaidExit = false;
+          await r.save();
+          return res.json({ skip: true });
+        }
+      }
+    }
+
+    // Build payment order with effective price (may be discounted)
+    const reservationForPayment = effectivePrice !== r.totalPrice
+      ? { ...r.toObject(), totalPrice: effectivePrice }
+      : r;
+    const { params, apiUrl, tradeNo } = createOrderParams(reservationForPayment);
     r.paymentRef = tradeNo;
     await r.save();
 
@@ -334,13 +706,12 @@ router.get('/reservations/:id/qr', liffAuth, async (req, res) => {
     if (!r) return res.status(404).json({ error: 'Not found' });
     if (r.lineUserId !== req.liffUser.lineUserId)
       return res.status(403).json({ error: 'Forbidden' });
-    const validFrom  = r.expectedCheckIn
-      ? new Date(r.expectedCheckIn.getTime() - 10 * 60 * 1000)
-      : null;
-    const validUntil = r.expectedCheckIn
-      ? new Date(r.expectedCheckIn.getTime() + 30 * 60 * 1000)
-      : null;
-    res.json({ qrToken: r.qrToken, validFrom, validUntil, status: r.status });
+    // walkin_short: QR stays valid for the whole session (no fixed window)
+    const validFrom  = r.mode === 'walkin_short' || !r.expectedCheckIn ? null
+      : new Date(r.expectedCheckIn.getTime() - 10 * 60 * 1000);
+    const validUntil = r.mode === 'walkin_short' || !r.expectedCheckIn ? null
+      : new Date(r.expectedCheckIn.getTime() + 30 * 60 * 1000);
+    res.json({ qrToken: r.qrToken, validFrom, validUntil, status: r.status, mode: r.mode });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -419,6 +790,237 @@ router.post('/checkin', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── GET /api/liff/tasks ────────────────────────────────────────────────────────
+router.get('/tasks', liffAuth, async (req, res) => {
+  try {
+    const lineUserId = req.liffUser.lineUserId;
+    const tasks = await Task.find({ status: 'open' }).sort({ createdAt: -1 }).lean();
+
+    // Find user's submissions for these tasks
+    const taskIds = tasks.map(t => t._id);
+    const submissions = await TaskSubmission.find({ taskId: { $in: taskIds }, lineUserId }).lean();
+    const subMap = {};
+    submissions.forEach(s => { subMap[s.taskId.toString()] = s; });
+
+    const tasksWithSub = tasks.map(t => ({
+      ...t,
+      mySubmission: subMap[t._id.toString()] || null
+    }));
+
+    // Check if user has a currently checked-in reservation
+    const checkedInRes = await Reservation.findOne({ lineUserId, status: 'checked_in' }).lean();
+
+    res.json({
+      tasks: tasksWithSub,
+      checkedInReservationId: checkedInRes ? checkedInRes._id : null,
+      myLineUserId: lineUserId
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/liff/tasks/:id/accept ───────────────────────────────────────────
+router.post('/tasks/:id/accept', liffAuth, async (req, res) => {
+  try {
+    const lineUserId = req.liffUser.lineUserId;
+
+    // Verify user has a checked-in reservation
+    const checkedIn = await Reservation.findOne({ lineUserId, status: 'checked_in' }).lean();
+    if (!checkedIn) return res.status(403).json({ error: '只有在場中的用戶才能承接任務' });
+
+    const task = await Task.findById(req.params.id);
+    if (!task || task.status !== 'open') return res.status(404).json({ error: '任務不存在或已關閉' });
+
+    // First-come-first-served locking
+    if (task.acceptedBy && task.acceptedBy !== lineUserId) {
+      return res.status(409).json({ error: '此任務已被他人承接' });
+    }
+
+    // Already accepted by this user — idempotent
+    if (task.acceptedBy === lineUserId) {
+      return res.json({ ok: true });
+    }
+
+    task.acceptedBy = lineUserId;
+    task.acceptorName = req.liffUser.displayName;
+    task.acceptedAt = new Date();
+    await task.save();
+
+    // Push LINE confirmation message
+    try {
+      await pushMessage(lineUserId, `✅ 您已成功接取任務「${task.title}」！\n請到預約系統的「任務」頁面查看詳情，並於截止前完成任務拍照上傳。`);
+    } catch (e) {
+      console.error('[liff] pushMessage after accept failed:', e.message);
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/liff/tasks/:id/submit ───────────────────────────────────────────
+router.post('/tasks/:id/submit', liffAuth, async (req, res) => {
+  try {
+    const { photoBase64, note, reservationId } = req.body;
+    if (!photoBase64) return res.status(400).json({ error: '請上傳任務完成照片' });
+
+    const lineUserId = req.liffUser.lineUserId;
+
+    // Verify user has a checked-in reservation
+    const checkedIn = await Reservation.findOne({ lineUserId, status: 'checked_in' }).lean();
+    if (!checkedIn) return res.status(403).json({ error: '只有在場中的用戶才能提交任務' });
+
+    const task = await Task.findById(req.params.id).lean();
+    if (!task || task.status !== 'open') return res.status(404).json({ error: '任務不存在或已關閉' });
+
+    // Verify submitter is the task acceptor
+    if (task.acceptedBy && task.acceptedBy !== lineUserId) {
+      return res.status(403).json({ error: '此任務由他人承接，無法提交' });
+    }
+
+    // Upsert submission (allow re-submission only if rejected)
+    const existing = await TaskSubmission.findOne({ taskId: req.params.id, lineUserId });
+    if (existing && existing.status === 'pending') {
+      return res.status(409).json({ error: '您已提交此任務，等待審核中' });
+    }
+    if (existing && existing.status === 'approved') {
+      return res.status(409).json({ error: '此任務已審核通過' });
+    }
+
+    const subData = {
+      taskId: req.params.id,
+      lineUserId,
+      displayName: req.liffUser.displayName,
+      pictureUrl: req.liffUser.pictureUrl,
+      reservationId: reservationId || checkedIn._id,
+      status: 'pending',
+      photoBase64,
+      note: note || ''
+    };
+
+    if (existing) {
+      Object.assign(existing, subData);
+      await existing.save();
+      res.json({ ok: true, submission: existing });
+    } else {
+      const sub = await TaskSubmission.create(subData);
+      res.json({ ok: true, submission: sub });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/liff/coupons ─────────────────────────────────────────────────────
+router.get('/coupons', liffAuth, async (req, res) => {
+  try {
+    const coupons = await Coupon.find({ lineUserId: req.liffUser.lineUserId, status: 'valid' })
+      .sort({ createdAt: -1 }).lean();
+    res.json(coupons);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Hour Packages ────────────────────────────────────────────────────────────
+const HourPackage  = require('../models/HourPackage');
+const HourPurchase = require('../models/HourPurchase');
+const { createHourOrderParams: _ecpayHourOrder }   = require('../services/ecpayService');
+const { createHourOrderParams: _newebpayHourOrder } = require('../services/newebpayService');
+const createHourOrderParams = (purchase) =>
+  (process.env.PAYMENT_GATEWAY || 'newebpay').toLowerCase() === 'ecpay'
+    ? _ecpayHourOrder(purchase)
+    : _newebpayHourOrder(purchase);
+
+router.get('/hour-packages', async (req, res) => {
+  try {
+    const pkgs = await HourPackage.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+    res.json(pkgs);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/hour-purchases', liffAuth, async (req, res) => {
+  try {
+    const now = new Date();
+    const purchases = await HourPurchase.find({
+      lineUserId: req.liffUser.lineUserId,
+      paymentStatus: 'paid',
+      expiresAt: { $gt: now },
+    }).sort({ expiresAt: 1 });
+    res.json(purchases);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/hour-purchases', liffAuth, async (req, res) => {
+  try {
+    const { packageId } = req.body;
+    const pkg = await HourPackage.findById(packageId);
+    if (!pkg || !pkg.isActive) return res.status(404).json({ error: '方案不存在' });
+
+    const expiresAt = new Date(Date.now() + pkg.validDays * 24 * 60 * 60 * 1000);
+    const purchase = await HourPurchase.create({
+      lineUserId:    req.liffUser.lineUserId,
+      packageId:     pkg._id,
+      packageName:   pkg.name,
+      totalMinutes:  pkg.hours * 60,
+      usedMinutes:   0,
+      totalPrice:    pkg.price,
+      paymentStatus: 'unpaid',
+      expiresAt,
+    });
+
+    const { params, apiUrl, tradeNo } = createHourOrderParams(purchase);
+    purchase.paymentRef = tradeNo;
+    await purchase.save();
+
+    res.json({ form: { action: apiUrl, fields: params } });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/reservations/:id/pay-with-hours', liffAuth, async (req, res) => {
+  try {
+    const r = await Reservation.findById(req.params.id);
+    if (!r) return res.status(404).json({ error: '預約不存在' });
+    if (r.lineUserId !== req.liffUser.lineUserId) return res.status(403).json({ error: '無權限' });
+    if (r.paymentStatus === 'paid') return res.status(400).json({ error: '已付款' });
+    if (r.totalPrice <= 0) return res.status(400).json({ error: '此預約不需付款' });
+
+    const startMs  = new Date(r.startTime || r.expectedCheckIn || r.createdAt).getTime();
+    const endMs    = new Date(r.endTime   || r.expectedCheckOut || (startMs + 60 * 60 * 1000)).getTime();
+    const neededMinutes = Math.ceil((endMs - startMs) / 60000);
+
+    const now = new Date();
+    const purchases = await HourPurchase.find({
+      lineUserId:    req.liffUser.lineUserId,
+      paymentStatus: 'paid',
+      expiresAt:     { $gt: now },
+    }).sort({ expiresAt: 1 });
+
+    const totalRemaining = purchases.reduce((s, p) => s + (p.totalMinutes - p.usedMinutes), 0);
+    if (totalRemaining < neededMinutes) {
+      return res.status(400).json({ error: '時數不足', neededMinutes, remainingMinutes: totalRemaining });
+    }
+
+    let toDeduct = neededMinutes;
+    for (const p of purchases) {
+      if (toDeduct <= 0) break;
+      const avail = p.totalMinutes - p.usedMinutes;
+      const use   = Math.min(avail, toDeduct);
+      p.usedMinutes += use;
+      toDeduct -= use;
+      await p.save();
+    }
+
+    r.paymentStatus = 'paid';
+    r.status        = 'completed';
+    await r.save();
+
+    res.json({ ok: true, deductedMinutes: neededMinutes });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

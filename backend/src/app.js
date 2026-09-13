@@ -35,10 +35,10 @@ app.use(cors({
 // LINE Webhook route requires raw body for signature validation
 app.use('/webhook', webhookRouter);
 
-// JSON body parser for all other routes
-app.use(express.json());
+// JSON body parser for all other routes (10mb for photo base64 uploads)
+app.use(express.json({ limit: '10mb' }));
 // ECPay callback uses application/x-www-form-urlencoded
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 function safeEqual(a, b) {
@@ -67,10 +67,17 @@ app.get('/api/auth/verify', authMiddleware, (req, res) => res.json({ ok: true })
 const liffRouter = require('./routes/liff');
 app.use('/api/liff', liffRouter);
 
-// ECPay callback (no admin auth — called by ECPay servers + user browser)
-const ecpayRouter = require('./routes/ecpay');
-app.use('/api/ecpay', ecpayRouter);   // POST /api/ecpay/callback
-app.use('/ecpay',     ecpayRouter);   // GET  /ecpay/result (user return page)
+// Physical gate controller verification (no admin auth — qrToken is the auth)
+const gateRouter = require('./routes/gate');
+app.use('/api/gate', gateRouter);
+
+// Payment gateway callbacks (no admin auth — called by payment servers + user browser)
+const ecpayRouter   = require('./routes/ecpay');
+const newebpayRouter = require('./routes/newebpay');
+app.use('/api/ecpay',    ecpayRouter);     // POST /api/ecpay/callback
+app.use('/ecpay',        ecpayRouter);     // GET  /ecpay/result
+app.use('/api/newebpay', newebpayRouter);  // POST /api/newebpay/notify
+app.use('/newebpay',     newebpayRouter);  // GET  /newebpay/result
 
 // All other /api/* routes require auth
 app.use('/api', authMiddleware);

@@ -6,11 +6,18 @@ function startReservationReminderJob() {
   cron.schedule('* * * * *', async () => {
     const now = new Date();
 
-    // ① 自動取消逾時未進場的 confirmed 預約（超過 expectedCheckIn + 30min）
+    // ① 自動取消未進場的 confirmed 預約
     try {
+      // 策略一：超過 expectedCheckOut + 30min 仍未入場
       const overdueWindow = new Date(now.getTime() - 30 * 60 * 1000);
       await Reservation.updateMany(
-        { status: 'confirmed', expectedCheckIn: { $lt: overdueWindow } },
+        { strategy: { $ne: 2 }, status: 'confirmed', expectedCheckOut: { $lt: overdueWindow } },
+        { $set: { status: 'cancelled' } }
+      );
+      // 策略二：超過 startTime + 30min 仍未入場（最晚 30 分鐘內報到）
+      const s2Overdue = new Date(now.getTime() - 30 * 60 * 1000);
+      await Reservation.updateMany(
+        { strategy: 2, status: 'confirmed', startTime: { $lt: s2Overdue } },
         { $set: { status: 'cancelled' } }
       );
     } catch (err) {
@@ -35,9 +42,20 @@ function startReservationReminderJob() {
       console.error('[ReservationCron] Reminder failed:', err.message);
     }
 
-    // ③ 超過 expectedCheckOut 30min 仍在 checked_in 且未付款 → 標記 unpaidExit 並完成
+    // ④ 結帳後 10 分鐘寬限：paid + checked_in 超過 10min → 歸檔為 completed
     try {
-      const overdueCheckout = new Date(now.getTime() - 30 * 60 * 1000);
+      const tenMinAgo = new Date(now.getTime() - 10 * 60 * 1000);
+      await Reservation.updateMany(
+        { status: 'checked_in', paymentStatus: 'paid', paidAt: { $lte: tenMinAgo } },
+        { $set: { status: 'completed' } }
+      );
+    } catch (err) {
+      console.error('[ReservationCron] Post-payment archive failed:', err.message);
+    }
+
+    // ③ 超過 expectedCheckOut 60min 仍在 checked_in 且未付款 → 標記 unpaidExit 並完成
+    try {
+      const overdueCheckout = new Date(now.getTime() - 60 * 60 * 1000);
       const overdue = await Reservation.find({
         status: 'checked_in',
         totalPrice: { $gt: 0 },

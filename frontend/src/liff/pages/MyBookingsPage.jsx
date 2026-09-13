@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
-import { fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitEcpayForm } from '../api';
+import { fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitPaymentForm } from '../api';
 
 const STATUS_MAP = {
   confirmed:  { label: '已確認',   color: '#1976d2', bg: '#e3f2fd' },
@@ -92,7 +92,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted }) {
   }
 
   async function handlePay() {
-    if (!confirm('確認前往付款？將跳轉至綠界付款頁面。')) return;
+    if (!confirm('確認前往付款？將跳轉至藍新金流付款頁面。')) return;
     setPaying(true);
     try {
       const data = await initiatePayment(r._id);
@@ -103,7 +103,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted }) {
         return;
       }
       const { form: { action, fields } } = data;
-      submitEcpayForm(action, fields);
+      submitPaymentForm(action, fields);
     } catch (e) {
       alert(e.message);
       setPaying(false);

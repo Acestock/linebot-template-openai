@@ -84,17 +84,89 @@ export async function checkoutReservation(id) {
   return json;
 }
 
-export async function initiatePayment(id) {
+export async function initiatePayment(id, couponId) {
   const r = await fetch(`${BASE}/reservations/${id}/payment`, {
     method: 'POST',
-    headers: authHeaders()
+    headers: authHeaders(),
+    body: JSON.stringify({ couponId: couponId || undefined })
   });
   const json = await r.json();
   if (!r.ok) throw new Error(json.error || '付款啟動失敗');
   return json;
 }
 
-export function submitEcpayForm(action, fields) {
+export async function fetchTasks() {
+  const r = await fetch(`${BASE}/tasks`, { headers: authHeaders() });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '載入任務失敗');
+  return json;
+}
+
+export async function acceptTask(taskId) {
+  const r = await fetch(`${BASE}/tasks/${taskId}/accept`, {
+    method: 'POST',
+    headers: authHeaders()
+  });
+  let json;
+  try { json = await r.json(); } catch (_) { throw new Error('操作失敗，請重試'); }
+  if (!r.ok) throw new Error(json?.error || '操作失敗');
+  return json;
+}
+
+export async function submitTask(taskId, data) {
+  const r = await fetch(`${BASE}/tasks/${taskId}/submit`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data)
+  });
+  let json;
+  try { json = await r.json(); } catch (_) { throw new Error('請求失敗，請重試'); }
+  if (!r.ok) throw new Error(json?.error || '提交失敗');
+  return json;
+}
+
+export async function fetchMyCoupons() {
+  const r = await fetch(`${BASE}/coupons`, { headers: authHeaders() });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '載入折扣券失敗');
+  return json;
+}
+
+export async function fetchTodayEvents(venueId) {
+  const r = await fetch(`${BASE}/venues/${venueId}/today-events`);
+  if (!r.ok) throw new Error('無法取得活動資訊');
+  return r.json();
+}
+
+export async function postEventEntry(venueId, password) {
+  const r = await fetch(`${BASE}/venues/${venueId}/event-entry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '密碼不正確');
+  return json;
+}
+
+export async function fetchShortSessionQuote(venueId) {
+  const r = await fetch(`${BASE}/venues/${venueId}/short-session-quote`);
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '無法取得計時報價');
+  return json;
+}
+
+export async function fetchShortSessionPrice(reservationId) {
+  const r = await fetch(`${BASE}/reservations/${reservationId}/short-session-price`, {
+    headers: authHeaders()
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '無法取得計時費用');
+  return json;
+}
+
+// Generic hidden-form POST — works for both NewebPay and ECPay
+export function submitPaymentForm(action, fields) {
   const form = document.createElement('form');
   form.method = 'POST';
   form.action = action;
@@ -107,4 +179,54 @@ export function submitEcpayForm(action, fields) {
   });
   document.body.appendChild(form);
   form.submit();
+}
+
+// Kept for backward compatibility
+export const submitEcpayForm = submitPaymentForm;
+
+// ── Hour Packages ─────────────────────────────────────────────────────────────
+export async function fetchHourPackages() {
+  const r = await fetch(`${BASE}/hour-packages`);
+  if (!r.ok) throw new Error('無法取得時數方案');
+  return r.json();
+}
+
+export async function fetchMyHourPurchases() {
+  const r = await fetch(`${BASE}/hour-purchases`, { headers: authHeaders() });
+  if (!r.ok) throw new Error('無法取得時數餘額');
+  return r.json();
+}
+
+export async function buyHourPackage(packageId) {
+  const r = await fetch(`${BASE}/hour-purchases`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ packageId })
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '購買失敗');
+  return json;
+}
+
+export async function payWithHours(reservationId) {
+  const r = await fetch(`${BASE}/reservations/${reservationId}/pay-with-hours`, {
+    method: 'POST',
+    headers: authHeaders()
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '折抵失敗');
+  return json;
+}
+
+// ── Strategy 2 API ────────────────────────────────────────────────────────────
+export async function fetchDurationPlans(venueId) {
+  const r = await fetch(`${BASE}/venues/${venueId}/duration-plans`);
+  if (!r.ok) throw new Error('無法取得時長方案');
+  return r.json();
+}
+
+export async function fetchStrategy2Slots(venueId, date, durationMinutes) {
+  const r = await fetch(`${BASE}/venues/${venueId}/strategy2-slots?date=${date}&durationMinutes=${durationMinutes}`);
+  if (!r.ok) throw new Error('無法取得可用時段');
+  return r.json(); // { slots: [...] }
 }

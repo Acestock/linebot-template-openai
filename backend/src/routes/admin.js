@@ -1,11 +1,11 @@
 const express = require('express');
 const dbService = require('../services/dbService');
 const {
-  pushMessage, pushOrderCard,
+  pushMessage, pushLineMessage, pushOrderCard,
   getRichMenuTemplates, createRichMenu, createRichMenuRaw, listRichMenus,
   deleteRichMenuById, setDefaultRichMenuById, cancelDefaultRichMenuAll,
   getRichMenu, getDefaultRichMenuId,
-  uploadRichMenuImageFromUrl, getRichMenuImageBuffer
+  uploadRichMenuImageFromUrl, getRichMenuImageBuffer, uploadRichMenuImageBuffer
 } = require('../services/lineService');
 const sheetService = require('../services/sheetService');
 const BusinessProfile = require('../models/BusinessProfile');
@@ -26,6 +26,9 @@ const { summarizeConversation } = openaiService;
 const sseService = require('../services/sseService');
 const autoReplyService = require('../services/autoReplyService');
 const { buildScheduleContext, getUpcomingEvents } = require('../services/calendarService');
+const Task = require('../models/Task');
+const TaskSubmission = require('../models/TaskSubmission');
+const Coupon = require('../models/Coupon');
 
 const router = express.Router();
 
@@ -740,10 +743,10 @@ router.get('/settings', async (req, res) => {
 // PUT /api/settings
 router.put('/settings', async (req, res) => {
   try {
-    const { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId, liffTitle } = req.body;
+    const { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId, liffTitle, brandColor, brandTextColor } = req.body;
     const profile = await BusinessProfile.findOneAndUpdate(
       {},
-      { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId, liffTitle, updatedAt: new Date() },
+      { shopName, industry, products, businessHours, address, faq, toneNote, autoReply, autoReplyDelay, adminLineUserId, liffTitle, brandColor, brandTextColor, updatedAt: new Date() },
       { upsert: true, new: true }
     );
     res.json(profile);
@@ -1119,15 +1122,18 @@ router.get('/rich-menu/:id/detail', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// PUT /api/rich-menu/:id — update button actions (delete old → recreate with same layout)
+// PUT /api/rich-menu/:id — update button actions (delete old → recreate with same layout, auto-migrate image)
 router.put('/rich-menu/:id', async (req, res) => {
   try {
-    const { buttons, chatBarText } = req.body;
+    const { buttons, chatBarText, imageUrl } = req.body;
     if (!buttons || !Array.isArray(buttons)) return res.status(400).json({ error: 'buttons array required' });
 
     const existing = await getRichMenu(req.params.id);
     const defaultId = await getDefaultRichMenuId();
     const wasDefault = defaultId === req.params.id;
+
+    // Save old image buffer before deletion so we can re-attach it to the new ID
+    const oldImg = await getRichMenuImageBuffer(req.params.id).catch(() => null);
 
     const newAreas = existing.areas.map((area, i) => {
       const btn = buttons[i] || {};
@@ -1152,11 +1158,18 @@ router.put('/rich-menu/:id', async (req, res) => {
       areas: newAreas
     });
 
+    // Upload image: use new URL if provided, otherwise re-attach the old image
+    if (imageUrl) {
+      await uploadRichMenuImageFromUrl(newId, imageUrl);
+    } else if (oldImg) {
+      await uploadRichMenuImageBuffer(newId, oldImg.buffer, oldImg.contentType);
+    }
+
     if (wasDefault) {
       try { await setDefaultRichMenuById(newId); } catch {}
     }
 
-    res.json({ richMenuId: newId, wasDefault });
+    res.json({ richMenuId: newId, wasDefault, imagePreserved: !imageUrl && !!oldImg });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1165,7 +1178,9 @@ const Venue        = require('../models/Venue');
 const VenuePlan    = require('../models/VenuePlan');
 const Announcement = require('../models/Announcement');
 const Reservation  = require('../models/Reservation');
-const BlockedSlot  = require('../models/BlockedSlot');
+const BlockedSlot    = require('../models/BlockedSlot');
+const StaffToken     = require('../models/StaffToken');
+const DurationPlan   = require('../models/DurationPlan');
 
 router.get('/venues', async (req, res) => {
   try {
@@ -1303,11 +1318,17 @@ router.get('/blocked-slots', async (req, res) => {
 
 router.post('/blocked-slots', async (req, res) => {
   try {
-    const { venueId, date, slots, eventName } = req.body;
+    const { venueId, date, slots, eventName, buttonName, accessPassword, capacity } = req.body;
     if (!venueId || !date || !slots || !slots.length) {
       return res.status(400).json({ error: 'venueId, date, slots 為必填' });
     }
-    const item = await BlockedSlot.create({ venueId, date: new Date(date), slots, eventName: eventName || '' });
+    const item = await BlockedSlot.create({
+      venueId, date: new Date(date), slots,
+      eventName:      eventName      || '',
+      buttonName:     buttonName     || '',
+      accessPassword: accessPassword || '',
+      capacity: Math.max(0, parseInt(capacity, 10) || 0)
+    });
     res.json(item);
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
@@ -1315,6 +1336,334 @@ router.post('/blocked-slots', async (req, res) => {
 router.delete('/blocked-slots/:id', async (req, res) => {
   try {
     await BlockedSlot.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Tasks ────────────────────────────────────────────────────────────────────
+
+function buildTaskFlexMessage(task) {
+  const liffId = process.env.LIFF_ID || '';
+  const liffUrl = liffId ? `https://liff.line.me/${liffId}?page=tasks` : '';
+  return {
+    type: 'flex',
+    altText: `🎯 限時任務：${task.title}`,
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#E67E22',
+        contents: [{ type: 'text', text: '🎯 限時任務', color: '#ffffff', weight: 'bold', size: 'md' }]
+      },
+      body: {
+        type: 'box', layout: 'vertical', spacing: 'sm',
+        contents: [
+          { type: 'text', text: task.title, weight: 'bold', size: 'lg', wrap: true },
+          ...(task.description ? [{ type: 'text', text: task.description, size: 'sm', color: '#555555', wrap: true }] : []),
+          { type: 'text', text: `完成即獲 $${task.rewardAmount} 折扣券`, size: 'sm', color: '#27AE60', weight: 'bold', margin: 'md' }
+        ]
+      },
+      ...(liffUrl ? {
+        footer: {
+          type: 'box', layout: 'vertical',
+          contents: [{
+            type: 'button', style: 'primary', color: '#E67E22',
+            action: { type: 'uri', label: '前往任務', uri: liffUrl }
+          }]
+        }
+      } : {})
+    }
+  };
+}
+
+// GET /api/tasks
+router.get('/tasks', async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.venueId) filter.venueId = req.query.venueId;
+    const tasks = await Task.find(filter).sort({ createdAt: -1 }).lean();
+    res.json(tasks);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/tasks  — 建立任務並廣播給在場用戶
+router.post('/tasks', async (req, res) => {
+  try {
+    const { title, description, rewardAmount, venueId, expiresAt } = req.body;
+    if (!title || !rewardAmount || !venueId) {
+      return res.status(400).json({ error: 'title, rewardAmount, venueId 為必填' });
+    }
+    const venue = await Venue.findById(venueId).lean();
+    if (!venue) return res.status(404).json({ error: '場地不存在' });
+
+    const task = await Task.create({
+      title, description: description || '', rewardAmount: Number(rewardAmount),
+      venueId, venueName: venue.name, status: 'open',
+      expiresAt: expiresAt ? new Date(expiresAt) : null
+    });
+
+    // Broadcast to all currently checked-in users at this venue
+    const checkedIn = await Reservation.find({ venueId, status: 'checked_in' }).lean();
+    const uniqueUsers = [...new Set(checkedIn.map(r => r.lineUserId))];
+    const flexMsg = buildTaskFlexMessage(task);
+    await Promise.allSettled(uniqueUsers.map(uid =>
+      pushLineMessage(uid, flexMsg)
+    ));
+
+    res.status(201).json({ task, broadcastCount: uniqueUsers.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/tasks/:id
+router.patch('/tasks/:id', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const task = await Task.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    res.json(task);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/tasks/:id
+router.delete('/tasks/:id', async (req, res) => {
+  try {
+    await Task.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/tasks/:id/submissions
+router.get('/tasks/:id/submissions', async (req, res) => {
+  try {
+    const filter = { taskId: req.params.id };
+    if (req.query.status) filter.status = req.query.status;
+    const submissions = await TaskSubmission.find(filter).sort({ createdAt: -1 }).lean();
+    res.json(submissions);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/tasks/:taskId/submissions/:subId  — 審核提交
+router.patch('/tasks/:taskId/submissions/:subId', async (req, res) => {
+  try {
+    const { status, adminNote } = req.body;
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: 'status 必須為 approved 或 rejected' });
+    }
+    const sub = await TaskSubmission.findById(req.params.subId);
+    if (!sub) return res.status(404).json({ error: 'Submission not found' });
+    if (sub.taskId.toString() !== req.params.taskId) {
+      return res.status(400).json({ error: 'Task ID mismatch' });
+    }
+
+    sub.status = status;
+    sub.adminNote = adminNote || '';
+    sub.reviewedAt = new Date();
+    await sub.save();
+
+    const task = await Task.findById(req.params.taskId).lean();
+
+    if (status === 'approved') {
+      await Coupon.create({
+        lineUserId: sub.lineUserId,
+        displayName: sub.displayName,
+        taskId: sub.taskId,
+        taskTitle: task ? task.title : '',
+        discountAmount: task ? task.rewardAmount : 0,
+        status: 'valid'
+      });
+      await pushMessage(sub.lineUserId, `🎉 任務審核通過！\n您已獲得 $${task ? task.rewardAmount : 0} 折扣券，可在下次付款時折抵使用。`);
+    } else {
+      const reason = adminNote ? `\n原因：${adminNote}` : '';
+      await pushMessage(sub.lineUserId, `😔 任務審核未通過${reason}\n歡迎繼續完成其他任務！`);
+    }
+
+    res.json(sub);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/coupons
+router.get('/coupons', async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.lineUserId) filter.lineUserId = req.query.lineUserId;
+    if (req.query.status) filter.status = req.query.status;
+    const coupons = await Coupon.find(filter).sort({ createdAt: -1 }).lean();
+    res.json(coupons);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Duration Plans (策略二方案) ──────────────────────────────────────────────
+router.get('/venues/:venueId/duration-plans', async (req, res) => {
+  try {
+    const plans = await DurationPlan.find({ venueId: req.params.venueId }).sort({ order: 1, createdAt: 1 }).lean();
+    res.json(plans);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/venues/:venueId/duration-plans', async (req, res) => {
+  try {
+    const { name, durationMinutes, price, order } = req.body;
+    if (!name || durationMinutes === undefined || price === undefined)
+      return res.status(400).json({ error: 'name, durationMinutes, price 為必填' });
+    const plan = await DurationPlan.create({
+      venueId: req.params.venueId, name,
+      durationMinutes: +durationMinutes, price: +price,
+      order: order ?? 0
+    });
+    res.json(plan);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.patch('/venues/:venueId/duration-plans/:planId', async (req, res) => {
+  try {
+    const plan = await DurationPlan.findOneAndUpdate(
+      { _id: req.params.planId, venueId: req.params.venueId },
+      { $set: req.body },
+      { new: true }
+    );
+    if (!plan) return res.status(404).json({ error: '找不到方案' });
+    res.json(plan);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.delete('/venues/:venueId/duration-plans/:planId', async (req, res) => {
+  try {
+    await DurationPlan.findOneAndDelete({ _id: req.params.planId, venueId: req.params.venueId });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Staff Door Tokens ────────────────────────────────────────────────────────
+// POST /api/staff-tokens  — generate a 5-minute gate-open QR token for staff
+router.post('/staff-tokens', async (req, res) => {
+  try {
+    const { venueId, venueName } = req.body;
+    const token     = require('crypto').randomUUID();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    await StaffToken.create({ token, venueId: venueId || undefined, venueName: venueName || '', expiresAt });
+    res.json({ token, expiresAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Analytics ───────────────────────────────────────────────────────────────
+// GET /api/analytics?period=week|month|year[&venueId=...]
+router.get('/analytics', async (req, res) => {
+  try {
+    const { period = 'month', venueId } = req.query;
+
+    const now = new Date();
+    const tz  = 'Asia/Taipei';
+    let startDate, groupFmt;
+
+    if (period === 'week') {
+      startDate = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
+      startDate.setHours(0, 0, 0, 0);
+      groupFmt  = '%Y-%m-%d';
+    } else if (period === 'year') {
+      startDate = new Date(now.getFullYear(), 0, 1);
+      groupFmt  = '%Y-%m';
+    } else {
+      // month = current calendar month
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      groupFmt  = '%Y-%m-%d';
+    }
+
+    const baseMatch = {};
+    if (venueId) baseMatch.venueId = new (require('mongoose').Types.ObjectId)(venueId);
+
+    // ── Revenue: paid reservations ────────────────────────────────────────────
+    const revMatch = { ...baseMatch, paymentStatus: 'paid', paidAt: { $gte: startDate } };
+
+    const [revenueByPeriod, byVenue, visitorsByPeriod, totalPaidCount] = await Promise.all([
+      Reservation.aggregate([
+        { $match: revMatch },
+        { $group: {
+          _id: { $dateToString: { format: groupFmt, date: '$paidAt', timezone: tz } },
+          revenue: { $sum: '$totalPrice' },
+          count:   { $sum: 1 }
+        }},
+        { $sort: { _id: 1 } }
+      ]),
+      Reservation.aggregate([
+        { $match: revMatch },
+        { $group: {
+          _id:     '$venueName',
+          revenue: { $sum: '$totalPrice' },
+          count:   { $sum: 1 }
+        }},
+        { $sort: { revenue: -1 } }
+      ]),
+      // Visitor count: anyone who actually entered (checked_in or completed)
+      Reservation.aggregate([
+        { $match: { ...baseMatch, status: { $in: ['checked_in', 'completed'] }, date: { $gte: startDate } } },
+        { $group: {
+          _id:      { $dateToString: { format: groupFmt, date: '$date', timezone: tz } },
+          visitors: { $sum: 1 }
+        }},
+        { $sort: { _id: 1 } }
+      ]),
+      Reservation.countDocuments(revMatch)
+    ]);
+
+    // Merge by period key
+    const periodMap = {};
+    for (const r of revenueByPeriod)  periodMap[r._id] = { period: r._id, revenue: r.revenue, paidCount: r.count, visitors: 0 };
+    for (const v of visitorsByPeriod) {
+      if (periodMap[v._id]) periodMap[v._id].visitors = v.visitors;
+      else periodMap[v._id] = { period: v._id, revenue: 0, paidCount: 0, visitors: v.visitors };
+    }
+
+    const rows = Object.values(periodMap).sort((a, b) => a.period.localeCompare(b.period));
+    const totalRevenue  = revenueByPeriod.reduce((s, r) => s + r.revenue, 0);
+    const totalVisitors = visitorsByPeriod.reduce((s, v) => s + v.visitors, 0);
+
+    res.json({
+      period,
+      summary: {
+        totalRevenue,
+        totalVisitors,
+        totalPaidCount,
+        avgRevenuePerVisitor: totalVisitors > 0 ? Math.round(totalRevenue / totalVisitors) : 0
+      },
+      rows,
+      byVenue: byVenue.map(v => ({ venueName: v._id || '—', revenue: v.revenue, count: v.count }))
+    });
+  } catch (err) {
+    console.error('[Analytics]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Hour Packages ────────────────────────────────────────────────────────────
+const HourPackage = require('../models/HourPackage');
+
+router.get('/hour-packages', async (req, res) => {
+  try {
+    const pkgs = await HourPackage.find().sort({ order: 1, createdAt: 1 });
+    res.json(pkgs);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/hour-packages', async (req, res) => {
+  try {
+    const { name, hours, price, validDays, isActive, order } = req.body;
+    const pkg = await HourPackage.create({ name, hours, price, validDays, isActive, order: order || 0 });
+    res.json(pkg);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.patch('/hour-packages/:id', async (req, res) => {
+  try {
+    const pkg = await HourPackage.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(pkg);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/hour-packages/:id', async (req, res) => {
+  try {
+    await HourPackage.findByIdAndDelete(req.params.id);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
