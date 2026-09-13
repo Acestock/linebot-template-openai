@@ -148,4 +148,82 @@ router.all('/verify', async (req, res) => {
   }
 });
 
+// ── POST /api/gate/scan ──────────────────────────────────────────────────────
+// 微光互聯 M350 QR Code Scanner 進場端點（僅負責進場；出場改用實體按鈕直接解鎖，不經過此 API）。
+// body 已由 app.js 的路徑專屬 express.text() 轉成純文字字串，相容兩種上傳格式：
+//   Format A（實機測試觀察到的格式）：body 直接就是 QR 內容
+//   Format B（原廠標準格式）：vgdecoderesult=xxx&&devicenumber=xxx
+// 回應規則：M350 不看 JSON，只認 text/plain 的 code=0000（成功，觸發硬體開門行為）或其他碼（失敗）。
+function parseM350Body(rawBody) {
+  const body = String(rawBody || '').trim();
+  const prefix = 'vgdecoderesult=';
+  if (body.toLowerCase().startsWith(prefix)) {
+    const sep = '&&devicenumber=';
+    const sepIdx = body.lastIndexOf(sep);
+    const decode = (s) => { try { return decodeURIComponent(s.replace(/\+/g, ' ')); } catch { return s; } };
+    if (sepIdx !== -1) {
+      return {
+        qrCode:       decode(body.slice(prefix.length, sepIdx)),
+        deviceNumber: decode(body.slice(sepIdx + sep.length))
+      };
+    }
+    return { qrCode: decode(body.slice(prefix.length)), deviceNumber: '' };
+  }
+  // Format A：整段 body 就是 QR 內容
+  return { qrCode: body, deviceNumber: '' };
+}
+
+router.post('/scan', async (req, res) => {
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.type('text/plain');
+
+  const { qrCode, deviceNumber } = parseM350Body(req.body);
+  console.log(`[Gate][M350] scan: device=${deviceNumber || '-'} ip=${req.ip} qr=${qrCode.slice(0, 16)}${qrCode.length > 16 ? '...' : ''}`);
+
+  if (!qrCode) return res.send('code=0001');
+
+  try {
+    const r = await Reservation.findOne({ qrToken: qrCode });
+
+    if (!r) {
+      const st = await StaffToken.findOne({ token: qrCode });
+      if (st) {
+        if (st.expiresAt < new Date()) {
+          console.warn(`[Gate][M350] Staff token expired: ${qrCode.slice(0, 8)}`);
+          return res.send('code=0001');
+        }
+        console.log(`[Gate][M350] Staff token OK: ${st.venueName}`);
+        return res.send('code=0000');
+      }
+      console.warn(`[Gate][M350] Unknown qrToken: ${qrCode.slice(0, 16)}`);
+      return res.send('code=0001');
+    }
+
+    if (r.status === 'confirmed') {
+      r.status = 'checked_in';
+      if (!r.expectedCheckIn) r.expectedCheckIn = new Date();
+      await r.save();
+      console.log(`[Gate][M350] Entry: ${r._id} (${r.displayName}) confirmed→checked_in`);
+      return res.send('code=0000');
+    }
+
+    if (r.status === 'checked_in') {
+      console.log(`[Gate][M350] Re-entry (already checked_in): ${r._id} (${r.displayName})`);
+      return res.send('code=0000');
+    }
+
+    if (r.status === 'completed') {
+      console.warn(`[Gate][M350] Blocked (completed): ${r._id}`);
+      return res.send('code=0001');
+    }
+
+    console.warn(`[Gate][M350] Blocked (status=${r.status}): ${r._id}`);
+    return res.send('code=0001');
+
+  } catch (err) {
+    console.error('[Gate][M350] Error:', err.message);
+    return res.send('code=0001');
+  }
+});
+
 module.exports = router;
