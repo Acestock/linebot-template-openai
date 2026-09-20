@@ -160,6 +160,78 @@ function BlockedSlotsSection({ venues }) {
   );
 }
 
+// ── Closure Days section (全站公休日管理) ───────────────────────────────────
+function ClosureDaysSection() {
+  const [days, setDays]     = useState([]);
+  const [date, setDate]     = useState('');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const loadDays = useCallback(() => {
+    authFetch(`${API_BASE}/api/closure-days`).then(r => r.json())
+      .then(d => setDays(Array.isArray(d) ? d : [])).catch(() => {});
+  }, []);
+  useEffect(loadDays, [loadDays]);
+
+  async function handleAdd() {
+    if (!date || !reason) return alert('請填寫日期與原因');
+    setSaving(true);
+    try {
+      await authFetch(`${API_BASE}/api/closure-days`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, reason })
+      });
+      setDate(''); setReason('');
+      loadDays();
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('確定刪除此公休日？')) return;
+    await authFetch(`${API_BASE}/api/closure-days/${id}`, { method: 'DELETE' });
+    loadDays();
+  }
+
+  return (
+    <div style={{ marginTop: '24px', borderTop: '2px solid #f0f0f0', paddingTop: '20px' }}>
+      <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '4px', color: '#333' }}>公休日管理</div>
+      <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '14px' }}>設定後，該日期全站（所有場地、所有預約方式）皆無法預約，前台會顯示您填寫的原因</div>
+
+      <div style={{ background: '#f9f9f9', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+        <Field label="日期">
+          <input type="date" style={inputStyle} value={date} min={today} onChange={e => setDate(e.target.value)} />
+        </Field>
+        <Field label="公休原因（會顯示給用戶看）">
+          <input style={inputStyle} value={reason} onChange={e => setReason(e.target.value)} placeholder="例：內部消毒整理、颱風停止營業" />
+        </Field>
+        <button onClick={handleAdd} disabled={saving} style={{ ...btn('#111'), width: '100%', marginTop: '4px' }}>
+          {saving ? '新增中...' : '＋ 新增公休日'}
+        </button>
+      </div>
+
+      {days.length === 0
+        ? <div style={{ color: '#aaa', textAlign: 'center', padding: '16px' }}>尚無公休日設定</div>
+        : days.map(d => {
+          const dateStr = new Date(d.date).toLocaleDateString('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric', weekday: 'short' });
+          return (
+            <div key={d._id} style={{ border: '1px solid #eee', borderRadius: '10px', padding: '10px 14px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: '600', fontSize: '14px' }}>{dateStr}</div>
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{d.reason}</div>
+              </div>
+              <button onClick={() => handleDelete(d._id)} style={btn('#ffebee', '#c62828')}>刪除</button>
+            </div>
+          );
+        })
+      }
+    </div>
+  );
+}
+
 // ── Tab 1: 場地管理 ──────────────────────────────────────────────────────────
 function VenueTab() {
   const [venues, setVenues]   = useState([]);
@@ -909,6 +981,7 @@ function SystemSettingsTab() {
   };
 
   return (
+    <>
     <form onSubmit={handleSave}>
       {/* LIFF title */}
       <div style={{ marginBottom: '20px' }}>
@@ -983,6 +1056,8 @@ function SystemSettingsTab() {
         </span>
       )}
     </form>
+    <ClosureDaysSection />
+    </>
   );
 }
 

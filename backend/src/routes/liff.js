@@ -13,6 +13,7 @@ const Coupon = require('../models/Coupon');
 const DurationPlan = require('../models/DurationPlan');
 const StaffToken   = require('../models/StaffToken');
 const { getAvailableSlots, checkSlotAvailability } = require('../services/strategy2Service');
+const { getActiveClosure } = require('../services/closureDayService');
 const { createOrderParams: _ecpayCreateOrder }   = require('../services/ecpayService');
 const { createOrderParams: _newebpayCreateOrder } = require('../services/newebpayService');
 // Switch gateway via env: PAYMENT_GATEWAY=ecpay to fall back to ECPay (default: newebpay)
@@ -120,6 +121,15 @@ async function getSlotAvailability(venueId, maxCapacity, dateStr) {
   const dateEnd   = new Date(dateStart.getTime() + 24 * 60 * 60 * 1000);
   const slotKeys = ['morning', 'afternoon', 'evening'];
   const result = {};
+
+  // 全站公休：三個時段一律回傳已封鎖 + 原因，略過後續查詢
+  const closure = await getActiveClosure(dateStr);
+  if (closure) {
+    for (const slot of slotKeys) {
+      result[slot] = { remaining: 0, total: maxCapacity, blocked: true, closureReason: closure.reason };
+    }
+    return result;
+  }
 
   // Check for active blocked slots on this date
   const blocks = await BlockedSlot.find({
@@ -274,6 +284,7 @@ router.get('/venues/:id/short-session-quote', async (req, res) => {
     res.json({
       available,
       remaining: slotAvail.remaining,
+      closureReason: slotAvail.closureReason || null,
       currentSlot,
       checkInMinute,
       tiers: tiers.map(t => ({
@@ -305,6 +316,9 @@ router.get('/venues/:id/strategy2-slots', async (req, res) => {
     if (!date) return res.status(400).json({ error: 'date 為必填' });
     // durationMinutes=0 means all-day; must handle 0 explicitly (falsy)
     const dur = durationMinutes !== undefined ? parseInt(durationMinutes, 10) : 90;
+
+    const closure = await getActiveClosure(date);
+    if (closure) return res.json({ slots: [], closed: true, reason: closure.reason });
 
     const slots = await getAvailableSlots(
       venue._id, date,
@@ -422,6 +436,10 @@ router.post('/reservations', liffAuth, async (req, res) => {
       const sTime = new Date(startTime);
       const eTime = new Date(endTime);
 
+      // 全站公休（伺服器端強制檢查，非僅前端阻擋）
+      const closureS2 = await getActiveClosure(sTime.toISOString().slice(0, 10));
+      if (closureS2) return res.status(409).json({ error: `公休：${closureS2.reason}` });
+
       // 容量檢查
       const avail = await checkSlotAvailability(venueId, sTime, eTime, venue.maxCapacityPerSlot);
       if (!avail.available)
@@ -472,6 +490,11 @@ router.post('/reservations', liffAuth, async (req, res) => {
       return res.status(400).json({ error: 'venueId, date, slots required' });
 
     const dateStr = typeof date === 'string' ? date : new Date(date).toISOString().slice(0, 10);
+
+    // 全站公休（伺服器端強制檢查，非僅前端阻擋）
+    const closureS1 = await getActiveClosure(dateStr);
+    if (closureS1) return res.status(409).json({ error: `公休：${closureS1.reason}` });
+
     const avail   = await getSlotAvailability(venueId, venue.maxCapacityPerSlot, dateStr);
 
     const isShortSession = mode === 'walkin_short';

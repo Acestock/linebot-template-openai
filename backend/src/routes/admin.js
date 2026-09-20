@@ -1179,6 +1179,7 @@ const VenuePlan    = require('../models/VenuePlan');
 const Announcement = require('../models/Announcement');
 const Reservation  = require('../models/Reservation');
 const BlockedSlot    = require('../models/BlockedSlot');
+const ClosureDay      = require('../models/ClosureDay');
 const StaffToken     = require('../models/StaffToken');
 const DurationPlan   = require('../models/DurationPlan');
 
@@ -1336,6 +1337,30 @@ router.post('/blocked-slots', async (req, res) => {
 router.delete('/blocked-slots/:id', async (req, res) => {
   try {
     await BlockedSlot.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Closure Days（全站公休日）─────────────────────────────────────────────────
+router.get('/closure-days', async (req, res) => {
+  try {
+    const items = await ClosureDay.find().sort({ date: -1, createdAt: -1 }).lean();
+    res.json(items);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/closure-days', async (req, res) => {
+  try {
+    const { date, reason } = req.body;
+    if (!date || !reason) return res.status(400).json({ error: 'date, reason 為必填' });
+    const item = await ClosureDay.create({ date: new Date(date), reason });
+    res.json(item);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.delete('/closure-days/:id', async (req, res) => {
+  try {
+    await ClosureDay.findByIdAndDelete(req.params.id);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
