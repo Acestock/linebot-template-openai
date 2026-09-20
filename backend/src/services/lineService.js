@@ -275,6 +275,17 @@ async function pushLineMessage(lineUserId, messageObj) {
 
 // Build LINE Flex Message bubble from a ProductCard document
 function buildFlexBubble(card) {
+  // 純圖片模式：只顯示整張圖片，不裁切、不疊加標題/價格/按鈕
+  if (card.imageOnly && card.imageUrl) {
+    return {
+      type: 'bubble',
+      hero: {
+        type: 'image', url: card.imageUrl,
+        size: 'full', aspectRatio: '20:13', aspectMode: 'fit'
+      }
+    };
+  }
+
   const headerBgColor    = card.headerBgColor    || '#ffffff';
   const titleColor       = card.titleColor       || '#111111';
   const subtitleColor    = card.subtitleColor    || '#888888';

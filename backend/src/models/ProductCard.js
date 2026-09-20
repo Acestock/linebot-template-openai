@@ -9,6 +9,7 @@ const ProductCardSchema = new mongoose.Schema({
   title:         { type: String, required: true },
   subtitle:      { type: String, default: '' },
   imageUrl:      { type: String, default: '' },
+  imageOnly:     { type: Boolean, default: false }, // true：只顯示整張圖片，不裁切、不疊加標題/價格/按鈕
   priceItems:    { type: [PriceItemSchema], default: [] },
   buttonText:    { type: String, default: '' },
   buttonUrl:     { type: String, default: '' },

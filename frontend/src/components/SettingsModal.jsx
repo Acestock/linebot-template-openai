@@ -428,6 +428,22 @@ function LineCardPreview({ card }) {
   const priceAl   = card.priceAlign || 'start';
   const divider   = card.showDivider !== false;
 
+  if (card.imageOnly) {
+    return (
+      <div style={{ width: '220px', borderRadius: '14px', overflow: 'hidden',
+        boxShadow: '0 4px 18px rgba(0,0,0,0.18)', background: '#e8ecf0', flexShrink: 0 }}>
+        {card.imageUrl ? (
+          <div style={{ width: '100%', paddingTop: '65%', position: 'relative' }}>
+            <img src={card.imageUrl} alt="" onError={e => { e.target.style.display='none'; }}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }} />
+          </div>
+        ) : (
+          <div style={{ padding: '40px 14px', textAlign: 'center', color: '#aaa', fontSize: '13px' }}>請填寫圖片網址</div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={{ width: '220px', borderRadius: '14px', overflow: 'hidden',
       boxShadow: '0 4px 18px rgba(0,0,0,0.18)', background: '#fff', flexShrink: 0 }}>
@@ -483,7 +499,7 @@ function CardTab() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const EMPTY_FORM = {
-    title: '', subtitle: '', imageUrl: '', priceItems: [], buttonText: '', buttonUrl: '',
+    title: '', subtitle: '', imageUrl: '', imageOnly: false, priceItems: [], buttonText: '', buttonUrl: '',
     buttonActionType: 'url', buttonKeywordId: '',
     headerBgColor: '#ffffff', titleColor: '#111111', subtitleColor: '#888888',
     buttonColor: '#00B900', bodyBgColor: '#ffffff',
@@ -517,6 +533,7 @@ function CardTab() {
     setForm({
       title: card.title, subtitle: card.subtitle || '', imageUrl: card.imageUrl || '',
       priceItems: card.priceItems || [], buttonText: card.buttonText || '', buttonUrl: card.buttonUrl || '',
+      imageOnly: !!card.imageOnly,
       buttonActionType: card.buttonActionType || 'url', buttonKeywordId: card.buttonKeywordId || '',
       headerBgColor: card.headerBgColor || '#ffffff', titleColor: card.titleColor || '#111111',
       subtitleColor: card.subtitleColor || '#888888', buttonColor: card.buttonColor || '#00B900',
@@ -596,8 +613,15 @@ function CardTab() {
           <div style={GROUP}><label style={LABEL}>圖片網址</label>
             <input value={form.imageUrl} onChange={e => setForm(p => ({ ...p, imageUrl: e.target.value }))}
               placeholder="https://...（建議 20:13）" style={FIELD} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', marginTop: '8px', color: '#555' }}>
+              <input type="checkbox" checked={!!form.imageOnly}
+                onChange={e => setForm(p => ({ ...p, imageOnly: e.target.checked }))} />
+              只顯示整張圖片（不裁切，不疊加標題／價格／按鈕）
+            </label>
           </div>
 
+          {!form.imageOnly && (
+          <>
           <div style={GROUP}>
             <label style={LABEL}>價目表</label>
             <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', overflow: 'hidden', marginTop: '6px' }}>
@@ -745,6 +769,8 @@ function CardTab() {
               </label>
             </div>
           </div>
+          </>
+          )}
         </div>
 
         {/* LINE-style live preview */}
