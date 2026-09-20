@@ -347,13 +347,24 @@ function buildFlexBubble(card) {
     bubble.body = { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '14px', contents: bodyContents };
   }
 
-  if (card.buttonUrl && card.buttonText) {
+  // 按鈕動作：keyword=點擊後以 postback 觸發後台指定關鍵字的回覆（文字或另一組卡片）；
+  // url（預設）=外部連結，行為與原本相同
+  let buttonAction = null;
+  if (card.buttonActionType === 'keyword' && card.buttonKeywordId && card.buttonText) {
+    buttonAction = {
+      type: 'postback',
+      label: card.buttonText,
+      data: `action=card_keyword&keywordId=${card.buttonKeywordId}`,
+      displayText: card.buttonText
+    };
+  } else if (card.buttonUrl && card.buttonText) {
+    buttonAction = { type: 'uri', label: card.buttonText, uri: card.buttonUrl };
+  }
+
+  if (buttonAction) {
     bubble.footer = {
       type: 'box', layout: 'vertical', spacing: 'sm',
-      contents: [{
-        type: 'button', style: 'primary', color: buttonColor,
-        action: { type: 'uri', label: card.buttonText, uri: card.buttonUrl }
-      }]
+      contents: [{ type: 'button', style: 'primary', color: buttonColor, action: buttonAction }]
     };
   }
 

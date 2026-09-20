@@ -413,7 +413,7 @@ const CARD_TEMPLATES = {
 
 function LineCardPreview({ card }) {
   const hasPrices = card.priceItems && card.priceItems.length > 0;
-  const hasButton = card.buttonText && card.buttonUrl;
+  const hasButton = card.buttonText && (card.buttonActionType === 'keyword' ? card.buttonKeywordId : card.buttonUrl);
   const headerBg  = card.headerBgColor || '#ffffff';
   const bodyBg    = card.bodyBgColor   || '#ffffff';
   const titleCol  = card.titleColor    || '#111111';
@@ -479,10 +479,12 @@ function LineCardPreview({ card }) {
 // ─── Tab 3: 商品卡片管理 ─────────────────────────────────────────────────────
 function CardTab() {
   const [cards, setCards] = useState([]);
+  const [keywords, setKeywords] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const EMPTY_FORM = {
     title: '', subtitle: '', imageUrl: '', priceItems: [], buttonText: '', buttonUrl: '',
+    buttonActionType: 'url', buttonKeywordId: '',
     headerBgColor: '#ffffff', titleColor: '#111111', subtitleColor: '#888888',
     buttonColor: '#00B900', bodyBgColor: '#ffffff',
     template: 'classic',
@@ -494,10 +496,14 @@ function CardTab() {
   const [saving, setSaving] = useState(false);
   const [priceInput, setPriceInput] = useState({ name: '', price: '' });
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadKeywords(); }, []);
   async function load() {
     const res = await authFetch(`${API_BASE}/api/cards`);
     const d = await res.json(); setCards(Array.isArray(d) ? d : []);
+  }
+  async function loadKeywords() {
+    const res = await authFetch(`${API_BASE}/api/keywords`);
+    const d = await res.json(); setKeywords(Array.isArray(d) ? d : []);
   }
 
   function openNew() {
@@ -511,6 +517,7 @@ function CardTab() {
     setForm({
       title: card.title, subtitle: card.subtitle || '', imageUrl: card.imageUrl || '',
       priceItems: card.priceItems || [], buttonText: card.buttonText || '', buttonUrl: card.buttonUrl || '',
+      buttonActionType: card.buttonActionType || 'url', buttonKeywordId: card.buttonKeywordId || '',
       headerBgColor: card.headerBgColor || '#ffffff', titleColor: card.titleColor || '#111111',
       subtitleColor: card.subtitleColor || '#888888', buttonColor: card.buttonColor || '#00B900',
       bodyBgColor: card.bodyBgColor || '#ffffff',
@@ -617,15 +624,41 @@ function CardTab() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
             <div style={{ flex: 1 }}><label style={LABEL}>按鈕文字</label>
               <input value={form.buttonText} onChange={e => setForm(p => ({ ...p, buttonText: e.target.value }))}
                 placeholder="了解更多" style={FIELD} />
             </div>
-            <div style={{ flex: 2 }}><label style={LABEL}>按鈕連結</label>
-              <input value={form.buttonUrl} onChange={e => setForm(p => ({ ...p, buttonUrl: e.target.value }))}
-                placeholder="https://..." style={FIELD} />
+            <div style={{ flex: 2 }}><label style={LABEL}>按鈕動作</label>
+              <select value={form.buttonActionType} onChange={e => setForm(p => ({ ...p, buttonActionType: e.target.value }))} style={FIELD}>
+                <option value="url">外部連結</option>
+                <option value="keyword">觸發關鍵字（回文字或另一組卡片）</option>
+              </select>
             </div>
+          </div>
+          <div style={{ marginBottom: '14px' }}>
+            {form.buttonActionType === 'keyword' ? (
+              <>
+                <label style={LABEL}>選擇要觸發的關鍵字</label>
+                <select value={form.buttonKeywordId} onChange={e => setForm(p => ({ ...p, buttonKeywordId: e.target.value }))} style={FIELD}>
+                  <option value="">請選擇關鍵字</option>
+                  {keywords.map(kw => (
+                    <option key={kw._id} value={kw._id}>
+                      {kw.trigger}（{kw.replyType === 'card' ? '卡片' : '文字'}）
+                    </option>
+                  ))}
+                </select>
+                {keywords.length === 0 && (
+                  <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>尚未建立任何關鍵字，請先至「關鍵字」分頁新增。</div>
+                )}
+              </>
+            ) : (
+              <>
+                <label style={LABEL}>按鈕連結</label>
+                <input value={form.buttonUrl} onChange={e => setForm(p => ({ ...p, buttonUrl: e.target.value }))}
+                  placeholder="https://..." style={FIELD} />
+              </>
+            )}
           </div>
 
           {/* Template selector */}

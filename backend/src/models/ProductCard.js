@@ -12,6 +12,9 @@ const ProductCardSchema = new mongoose.Schema({
   priceItems:    { type: [PriceItemSchema], default: [] },
   buttonText:    { type: String, default: '' },
   buttonUrl:     { type: String, default: '' },
+  // 按鈕動作：url=外部連結（預設）；keyword=觸發後台某個關鍵字的回覆（文字或另一組卡片）
+  buttonActionType: { type: String, enum: ['url', 'keyword'], default: 'url' },
+  buttonKeywordId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Keyword', default: null },
   // Colors
   headerBgColor: { type: String, default: '#ffffff' },
   titleColor:    { type: String, default: '#111111' },

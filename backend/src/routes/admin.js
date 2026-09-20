@@ -856,6 +856,11 @@ router.delete('/keywords/:id', async (req, res) => {
   try {
     const kw = await Keyword.findByIdAndDelete(req.params.id);
     if (!kw) return res.status(404).json({ error: 'Keyword not found' });
+    // 卡片按鈕若觸發此關鍵字，改回外部連結模式（避免留著指向已刪除的關鍵字）
+    await ProductCard.updateMany(
+      { buttonKeywordId: req.params.id },
+      { $set: { buttonActionType: 'url', buttonKeywordId: null } }
+    );
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -875,6 +880,7 @@ router.get('/cards', async (req, res) => {
 router.post('/cards', async (req, res) => {
   try {
     const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
+            buttonActionType, buttonKeywordId,
             headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
             template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
             titleAlign, subtitleAlign, priceAlign, showDivider, isActive } = req.body;
@@ -882,6 +888,8 @@ router.post('/cards', async (req, res) => {
     const card = await ProductCard.create({
       title, subtitle: subtitle || '', imageUrl: imageUrl || '',
       priceItems: priceItems || [], buttonText: buttonText || '', buttonUrl: buttonUrl || '',
+      buttonActionType: buttonActionType === 'keyword' ? 'keyword' : 'url',
+      buttonKeywordId: buttonActionType === 'keyword' ? (buttonKeywordId || null) : null,
       headerBgColor: headerBgColor || '#ffffff', titleColor: titleColor || '#111111',
       subtitleColor: subtitleColor || '#888888', buttonColor: buttonColor || '#00B900',
       bodyBgColor: bodyBgColor || '#ffffff',
@@ -900,6 +908,7 @@ router.post('/cards', async (req, res) => {
 router.put('/cards/:id', async (req, res) => {
   try {
     const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
+            buttonActionType, buttonKeywordId,
             headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
             template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
             titleAlign, subtitleAlign, priceAlign, showDivider, isActive } = req.body;
@@ -907,6 +916,8 @@ router.put('/cards/:id', async (req, res) => {
     const card = await ProductCard.findByIdAndUpdate(
       req.params.id,
       { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
+        buttonActionType: buttonActionType === 'keyword' ? 'keyword' : 'url',
+        buttonKeywordId: buttonActionType === 'keyword' ? (buttonKeywordId || null) : null,
         headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
         template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
         titleAlign, subtitleAlign, priceAlign, showDivider, isActive },
