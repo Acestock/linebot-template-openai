@@ -35,6 +35,10 @@ app.use(cors({
 // LINE Webhook route requires raw body for signature validation
 app.use('/webhook', webhookRouter);
 
+// M350 QR Code Scanner 走純文字協定，不論宣告的 Content-Type 為何都當純文字讀取；
+// 必須搶在下方全域 json/urlencoded 解析器之前註冊，否則對不上 type 時 body 會讀不到。
+app.use('/api/gate/scan', express.text({ type: () => true, limit: '1mb' }));
+
 // JSON body parser for all other routes (10mb for photo base64 uploads)
 app.use(express.json({ limit: '10mb' }));
 // ECPay callback uses application/x-www-form-urlencoded

@@ -856,6 +856,11 @@ router.delete('/keywords/:id', async (req, res) => {
   try {
     const kw = await Keyword.findByIdAndDelete(req.params.id);
     if (!kw) return res.status(404).json({ error: 'Keyword not found' });
+    // 卡片按鈕若觸發此關鍵字，改回外部連結模式（避免留著指向已刪除的關鍵字）
+    await ProductCard.updateMany(
+      { buttonKeywordId: req.params.id },
+      { $set: { buttonActionType: 'url', buttonKeywordId: null } }
+    );
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -874,14 +879,18 @@ router.get('/cards', async (req, res) => {
 // POST /api/cards
 router.post('/cards', async (req, res) => {
   try {
-    const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
+    const { title, subtitle, imageUrl, imageOnly, imageAspectRatio, priceItems, buttonText, buttonUrl,
+            buttonActionType, buttonKeywordId,
             headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
             template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
             titleAlign, subtitleAlign, priceAlign, showDivider, isActive } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required' });
     const card = await ProductCard.create({
-      title, subtitle: subtitle || '', imageUrl: imageUrl || '',
+      title, subtitle: subtitle || '', imageUrl: imageUrl || '', imageOnly: !!imageOnly,
+      imageAspectRatio: imageAspectRatio || '20:13',
       priceItems: priceItems || [], buttonText: buttonText || '', buttonUrl: buttonUrl || '',
+      buttonActionType: buttonActionType === 'keyword' ? 'keyword' : 'url',
+      buttonKeywordId: buttonActionType === 'keyword' ? (buttonKeywordId || null) : null,
       headerBgColor: headerBgColor || '#ffffff', titleColor: titleColor || '#111111',
       subtitleColor: subtitleColor || '#888888', buttonColor: buttonColor || '#00B900',
       bodyBgColor: bodyBgColor || '#ffffff',
@@ -899,14 +908,18 @@ router.post('/cards', async (req, res) => {
 // PUT /api/cards/:id
 router.put('/cards/:id', async (req, res) => {
   try {
-    const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
+    const { title, subtitle, imageUrl, imageOnly, imageAspectRatio, priceItems, buttonText, buttonUrl,
+            buttonActionType, buttonKeywordId,
             headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
             template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
             titleAlign, subtitleAlign, priceAlign, showDivider, isActive } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required' });
     const card = await ProductCard.findByIdAndUpdate(
       req.params.id,
-      { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
+      { title, subtitle, imageUrl, imageOnly: !!imageOnly, imageAspectRatio: imageAspectRatio || '20:13',
+        priceItems, buttonText, buttonUrl,
+        buttonActionType: buttonActionType === 'keyword' ? 'keyword' : 'url',
+        buttonKeywordId: buttonActionType === 'keyword' ? (buttonKeywordId || null) : null,
         headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
         template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
         titleAlign, subtitleAlign, priceAlign, showDivider, isActive },
@@ -1179,6 +1192,7 @@ const VenuePlan    = require('../models/VenuePlan');
 const Announcement = require('../models/Announcement');
 const Reservation  = require('../models/Reservation');
 const BlockedSlot    = require('../models/BlockedSlot');
+const ClosureDay      = require('../models/ClosureDay');
 const StaffToken     = require('../models/StaffToken');
 const DurationPlan   = require('../models/DurationPlan');
 
@@ -1336,6 +1350,30 @@ router.post('/blocked-slots', async (req, res) => {
 router.delete('/blocked-slots/:id', async (req, res) => {
   try {
     await BlockedSlot.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Closure Days（全站公休日）─────────────────────────────────────────────────
+router.get('/closure-days', async (req, res) => {
+  try {
+    const items = await ClosureDay.find().sort({ date: -1, createdAt: -1 }).lean();
+    res.json(items);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/closure-days', async (req, res) => {
+  try {
+    const { date, reason } = req.body;
+    if (!date || !reason) return res.status(400).json({ error: 'date, reason 為必填' });
+    const item = await ClosureDay.create({ date: new Date(date), reason });
+    res.json(item);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.delete('/closure-days/:id', async (req, res) => {
+  try {
+    await ClosureDay.findByIdAndDelete(req.params.id);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

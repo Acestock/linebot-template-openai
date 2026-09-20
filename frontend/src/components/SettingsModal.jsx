@@ -9,6 +9,17 @@ const FIELD = {
 const LABEL = { display: 'block', fontSize: '13px', fontWeight: '600', color: '#555', marginBottom: '2px' };
 const GROUP = { marginBottom: '14px' };
 
+// 依圖片實際寬高換算成簡化比例字串（如 "4:5"），並限制在 LINE Flex aspectRatio 允許的 1:3～3:1 範圍內
+function simplifyAspectRatio(w, h) {
+  if (!w || !h) return '20:13';
+  const clampRatio = Math.min(3, Math.max(1 / 3, w / h));
+  const rw = clampRatio >= 1 ? 100 : Math.round(100 * clampRatio);
+  const rh = clampRatio >= 1 ? Math.round(100 / clampRatio) : 100;
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  const g = gcd(rw, rh) || 1;
+  return `${rw / g}:${rh / g}`;
+}
+
 // ─── Tab 1: 商家知識庫 ───────────────────────────────────────────────────────
 function ProfileTab({ profile, onChange, onSave, saving, saved }) {
   return (
@@ -413,7 +424,7 @@ const CARD_TEMPLATES = {
 
 function LineCardPreview({ card }) {
   const hasPrices = card.priceItems && card.priceItems.length > 0;
-  const hasButton = card.buttonText && card.buttonUrl;
+  const hasButton = card.buttonText && (card.buttonActionType === 'keyword' ? card.buttonKeywordId : card.buttonUrl);
   const headerBg  = card.headerBgColor || '#ffffff';
   const bodyBg    = card.bodyBgColor   || '#ffffff';
   const titleCol  = card.titleColor    || '#111111';
@@ -427,6 +438,24 @@ function LineCardPreview({ card }) {
   const subAl     = ALIGN_CSS[card.subtitleAlign || 'center'];
   const priceAl   = card.priceAlign || 'start';
   const divider   = card.showDivider !== false;
+
+  if (card.imageOnly) {
+    const [rw, rh] = (card.imageAspectRatio || '20:13').split(':').map(Number);
+    const paddingTop = rw > 0 && rh > 0 ? `${(rh / rw) * 100}%` : '65%';
+    return (
+      <div style={{ width: '220px', borderRadius: '14px', overflow: 'hidden',
+        boxShadow: '0 4px 18px rgba(0,0,0,0.18)', background: '#e8ecf0', flexShrink: 0 }}>
+        {card.imageUrl ? (
+          <div style={{ width: '100%', paddingTop, position: 'relative' }}>
+            <img src={card.imageUrl} alt="" onError={e => { e.target.style.display='none'; }}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }} />
+          </div>
+        ) : (
+          <div style={{ padding: '40px 14px', textAlign: 'center', color: '#aaa', fontSize: '13px' }}>請填寫圖片網址</div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={{ width: '220px', borderRadius: '14px', overflow: 'hidden',
@@ -479,10 +508,12 @@ function LineCardPreview({ card }) {
 // ─── Tab 3: 商品卡片管理 ─────────────────────────────────────────────────────
 function CardTab() {
   const [cards, setCards] = useState([]);
+  const [keywords, setKeywords] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const EMPTY_FORM = {
-    title: '', subtitle: '', imageUrl: '', priceItems: [], buttonText: '', buttonUrl: '',
+    title: '', subtitle: '', imageUrl: '', imageOnly: false, imageAspectRatio: '20:13', priceItems: [], buttonText: '', buttonUrl: '',
+    buttonActionType: 'url', buttonKeywordId: '',
     headerBgColor: '#ffffff', titleColor: '#111111', subtitleColor: '#888888',
     buttonColor: '#00B900', bodyBgColor: '#ffffff',
     template: 'classic',
@@ -493,11 +524,35 @@ function CardTab() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [priceInput, setPriceInput] = useState({ name: '', price: '' });
+  const [detectedRatio, setDetectedRatio] = useState('');
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadKeywords(); }, []);
+
+  // 純圖片模式：依圖片實際寬高自動偵測比例，避免 fit 模式下留白
+  useEffect(() => {
+    if (!form.imageOnly || !form.imageUrl) { setDetectedRatio(''); return; }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      const img = new Image();
+      img.onload = () => {
+        if (cancelled) return;
+        const ratio = simplifyAspectRatio(img.naturalWidth, img.naturalHeight);
+        setDetectedRatio(ratio);
+        setForm(p => ({ ...p, imageAspectRatio: ratio }));
+      };
+      img.onerror = () => { if (!cancelled) setDetectedRatio(''); };
+      img.src = form.imageUrl;
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [form.imageOnly, form.imageUrl]);
+
   async function load() {
     const res = await authFetch(`${API_BASE}/api/cards`);
     const d = await res.json(); setCards(Array.isArray(d) ? d : []);
+  }
+  async function loadKeywords() {
+    const res = await authFetch(`${API_BASE}/api/keywords`);
+    const d = await res.json(); setKeywords(Array.isArray(d) ? d : []);
   }
 
   function openNew() {
@@ -511,6 +566,8 @@ function CardTab() {
     setForm({
       title: card.title, subtitle: card.subtitle || '', imageUrl: card.imageUrl || '',
       priceItems: card.priceItems || [], buttonText: card.buttonText || '', buttonUrl: card.buttonUrl || '',
+      imageOnly: !!card.imageOnly, imageAspectRatio: card.imageAspectRatio || '20:13',
+      buttonActionType: card.buttonActionType || 'url', buttonKeywordId: card.buttonKeywordId || '',
       headerBgColor: card.headerBgColor || '#ffffff', titleColor: card.titleColor || '#111111',
       subtitleColor: card.subtitleColor || '#888888', buttonColor: card.buttonColor || '#00B900',
       bodyBgColor: card.bodyBgColor || '#ffffff',
@@ -589,8 +646,20 @@ function CardTab() {
           <div style={GROUP}><label style={LABEL}>圖片網址</label>
             <input value={form.imageUrl} onChange={e => setForm(p => ({ ...p, imageUrl: e.target.value }))}
               placeholder="https://...（建議 20:13）" style={FIELD} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', marginTop: '8px', color: '#555' }}>
+              <input type="checkbox" checked={!!form.imageOnly}
+                onChange={e => setForm(p => ({ ...p, imageOnly: e.target.checked }))} />
+              只顯示整張圖片（不裁切，不疊加標題／價格／按鈕）
+            </label>
+            {form.imageOnly && (
+              <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
+                {detectedRatio ? `已依圖片實際比例自動調整（${detectedRatio}），畫面不會留白或裁切` : '偵測圖片比例中...'}
+              </div>
+            )}
           </div>
 
+          {!form.imageOnly && (
+          <>
           <div style={GROUP}>
             <label style={LABEL}>價目表</label>
             <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', overflow: 'hidden', marginTop: '6px' }}>
@@ -617,15 +686,41 @@ function CardTab() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
             <div style={{ flex: 1 }}><label style={LABEL}>按鈕文字</label>
               <input value={form.buttonText} onChange={e => setForm(p => ({ ...p, buttonText: e.target.value }))}
                 placeholder="了解更多" style={FIELD} />
             </div>
-            <div style={{ flex: 2 }}><label style={LABEL}>按鈕連結</label>
-              <input value={form.buttonUrl} onChange={e => setForm(p => ({ ...p, buttonUrl: e.target.value }))}
-                placeholder="https://..." style={FIELD} />
+            <div style={{ flex: 2 }}><label style={LABEL}>按鈕動作</label>
+              <select value={form.buttonActionType} onChange={e => setForm(p => ({ ...p, buttonActionType: e.target.value }))} style={FIELD}>
+                <option value="url">外部連結</option>
+                <option value="keyword">觸發關鍵字（回文字或另一組卡片）</option>
+              </select>
             </div>
+          </div>
+          <div style={{ marginBottom: '14px' }}>
+            {form.buttonActionType === 'keyword' ? (
+              <>
+                <label style={LABEL}>選擇要觸發的關鍵字</label>
+                <select value={form.buttonKeywordId} onChange={e => setForm(p => ({ ...p, buttonKeywordId: e.target.value }))} style={FIELD}>
+                  <option value="">請選擇關鍵字</option>
+                  {keywords.map(kw => (
+                    <option key={kw._id} value={kw._id}>
+                      {kw.trigger}（{kw.replyType === 'card' ? '卡片' : '文字'}）
+                    </option>
+                  ))}
+                </select>
+                {keywords.length === 0 && (
+                  <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>尚未建立任何關鍵字，請先至「關鍵字」分頁新增。</div>
+                )}
+              </>
+            ) : (
+              <>
+                <label style={LABEL}>按鈕連結</label>
+                <input value={form.buttonUrl} onChange={e => setForm(p => ({ ...p, buttonUrl: e.target.value }))}
+                  placeholder="https://..." style={FIELD} />
+              </>
+            )}
           </div>
 
           {/* Template selector */}
@@ -712,6 +807,8 @@ function CardTab() {
               </label>
             </div>
           </div>
+          </>
+          )}
         </div>
 
         {/* LINE-style live preview */}
