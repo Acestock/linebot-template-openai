@@ -276,12 +276,13 @@ async function pushLineMessage(lineUserId, messageObj) {
 // Build LINE Flex Message bubble from a ProductCard document
 function buildFlexBubble(card) {
   // 純圖片模式：只顯示整張圖片，不裁切、不疊加標題/價格/按鈕
+  // aspectRatio 使用前端依實際圖片偵測出的比例，讓 fit 模式下不會有留白/裁切
   if (card.imageOnly && card.imageUrl) {
     return {
       type: 'bubble',
       hero: {
         type: 'image', url: card.imageUrl,
-        size: 'full', aspectRatio: '20:13', aspectMode: 'fit'
+        size: 'full', aspectRatio: card.imageAspectRatio || '20:13', aspectMode: 'fit'
       }
     };
   }

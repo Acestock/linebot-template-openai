@@ -879,7 +879,7 @@ router.get('/cards', async (req, res) => {
 // POST /api/cards
 router.post('/cards', async (req, res) => {
   try {
-    const { title, subtitle, imageUrl, imageOnly, priceItems, buttonText, buttonUrl,
+    const { title, subtitle, imageUrl, imageOnly, imageAspectRatio, priceItems, buttonText, buttonUrl,
             buttonActionType, buttonKeywordId,
             headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
             template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
@@ -887,6 +887,7 @@ router.post('/cards', async (req, res) => {
     if (!title) return res.status(400).json({ error: 'title is required' });
     const card = await ProductCard.create({
       title, subtitle: subtitle || '', imageUrl: imageUrl || '', imageOnly: !!imageOnly,
+      imageAspectRatio: imageAspectRatio || '20:13',
       priceItems: priceItems || [], buttonText: buttonText || '', buttonUrl: buttonUrl || '',
       buttonActionType: buttonActionType === 'keyword' ? 'keyword' : 'url',
       buttonKeywordId: buttonActionType === 'keyword' ? (buttonKeywordId || null) : null,
@@ -907,7 +908,7 @@ router.post('/cards', async (req, res) => {
 // PUT /api/cards/:id
 router.put('/cards/:id', async (req, res) => {
   try {
-    const { title, subtitle, imageUrl, imageOnly, priceItems, buttonText, buttonUrl,
+    const { title, subtitle, imageUrl, imageOnly, imageAspectRatio, priceItems, buttonText, buttonUrl,
             buttonActionType, buttonKeywordId,
             headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
             template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
@@ -915,7 +916,8 @@ router.put('/cards/:id', async (req, res) => {
     if (!title) return res.status(400).json({ error: 'title is required' });
     const card = await ProductCard.findByIdAndUpdate(
       req.params.id,
-      { title, subtitle, imageUrl, imageOnly: !!imageOnly, priceItems, buttonText, buttonUrl,
+      { title, subtitle, imageUrl, imageOnly: !!imageOnly, imageAspectRatio: imageAspectRatio || '20:13',
+        priceItems, buttonText, buttonUrl,
         buttonActionType: buttonActionType === 'keyword' ? 'keyword' : 'url',
         buttonKeywordId: buttonActionType === 'keyword' ? (buttonKeywordId || null) : null,
         headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,

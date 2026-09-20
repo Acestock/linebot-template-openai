@@ -9,6 +9,17 @@ const FIELD = {
 const LABEL = { display: 'block', fontSize: '13px', fontWeight: '600', color: '#555', marginBottom: '2px' };
 const GROUP = { marginBottom: '14px' };
 
+// 依圖片實際寬高換算成簡化比例字串（如 "4:5"），並限制在 LINE Flex aspectRatio 允許的 1:3～3:1 範圍內
+function simplifyAspectRatio(w, h) {
+  if (!w || !h) return '20:13';
+  const clampRatio = Math.min(3, Math.max(1 / 3, w / h));
+  const rw = clampRatio >= 1 ? 100 : Math.round(100 * clampRatio);
+  const rh = clampRatio >= 1 ? Math.round(100 / clampRatio) : 100;
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  const g = gcd(rw, rh) || 1;
+  return `${rw / g}:${rh / g}`;
+}
+
 // ─── Tab 1: 商家知識庫 ───────────────────────────────────────────────────────
 function ProfileTab({ profile, onChange, onSave, saving, saved }) {
   return (
@@ -429,11 +440,13 @@ function LineCardPreview({ card }) {
   const divider   = card.showDivider !== false;
 
   if (card.imageOnly) {
+    const [rw, rh] = (card.imageAspectRatio || '20:13').split(':').map(Number);
+    const paddingTop = rw > 0 && rh > 0 ? `${(rh / rw) * 100}%` : '65%';
     return (
       <div style={{ width: '220px', borderRadius: '14px', overflow: 'hidden',
         boxShadow: '0 4px 18px rgba(0,0,0,0.18)', background: '#e8ecf0', flexShrink: 0 }}>
         {card.imageUrl ? (
-          <div style={{ width: '100%', paddingTop: '65%', position: 'relative' }}>
+          <div style={{ width: '100%', paddingTop, position: 'relative' }}>
             <img src={card.imageUrl} alt="" onError={e => { e.target.style.display='none'; }}
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }} />
           </div>
@@ -499,7 +512,7 @@ function CardTab() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const EMPTY_FORM = {
-    title: '', subtitle: '', imageUrl: '', imageOnly: false, priceItems: [], buttonText: '', buttonUrl: '',
+    title: '', subtitle: '', imageUrl: '', imageOnly: false, imageAspectRatio: '20:13', priceItems: [], buttonText: '', buttonUrl: '',
     buttonActionType: 'url', buttonKeywordId: '',
     headerBgColor: '#ffffff', titleColor: '#111111', subtitleColor: '#888888',
     buttonColor: '#00B900', bodyBgColor: '#ffffff',
@@ -511,8 +524,28 @@ function CardTab() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [priceInput, setPriceInput] = useState({ name: '', price: '' });
+  const [detectedRatio, setDetectedRatio] = useState('');
 
   useEffect(() => { load(); loadKeywords(); }, []);
+
+  // 純圖片模式：依圖片實際寬高自動偵測比例，避免 fit 模式下留白
+  useEffect(() => {
+    if (!form.imageOnly || !form.imageUrl) { setDetectedRatio(''); return; }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      const img = new Image();
+      img.onload = () => {
+        if (cancelled) return;
+        const ratio = simplifyAspectRatio(img.naturalWidth, img.naturalHeight);
+        setDetectedRatio(ratio);
+        setForm(p => ({ ...p, imageAspectRatio: ratio }));
+      };
+      img.onerror = () => { if (!cancelled) setDetectedRatio(''); };
+      img.src = form.imageUrl;
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [form.imageOnly, form.imageUrl]);
+
   async function load() {
     const res = await authFetch(`${API_BASE}/api/cards`);
     const d = await res.json(); setCards(Array.isArray(d) ? d : []);
@@ -533,7 +566,7 @@ function CardTab() {
     setForm({
       title: card.title, subtitle: card.subtitle || '', imageUrl: card.imageUrl || '',
       priceItems: card.priceItems || [], buttonText: card.buttonText || '', buttonUrl: card.buttonUrl || '',
-      imageOnly: !!card.imageOnly,
+      imageOnly: !!card.imageOnly, imageAspectRatio: card.imageAspectRatio || '20:13',
       buttonActionType: card.buttonActionType || 'url', buttonKeywordId: card.buttonKeywordId || '',
       headerBgColor: card.headerBgColor || '#ffffff', titleColor: card.titleColor || '#111111',
       subtitleColor: card.subtitleColor || '#888888', buttonColor: card.buttonColor || '#00B900',
@@ -618,6 +651,11 @@ function CardTab() {
                 onChange={e => setForm(p => ({ ...p, imageOnly: e.target.checked }))} />
               只顯示整張圖片（不裁切，不疊加標題／價格／按鈕）
             </label>
+            {form.imageOnly && (
+              <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
+                {detectedRatio ? `已依圖片實際比例自動調整（${detectedRatio}），畫面不會留白或裁切` : '偵測圖片比例中...'}
+              </div>
+            )}
           </div>
 
           {!form.imageOnly && (

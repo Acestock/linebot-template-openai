@@ -10,6 +10,7 @@ const ProductCardSchema = new mongoose.Schema({
   subtitle:      { type: String, default: '' },
   imageUrl:      { type: String, default: '' },
   imageOnly:     { type: Boolean, default: false }, // true：只顯示整張圖片，不裁切、不疊加標題/價格/按鈕
+  imageAspectRatio: { type: String, default: '20:13' }, // imageOnly 模式下使用，格式 "寬:高"，前端會依實際圖片自動偵測
   priceItems:    { type: [PriceItemSchema], default: [] },
   buttonText:    { type: String, default: '' },
   buttonUrl:     { type: String, default: '' },
