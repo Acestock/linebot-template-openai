@@ -1572,6 +1572,46 @@ router.delete('/venues/:venueId/duration-plans/:planId', async (req, res) => {
 });
 
 // ─── Staff Door Tokens ────────────────────────────────────────────────────────
+
+// GET /api/staff-tokens/permanent?venueId=xxx — 查詢該場地目前使用中的永久 QR（沒有則回傳 null）
+router.get('/staff-tokens/permanent', async (req, res) => {
+  try {
+    const { venueId } = req.query;
+    if (!venueId) return res.status(400).json({ error: 'venueId 為必填' });
+    const st = await StaffToken.findOne({ venueId, isPermanent: true }).lean();
+    res.json(st || null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/staff-tokens/permanent — 產生／重新產生永久 QR（同場地舊碼會立即失效）
+router.post('/staff-tokens/permanent', async (req, res) => {
+  try {
+    const { venueId, venueName } = req.body;
+    if (!venueId) return res.status(400).json({ error: 'venueId 為必填' });
+    await StaffToken.deleteMany({ venueId, isPermanent: true });
+    const token     = require('crypto').randomUUID();
+    const expiresAt = new Date(Date.now() + 50 * 365 * 24 * 60 * 60 * 1000); // 50 年後，等同永久
+    const st = await StaffToken.create({
+      token, venueId, venueName: venueName || '', isPermanent: true, expiresAt
+    });
+    res.json(st);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/staff-tokens/permanent/:venueId — 撤銷該場地的永久 QR（不補發新碼）
+router.delete('/staff-tokens/permanent/:venueId', async (req, res) => {
+  try {
+    await StaffToken.deleteMany({ venueId: req.params.venueId, isPermanent: true });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/staff-tokens  — generate a 5-minute gate-open QR token for staff
 router.post('/staff-tokens', async (req, res) => {
   try {

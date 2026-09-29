@@ -1410,6 +1410,7 @@ function AnalyticsTab() {
 
 // ── Staff Door Modal ──────────────────────────────────────────────────────────
 function StaffDoorModal({ onClose }) {
+  const [mode,      setMode]      = useState('temp'); // 'temp' | 'permanent'
   const [venues,    setVenues]    = useState([]);
   const [venueId,   setVenueId]   = useState('');
   const [qrImg,     setQrImg]     = useState('');
@@ -1418,11 +1419,53 @@ function StaffDoorModal({ onClose }) {
   const [loading,   setLoading]   = useState(false);
   const timerRef = useRef(null);
 
+  // 永久 QR
+  const [permToken,   setPermToken]   = useState(null); // 後端目前存的永久碼紀錄，null = 尚未建立
+  const [permQrImg,   setPermQrImg]   = useState('');
+  const [permLoading, setPermLoading] = useState(false);
+
   useEffect(() => {
     authFetch(`${API_BASE}/api/venues`).then(r => r.json())
       .then(vs => { setVenues(vs); if (vs.length) setVenueId(vs[0]._id); })
       .catch(() => {});
   }, []);
+
+  // 切到永久 QR 分頁，或換選場地時，查詢該場地目前的永久碼
+  useEffect(() => {
+    if (mode !== 'permanent' || !venueId) return;
+    setPermQrImg(''); setPermToken(null);
+    authFetch(`${API_BASE}/api/staff-tokens/permanent?venueId=${venueId}`).then(r => r.json())
+      .then(async st => {
+        setPermToken(st);
+        if (st?.token) {
+          const img = await QRCode.toDataURL(st.token, { width: 240, margin: 2, color: { dark: '#111', light: '#fff' } });
+          setPermQrImg(img);
+        }
+      })
+      .catch(() => {});
+  }, [mode, venueId]);
+
+  async function generatePermanent() {
+    if (!venueId) return alert('請選擇場地');
+    if (permToken && !confirm('重新產生會讓目前這組永久 QR 立即失效，員工需改用新的 QR 才能進場，確定要繼續嗎？')) return;
+    setPermLoading(true);
+    try {
+      const venue = venues.find(v => v._id === venueId);
+      const res = await authFetch(`${API_BASE}/api/staff-tokens/permanent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venueId, venueName: venue?.name || '' })
+      });
+      const st = await res.json();
+      setPermToken(st);
+      const img = await QRCode.toDataURL(st.token, { width: 240, margin: 2, color: { dark: '#111', light: '#fff' } });
+      setPermQrImg(img);
+    } catch (e) {
+      alert('產生失敗：' + e.message);
+    } finally {
+      setPermLoading(false);
+    }
+  }
 
   // countdown
   useEffect(() => {
@@ -1474,6 +1517,20 @@ function StaffDoorModal({ onClose }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✕</button>
         </div>
 
+        {/* Mode toggle */}
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', background: '#f5f5f5', borderRadius: '10px', padding: '3px' }}>
+          {[['temp', '臨時 QR（5 分鐘）'], ['permanent', '永久 QR']].map(([key, label]) => (
+            <button key={key} onClick={() => setMode(key)}
+              style={{
+                flex: 1, padding: '8px 6px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                fontSize: '13px', fontWeight: '700',
+                background: mode === key ? '#fff' : 'transparent',
+                color: mode === key ? '#111' : '#888',
+                boxShadow: mode === key ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'
+              }}>{label}</button>
+          ))}
+        </div>
+
         {/* Venue selector */}
         <div style={{ marginBottom: '14px' }}>
           <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '4px' }}>選擇場地</label>
@@ -1485,45 +1542,83 @@ function StaffDoorModal({ onClose }) {
           </select>
         </div>
 
-        {/* Generate button */}
-        <button
-          onClick={generate}
-          disabled={loading}
-          style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', background: '#111', color: '#fff', fontWeight: '700', fontSize: '15px', cursor: 'pointer', marginBottom: '20px' }}
-        >
-          {loading ? '產生中...' : expired ? '🔄 重新產生 QR' : qrImg ? '🔄 重新產生' : '🚪 產生開門 QR'}
-        </button>
+        {mode === 'temp' ? (
+          <>
+            {/* Generate button */}
+            <button
+              onClick={generate}
+              disabled={loading}
+              style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', background: '#111', color: '#fff', fontWeight: '700', fontSize: '15px', cursor: 'pointer', marginBottom: '20px' }}
+            >
+              {loading ? '產生中...' : expired ? '🔄 重新產生 QR' : qrImg ? '🔄 重新產生' : '🚪 產生開門 QR'}
+            </button>
 
-        {/* QR display */}
-        {qrImg && (
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>
-              {venueName}・工作人員專用
-            </div>
-            <div style={{
-              display: 'inline-block', padding: '12px', borderRadius: '12px',
-              border: expired ? '3px solid #ffcdd2' : '3px solid #c8e6c9',
-              opacity: expired ? 0.4 : 1, transition: 'opacity 0.3s'
-            }}>
-              <img src={qrImg} alt="Staff QR" style={{ width: '200px', height: '200px', display: 'block' }} />
-            </div>
-
-            {/* Countdown */}
-            <div style={{ marginTop: '12px' }}>
-              {expired ? (
-                <div style={{ fontSize: '13px', color: '#e53935', fontWeight: '700' }}>⚠ QR 已過期，請重新產生</div>
-              ) : (
-                <div style={{ fontSize: '22px', fontWeight: '800', color: secsLeft <= 60 ? '#e53935' : '#2e7d32', fontVariantNumeric: 'tabular-nums' }}>
-                  {mm}:{ss}
-                  <span style={{ fontSize: '12px', fontWeight: '400', color: '#aaa', marginLeft: '6px' }}>剩餘有效時間</span>
+            {/* QR display */}
+            {qrImg && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>
+                  {venueName}・工作人員專用
                 </div>
-              )}
-            </div>
+                <div style={{
+                  display: 'inline-block', padding: '12px', borderRadius: '12px',
+                  border: expired ? '3px solid #ffcdd2' : '3px solid #c8e6c9',
+                  opacity: expired ? 0.4 : 1, transition: 'opacity 0.3s'
+                }}>
+                  <img src={qrImg} alt="Staff QR" style={{ width: '200px', height: '200px', display: 'block' }} />
+                </div>
 
-            <div style={{ fontSize: '11px', color: '#aaa', marginTop: '8px' }}>
-              閘門掃描此 QR 即可開門・5 分鐘內有效
-            </div>
-          </div>
+                {/* Countdown */}
+                <div style={{ marginTop: '12px' }}>
+                  {expired ? (
+                    <div style={{ fontSize: '13px', color: '#e53935', fontWeight: '700' }}>⚠ QR 已過期，請重新產生</div>
+                  ) : (
+                    <div style={{ fontSize: '22px', fontWeight: '800', color: secsLeft <= 60 ? '#e53935' : '#2e7d32', fontVariantNumeric: 'tabular-nums' }}>
+                      {mm}:{ss}
+                      <span style={{ fontSize: '12px', fontWeight: '400', color: '#aaa', marginLeft: '6px' }}>剩餘有效時間</span>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ fontSize: '11px', color: '#aaa', marginTop: '8px' }}>
+                  閘門掃描此 QR 即可開門・5 分鐘內有效
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Generate / rotate button */}
+            <button
+              onClick={generatePermanent}
+              disabled={permLoading}
+              style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', background: '#111', color: '#fff', fontWeight: '700', fontSize: '15px', cursor: 'pointer', marginBottom: '20px' }}
+            >
+              {permLoading ? '產生中...' : permToken ? '🔄 重新產生（舊碼立即失效）' : '🔒 產生永久 QR'}
+            </button>
+
+            {/* QR display */}
+            {permQrImg && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>
+                  {venueName}・工作人員專用（永久有效）
+                </div>
+                <div style={{ display: 'inline-block', padding: '12px', borderRadius: '12px', border: '3px solid #c8e6c9' }}>
+                  <img src={permQrImg} alt="Permanent Staff QR" style={{ width: '200px', height: '200px', display: 'block' }} />
+                </div>
+                {permToken?.createdAt && (
+                  <div style={{ fontSize: '11px', color: '#aaa', marginTop: '10px' }}>
+                    建立於 {new Date(permToken.createdAt).toLocaleString('zh-TW')}
+                  </div>
+                )}
+                <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px' }}>
+                  閘門掃描此 QR 即可開門・不會過期，需手動「重新產生」才會失效
+                </div>
+              </div>
+            )}
+            {!permQrImg && !permLoading && (
+              <div style={{ textAlign: 'center', color: '#bbb', fontSize: '13px', padding: '16px 0' }}>此場地尚未建立永久 QR</div>
+            )}
+          </>
         )}
       </div>
     </div>
