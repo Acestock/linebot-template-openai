@@ -18,6 +18,17 @@ function getStatusInfo(status, unpaidExit) {
   return STATUS_MAP[status] || STATUS_MAP.confirmed;
 }
 
+// 折扣券可能是固定金額或百分比折扣，統一算出實際折抵的金額（與後端 /reservations/:id/payment 的算法一致）
+function couponDiscountValue(coupon, totalPrice) {
+  if (!coupon) return 0;
+  return coupon.discountType === 'percent'
+    ? totalPrice - Math.round(totalPrice * (1 - coupon.discountPercent / 100))
+    : coupon.discountAmount;
+}
+function couponLabel(coupon) {
+  return coupon.discountType === 'percent' ? `${coupon.discountPercent}% 折扣` : `折抵 $${coupon.discountAmount}`;
+}
+
 const SLOT_LABELS = { morning: '早上', afternoon: '下午', evening: '晚上' };
 
 function fmt(dateStr) {
@@ -113,7 +124,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   }, [needsPayment]);
 
   const effectivePrice = selectedCoupon
-    ? Math.max(0, r.totalPrice - selectedCoupon.discountAmount)
+    ? Math.max(0, r.totalPrice - couponDiscountValue(selectedCoupon, r.totalPrice))
     : r.totalPrice;
 
   async function handleShowQr() {
@@ -163,7 +174,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   async function handlePay(skipConfirm = false) {
     if (!skipConfirm) {
       const payLabel = selectedCoupon
-        ? `使用折扣券折抵 $${selectedCoupon.discountAmount}，實付 $${effectivePrice}，確認前往付款？`
+        ? `使用折扣券折抵 $${couponDiscountValue(selectedCoupon, r.totalPrice)}，實付 $${effectivePrice}，確認前往付款？`
         : '確認前往付款？\n將跳轉至藍新金流付款頁面。';
       setConfirmModal({
         message: payLabel,
@@ -238,7 +249,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
     if (selectedCoupon) {
       return effectivePrice === 0
         ? `折扣券全額折抵（原 $${r.totalPrice}）`
-        : `${actionText}（$${r.totalPrice} - $${selectedCoupon.discountAmount} = $${effectivePrice}）`;
+        : `${actionText}（$${r.totalPrice} - $${couponDiscountValue(selectedCoupon, r.totalPrice)} = $${effectivePrice}）`;
     }
     return `${actionText}（$${r.totalPrice}）`;
   }
@@ -351,8 +362,8 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
                 style={{ accentColor: '#1976d2', width: '16px', height: '16px' }}
               />
               <div>
-                <div style={{ fontSize: '13px', fontWeight: '600', color: '#222' }}>{c.taskTitle || '折扣券'}</div>
-                <div style={{ fontSize: '12px', color: '#1976d2', fontWeight: '700' }}>折抵 ${c.discountAmount}</div>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: '#222' }}>{c.taskTitle || c.note || '折扣券'}</div>
+                <div style={{ fontSize: '12px', color: '#1976d2', fontWeight: '700' }}>{couponLabel(c)}</div>
               </div>
             </label>
           ))}

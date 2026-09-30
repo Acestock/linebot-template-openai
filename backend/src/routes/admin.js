@@ -1530,6 +1530,51 @@ router.get('/coupons', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/coupons — 後台手動發送折扣券給指定客戶（需曾與官方帳號互動過，用 lineUserId 指定）
+router.post('/coupons', async (req, res) => {
+  try {
+    const { lineUserId, displayName, discountType, discountAmount, discountPercent, note, expiresAt } = req.body;
+    if (!lineUserId) return res.status(400).json({ error: 'lineUserId 為必填' });
+
+    const type = discountType === 'percent' ? 'percent' : 'amount';
+    if (type === 'amount' && !(Number(discountAmount) > 0)) {
+      return res.status(400).json({ error: '折抵金額需大於 0' });
+    }
+    if (type === 'percent' && !(Number(discountPercent) > 0 && Number(discountPercent) < 100)) {
+      return res.status(400).json({ error: '折扣百分比需介於 1～99' });
+    }
+
+    const coupon = await Coupon.create({
+      lineUserId, displayName: displayName || '',
+      discountType: type,
+      discountAmount: type === 'amount' ? Number(discountAmount) : 0,
+      discountPercent: type === 'percent' ? Number(discountPercent) : 0,
+      note: note || '',
+      status: 'valid',
+      expiresAt: expiresAt ? new Date(expiresAt) : null
+    });
+
+    const desc = type === 'amount' ? `$${coupon.discountAmount} 折抵券` : `${coupon.discountPercent}% 折扣券（打${10 - coupon.discountPercent / 10}折）`;
+    const expiryLine = coupon.expiresAt ? `\n使用期限：${new Date(coupon.expiresAt).toLocaleDateString('zh-TW')}` : '';
+    const noteLine = coupon.note ? `\n${coupon.note}` : '';
+    await pushMessage(lineUserId, `🎁 您收到一張${desc}！可在下次預約付款時使用。${expiryLine}${noteLine}`);
+
+    res.json(coupon);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/coupons/:id — 作廢尚未使用的折扣券（軟刪除，保留紀錄）
+router.delete('/coupons/:id', async (req, res) => {
+  try {
+    const coupon = await Coupon.findById(req.params.id);
+    if (!coupon) return res.status(404).json({ error: 'Coupon not found' });
+    if (coupon.status === 'used') return res.status(400).json({ error: '已使用的折扣券無法作廢' });
+    coupon.status = 'expired';
+    await coupon.save();
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── Duration Plans (策略二方案) ──────────────────────────────────────────────
 router.get('/venues/:venueId/duration-plans', async (req, res) => {
   try {

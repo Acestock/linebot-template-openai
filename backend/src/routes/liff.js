@@ -687,10 +687,17 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
     let coupon = null;
     if (couponId) {
       coupon = await Coupon.findOne({ _id: couponId, lineUserId: req.liffUser.lineUserId, status: 'valid' });
+      if (coupon && coupon.expiresAt && coupon.expiresAt < new Date()) {
+        coupon.status = 'expired';
+        await coupon.save();
+        coupon = null;
+      }
       if (coupon) {
-        effectivePrice = Math.max(0, r.totalPrice - coupon.discountAmount);
+        effectivePrice = coupon.discountType === 'percent'
+          ? Math.round(r.totalPrice * (1 - coupon.discountPercent / 100))
+          : Math.max(0, r.totalPrice - coupon.discountAmount);
         r.appliedCouponId = coupon._id;
-        r.discountAmount = coupon.discountAmount;
+        r.discountAmount = r.totalPrice - effectivePrice; // 統一存實際折抵金額，不論券的類型
         await r.save();
 
         if (effectivePrice === 0) {
@@ -941,8 +948,10 @@ router.post('/tasks/:id/submit', liffAuth, async (req, res) => {
 // ── GET /api/liff/coupons ─────────────────────────────────────────────────────
 router.get('/coupons', liffAuth, async (req, res) => {
   try {
-    const coupons = await Coupon.find({ lineUserId: req.liffUser.lineUserId, status: 'valid' })
-      .sort({ createdAt: -1 }).lean();
+    const coupons = await Coupon.find({
+      lineUserId: req.liffUser.lineUserId, status: 'valid',
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }]
+    }).sort({ createdAt: -1 }).lean();
     res.json(coupons);
   } catch (err) {
     res.status(500).json({ error: err.message });
