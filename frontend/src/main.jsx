@@ -53,7 +53,9 @@ class ErrorBoundary extends React.Component {
 
 const isLiff = window.location.pathname.startsWith('/liff');
 // Set a neutral default title immediately so LIFF users don't see the admin title
-if (isLiff) document.title = '預約入場系統';
+// (production is additionally covered server-side in app.js, which rewrites the
+// static <title> before the HTML ever reaches the browser — this is the dev-server fallback)
+if (isLiff) document.title = '讀享-預約入場系統';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const cron = require('node-cron');
 const path = require('path');
+const fs = require('fs');
 
 const webhookRouter = require('./routes/webhook');
 const adminRouter = require('./routes/admin');
@@ -92,8 +93,19 @@ const frontendDist = path.join(__dirname, '../../frontend/dist');
 app.use(express.static(frontendDist));
 
 // SPA fallback - all non-API routes serve index.html
+// LIFF 路徑在送出前把 <title> 換成預約系統的名稱，避免瀏覽器先閃一下後台客服系統的標題
+// （純 JS 做法沒辦法蓋掉瀏覽器解析到 index.html 當下就先畫出來的原始 <title>）
 app.get('*', (req, res) => {
-  res.sendFile(path.join(frontendDist, 'index.html'));
+  const indexPath = path.join(frontendDist, 'index.html');
+  if (req.path.startsWith('/liff')) {
+    fs.readFile(indexPath, 'utf8', (err, html) => {
+      if (err) return res.sendFile(indexPath);
+      const liffHtml = html.replace(/<title>.*?<\/title>/, '<title>讀享-預約入場系統</title>');
+      res.set('Content-Type', 'text/html').send(liffHtml);
+    });
+    return;
+  }
+  res.sendFile(indexPath);
 });
 
 // MongoDB connection
