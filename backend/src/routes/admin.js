@@ -1413,6 +1413,43 @@ function buildTaskFlexMessage(task) {
   };
 }
 
+// 建立「您收到折扣券」的 Flex 訊息，附上前往個人任務頁（折扣券列表所在處）的按鈕
+function buildCouponFlexMessage(coupon) {
+  const liffId = process.env.LIFF_ID || '';
+  const liffUrl = liffId ? `https://liff.line.me/${liffId}?page=tasks` : '';
+  const desc = coupon.discountType === 'percent'
+    ? `${coupon.discountPercent}% 折扣（打${10 - coupon.discountPercent / 10}折）`
+    : `折抵 $${coupon.discountAmount}`;
+  return {
+    type: 'flex',
+    altText: `🎁 讀享招待：您收到一張折扣券（${desc}）`,
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#C9A882',
+        contents: [{ type: 'text', text: '🎁 讀享招待', color: '#ffffff', weight: 'bold', size: 'md' }]
+      },
+      body: {
+        type: 'box', layout: 'vertical', spacing: 'sm',
+        contents: [
+          { type: 'text', text: desc, weight: 'bold', size: 'lg', color: '#C9A882', wrap: true },
+          ...(coupon.note ? [{ type: 'text', text: coupon.note, size: 'sm', color: '#555555', wrap: true }] : []),
+          ...(coupon.expiresAt ? [{ type: 'text', text: `使用期限：${new Date(coupon.expiresAt).toLocaleDateString('zh-TW')}`, size: 'xs', color: '#999999', margin: 'md' }] : [])
+        ]
+      },
+      ...(liffUrl ? {
+        footer: {
+          type: 'box', layout: 'vertical',
+          contents: [{
+            type: 'button', style: 'primary', color: '#C9A882',
+            action: { type: 'uri', label: '查看我的折扣券', uri: liffUrl }
+          }]
+        }
+      } : {})
+    }
+  };
+}
+
 // GET /api/tasks
 router.get('/tasks', async (req, res) => {
   try {
@@ -1554,10 +1591,7 @@ router.post('/coupons', async (req, res) => {
       expiresAt: expiresAt ? new Date(expiresAt) : null
     });
 
-    const desc = type === 'amount' ? `$${coupon.discountAmount} 折抵券` : `${coupon.discountPercent}% 折扣券（打${10 - coupon.discountPercent / 10}折）`;
-    const expiryLine = coupon.expiresAt ? `\n使用期限：${new Date(coupon.expiresAt).toLocaleDateString('zh-TW')}` : '';
-    const noteLine = coupon.note ? `\n${coupon.note}` : '';
-    await pushMessage(lineUserId, `🎁 您收到一張${desc}！可在下次預約付款時使用。${expiryLine}${noteLine}`);
+    await pushLineMessage(lineUserId, buildCouponFlexMessage(coupon));
 
     res.json(coupon);
   } catch (err) { res.status(500).json({ error: err.message }); }

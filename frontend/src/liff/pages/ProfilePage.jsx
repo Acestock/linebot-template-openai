@@ -362,7 +362,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
                 style={{ accentColor: '#1976d2', width: '16px', height: '16px' }}
               />
               <div>
-                <div style={{ fontSize: '13px', fontWeight: '600', color: '#222' }}>{c.taskTitle || c.note || '折扣券'}</div>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: '#222' }}>{c.taskTitle || '讀享招待'}</div>
                 <div style={{ fontSize: '12px', color: '#1976d2', fontWeight: '700' }}>{couponLabel(c)}</div>
               </div>
             </label>
