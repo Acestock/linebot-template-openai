@@ -162,10 +162,11 @@ function BlockedSlotsSection({ venues }) {
 
 // ── Closure Days section (全站公休日管理) ───────────────────────────────────
 function ClosureDaysSection() {
-  const [days, setDays]     = useState([]);
-  const [date, setDate]     = useState('');
-  const [reason, setReason] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [days, setDays]           = useState([]);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate]     = useState('');
+  const [reason, setReason]       = useState('');
+  const [saving, setSaving]       = useState(false);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -176,15 +177,17 @@ function ClosureDaysSection() {
   useEffect(loadDays, [loadDays]);
 
   async function handleAdd() {
-    if (!date || !reason) return alert('請填寫日期與原因');
+    if (!startDate || !reason) return alert('請至少填寫起始日期與原因');
+    if (endDate && endDate < startDate) return alert('結束日期不能早於起始日期');
     setSaving(true);
     try {
-      await authFetch(`${API_BASE}/api/closure-days`, {
+      const res = await authFetch(`${API_BASE}/api/closure-days`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, reason })
+        body: JSON.stringify({ startDate, endDate: endDate || startDate, reason })
       });
-      setDate(''); setReason('');
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || '新增失敗'); }
+      setStartDate(''); setEndDate(''); setReason('');
       loadDays();
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
@@ -199,12 +202,23 @@ function ClosureDaysSection() {
   return (
     <div style={{ marginTop: '24px', borderTop: '2px solid #f0f0f0', paddingTop: '20px' }}>
       <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '4px', color: '#333' }}>公休日管理</div>
-      <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '14px' }}>設定後，該日期全站（所有場地、所有預約方式）皆無法預約，前台會顯示您填寫的原因</div>
+      <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '14px' }}>設定後，該期間全站（所有場地、所有預約方式）皆無法預約，前台會顯示您填寫的原因</div>
 
       <div style={{ background: '#f9f9f9', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
-        <Field label="日期">
-          <input type="date" style={inputStyle} value={date} min={today} onChange={e => setDate(e.target.value)} />
-        </Field>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ flex: 1 }}>
+            <Field label="起始日期">
+              <input type="date" style={inputStyle} value={startDate} min={today}
+                onChange={e => setStartDate(e.target.value)} />
+            </Field>
+          </div>
+          <div style={{ flex: 1 }}>
+            <Field label="結束日期（選填，單日可留空）">
+              <input type="date" style={inputStyle} value={endDate} min={startDate || today}
+                onChange={e => setEndDate(e.target.value)} />
+            </Field>
+          </div>
+        </div>
         <Field label="公休原因（會顯示給用戶看）">
           <input style={inputStyle} value={reason} onChange={e => setReason(e.target.value)} placeholder="例：內部消毒整理、颱風停止營業" />
         </Field>

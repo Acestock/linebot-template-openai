@@ -1362,12 +1362,27 @@ router.get('/closure-days', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// 支援單日（只填 startDate）或區間（startDate～endDate）；區間會依每一天各自新增一筆紀錄，
+// 讓既有「查詢單日是否公休」的邏輯完全不用修改。
 router.post('/closure-days', async (req, res) => {
   try {
-    const { date, reason } = req.body;
-    if (!date || !reason) return res.status(400).json({ error: 'date, reason 為必填' });
-    const item = await ClosureDay.create({ date: new Date(date), reason });
-    res.json(item);
+    const { startDate, endDate, reason } = req.body;
+    if (!startDate || !reason) return res.status(400).json({ error: 'startDate, reason 為必填' });
+
+    const start = new Date(startDate);
+    const end = endDate ? new Date(endDate) : start;
+    if (isNaN(start) || isNaN(end)) return res.status(400).json({ error: '日期格式錯誤' });
+    if (end < start) return res.status(400).json({ error: '結束日期不能早於起始日期' });
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const spanDays = Math.round((end - start) / dayMs) + 1;
+    if (spanDays > 90) return res.status(400).json({ error: '一次最多只能設定 90 天' });
+
+    const docs = Array.from({ length: spanDays }, (_, i) =>
+      ({ date: new Date(start.getTime() + i * dayMs), reason })
+    );
+    const items = await ClosureDay.insertMany(docs);
+    res.json(items);
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
