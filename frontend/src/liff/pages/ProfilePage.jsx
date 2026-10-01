@@ -666,7 +666,7 @@ function HourBalanceTab() {
   );
 }
 
-const SUB_TABS = ['當前預約', '任務', '時數', '預約紀錄', '個人資料'];
+const SUB_TABS = ['當前預約', '任務/折扣', '時數', '預約紀錄', '個人資料'];
 
 export default function ProfilePage({ user }) {
   const [subTab, setSubTab] = useState(0);
