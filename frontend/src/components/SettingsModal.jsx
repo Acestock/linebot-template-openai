@@ -875,7 +875,7 @@ function AutoReplyTab({ profile, onChange, onSave, saving, saved }) {
         <div>
           <div style={{ fontWeight: '700', fontSize: '15px', color: '#333' }}>AI 自動回覆</div>
           <div style={{ fontSize: '13px', color: '#888', marginTop: '2px' }}>
-            {profile.autoReply ? '已啟用 — 將在設定時間後自動回覆' : '已停用'}
+            {profile.autoReply ? '已啟用 — 將在設定時間後自動回覆' : '已停用 — 每則訊息進來時也不會自動呼叫 AI 分析情緒/意圖/回覆建議，藉此節省 AI 用量；訊息仍會正常保留給客服人工處理，客服仍可在後台針對單則訊息點「取得建議」手動呼叫 AI'}
           </div>
         </div>
         <div onClick={() => onChange({ target: { name: 'autoReply', value: !profile.autoReply } })}

@@ -149,9 +149,15 @@ router.post('/', async (req, res) => {
         }
       }
 
-      const { replies, urgency, intent, keywordMatch } = await openaiService.analyzeMessage(
-        userMessage, businessProfile, keywords, faqs, conversationSummary
-      );
+      // 全域「自動回覆」關閉時，整段 AI 訊息分析（情緒/意圖/語意關鍵字比對/回覆建議）都不跑，
+      // 只保留上面不花 AI 額度的精準關鍵字比對，藉此節省用量。訊息仍會存成 pending 給客服人工處理，
+      // 需要時客服仍可在後台對單則訊息點「取得建議」另外呼叫 AI。
+      let replies = ['', '', ''], urgency = 'normal', intent = 'none', keywordMatch = null;
+      if (businessProfile?.autoReply) {
+        ({ replies, urgency, intent, keywordMatch } = await openaiService.analyzeMessage(
+          userMessage, businessProfile, keywords, faqs, conversationSummary
+        ));
+      }
 
       // Keyword matched — auto-reply immediately, no admin review needed
       if (keywordMatch && keywordMatch.trigger) {
