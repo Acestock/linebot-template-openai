@@ -126,6 +126,29 @@ router.post('/', async (req, res) => {
       ]);
       const conversationSummary = customerSetting?.conversationSummary || '';
 
+      // 精準比對：訊息文字與關鍵字 trigger 完全一致時（例如圖文選單快捷文字）直接回覆，
+      // 跳過 AI 語意分析，避免等待 GPT-4o 的 2-5 秒延遲。比對不到才照舊交給 AI 做語意判斷。
+      const exactKw = keywords.find(k => k.trigger.trim() === userMessage.trim());
+      if (exactKw) {
+        const { sendOk, summary: autoReplySummary } = await sendKeywordReply(exactKw, lineUserId);
+        if (sendOk) {
+          await dbService.createMessage({
+            lineUserId,
+            displayName: lineProfile.displayName || '',
+            userMessage,
+            replyToken,
+            aiReplies: ['', '', ''],
+            urgency: 'normal', intent: 'none',
+            status: 'replied',
+            selectedReply: autoReplySummary,
+            repliedAt: new Date()
+          });
+          console.log(`[Webhook] Exact keyword match "${exactKw.trigger}" for ${lineProfile.displayName || lineUserId}`);
+          sseService.broadcast('new-message', { lineUserId });
+          continue;
+        }
+      }
+
       const { replies, urgency, intent, keywordMatch } = await openaiService.analyzeMessage(
         userMessage, businessProfile, keywords, faqs, conversationSummary
       );
