@@ -12,15 +12,17 @@ const TaskSubmission = require('../models/TaskSubmission');
 const Coupon = require('../models/Coupon');
 const DurationPlan = require('../models/DurationPlan');
 const StaffToken   = require('../models/StaffToken');
+const CustomerSetting = require('../models/CustomerSetting');
 const { getAvailableSlots, checkSlotAvailability } = require('../services/strategy2Service');
 const { getActiveClosure } = require('../services/closureDayService');
 const { createOrderParams: _ecpayCreateOrder }   = require('../services/ecpayService');
 const { createOrderParams: _newebpayCreateOrder } = require('../services/newebpayService');
 // Switch gateway via env: PAYMENT_GATEWAY=ecpay to fall back to ECPay (default: newebpay)
-const createOrderParams = (reservation) =>
+// email（選填）：僅 NewebPay 支援帶入預先填好付款人信箱，ECPay 端會忽略多餘的參數
+const createOrderParams = (reservation, email) =>
   (process.env.PAYMENT_GATEWAY || 'newebpay').toLowerCase() === 'ecpay'
     ? _ecpayCreateOrder(reservation)
-    : _newebpayCreateOrder(reservation);
+    : _newebpayCreateOrder(reservation, email);
 const { pushMessage } = require('../services/lineService');
 const {
   timeToMinutes,
@@ -193,6 +195,36 @@ router.post('/auth', async (req, res) => {
     });
   } catch (err) {
     res.status(401).json({ error: err.message || 'Auth failed' });
+  }
+});
+
+// ── GET /api/liff/profile ──────────────────────────────────────────────────────
+// 目前只有 email（付款信箱，記住後自動帶入藍新金流付款頁的信箱欄位）
+router.get('/profile', liffAuth, async (req, res) => {
+  try {
+    const cs = await CustomerSetting.findOne({ lineUserId: req.liffUser.lineUserId }).lean();
+    res.json({ email: cs?.email || '' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PATCH /api/liff/profile ────────────────────────────────────────────────────
+router.patch('/profile', liffAuth, async (req, res) => {
+  try {
+    const { email } = req.body;
+    const trimmed = (email || '').trim();
+    if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return res.status(400).json({ error: 'Email 格式不正確' });
+    }
+    await CustomerSetting.findOneAndUpdate(
+      { lineUserId: req.liffUser.lineUserId },
+      { email: trimmed },
+      { upsert: true }
+    );
+    res.json({ email: trimmed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -719,7 +751,8 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
     const reservationForPayment = effectivePrice !== r.totalPrice
       ? { ...r.toObject(), totalPrice: effectivePrice }
       : r;
-    const { params, apiUrl, tradeNo } = createOrderParams(reservationForPayment);
+    const customerSetting = await CustomerSetting.findOne({ lineUserId: req.liffUser.lineUserId }).lean();
+    const { params, apiUrl, tradeNo } = createOrderParams(reservationForPayment, customerSetting?.email);
     r.paymentRef = tradeNo;
     await r.save();
 
@@ -963,10 +996,10 @@ const HourPackage  = require('../models/HourPackage');
 const HourPurchase = require('../models/HourPurchase');
 const { createHourOrderParams: _ecpayHourOrder }   = require('../services/ecpayService');
 const { createHourOrderParams: _newebpayHourOrder } = require('../services/newebpayService');
-const createHourOrderParams = (purchase) =>
+const createHourOrderParams = (purchase, email) =>
   (process.env.PAYMENT_GATEWAY || 'newebpay').toLowerCase() === 'ecpay'
     ? _ecpayHourOrder(purchase)
-    : _newebpayHourOrder(purchase);
+    : _newebpayHourOrder(purchase, email);
 
 router.get('/hour-packages', async (req, res) => {
   try {
@@ -1005,7 +1038,8 @@ router.post('/hour-purchases', liffAuth, async (req, res) => {
       expiresAt,
     });
 
-    const { params, apiUrl, tradeNo } = createHourOrderParams(purchase);
+    const customerSetting = await CustomerSetting.findOne({ lineUserId: req.liffUser.lineUserId }).lean();
+    const { params, apiUrl, tradeNo } = createHourOrderParams(purchase, customerSetting?.email);
     purchase.paymentRef = tradeNo;
     await purchase.save();
 
