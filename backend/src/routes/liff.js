@@ -472,11 +472,6 @@ router.post('/reservations', liffAuth, async (req, res) => {
       const closureS2 = await getActiveClosure(sTime.toISOString().slice(0, 10));
       if (closureS2) return res.status(409).json({ error: `公休：${closureS2.reason}` });
 
-      // 容量檢查
-      const avail = await checkSlotAvailability(venueId, sTime, eTime, venue.maxCapacityPerSlot);
-      if (!avail.available)
-        return res.status(409).json({ error: '此時段座位已滿，請選擇其他時間' });
-
       // 重複預約防呆：同用戶同場地時間重疊
       const dupS2 = await Reservation.findOne({
         lineUserId, venueId, strategy: 2,
@@ -485,6 +480,12 @@ router.post('/reservations', liffAuth, async (req, res) => {
         endTime:   { $gt: sTime }
       });
       if (dupS2) return res.status(409).json({ error: '您在此時段已有預約，請勿重複預約' });
+
+      // 容量檢查：刻意放在最後、緊接著寫入預約之前，縮小「查詢」跟「寫入」中間的空窗，
+      // 降低兩人同時搶最後名額時都通過檢查、導致超收的機率（非 100% 杜絕，但改動單純）
+      const avail = await checkSlotAvailability(venueId, sTime, eTime, venue.maxCapacityPerSlot);
+      if (!avail.available)
+        return res.status(409).json({ error: '此時段座位已滿，請選擇其他時間' });
 
       // 入場時間範圍：提前 15 分鐘到延後 30 分鐘
       const checkIn15Min = new Date(sTime.getTime() - 15 * 60 * 1000);
