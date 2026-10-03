@@ -27,9 +27,14 @@ function hasAvailableSlot(avail) {
   return Object.values(avail || {}).some(s => s.remaining > 0);
 }
 
+function getClosureReason(avail) {
+  return Object.values(avail || {}).find(s => s.closureReason)?.closureReason || '';
+}
+
 function VenueCard({ venue, dateKey, onClick }) {
   const avail = venue.availability?.[dateKey] || {};
   const available = hasAvailableSlot(avail);
+  const closureReason = getClosureReason(avail);
   return (
     <div
       onClick={onClick}
@@ -46,7 +51,12 @@ function VenueCard({ venue, dateKey, onClick }) {
         <div style={{ fontSize: '13px', color: '#888' }}>{dateKey}</div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-        {available ? (
+        {closureReason ? (
+          <span style={{
+            background: '#eeeeee', color: '#616161', borderRadius: '20px',
+            padding: '3px 12px', fontSize: '13px', fontWeight: '600'
+          }}>公休</span>
+        ) : available ? (
           <span style={{
             background: '#e6f4ea', color: '#2e7d32', borderRadius: '20px',
             padding: '3px 12px', fontSize: '13px', fontWeight: '600'
@@ -57,17 +67,21 @@ function VenueCard({ venue, dateKey, onClick }) {
             padding: '3px 12px', fontSize: '13px', fontWeight: '600'
           }}>已額滿</span>
         )}
-        <div style={{ display: 'flex', gap: '4px' }}>
-          {Object.entries(avail).map(([slot, info]) => (
-            <span key={slot} style={{
-              fontSize: '11px', padding: '2px 6px', borderRadius: '4px',
-              background: info.remaining > 0 ? '#f1f8e9' : '#f5f5f5',
-              color: info.remaining > 0 ? '#558b2f' : '#bbb'
-            }}>
-              {info.blocked ? info.eventName || '活動' : SLOT_LABELS[slot]}
-            </span>
-          ))}
-        </div>
+        {closureReason ? (
+          <div style={{ fontSize: '11px', color: '#999', maxWidth: '140px', textAlign: 'right' }}>{closureReason}</div>
+        ) : (
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {Object.entries(avail).map(([slot, info]) => (
+              <span key={slot} style={{
+                fontSize: '11px', padding: '2px 6px', borderRadius: '4px',
+                background: info.remaining > 0 ? '#f1f8e9' : '#f5f5f5',
+                color: info.remaining > 0 ? '#558b2f' : '#bbb'
+              }}>
+                {info.blocked ? info.eventName || '活動' : SLOT_LABELS[slot]}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

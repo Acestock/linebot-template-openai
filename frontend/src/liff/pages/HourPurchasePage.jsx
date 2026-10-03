@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchHourPackages, buyHourPackage, submitPaymentForm } from '../api';
+import { fetchHourPackages, buyHourPackage, submitPaymentForm, fetchMyProfile, updateMyProfile } from '../api';
 
 const cardStyle = {
   background: '#fff', borderRadius: '14px', padding: '18px 20px',
@@ -21,16 +21,23 @@ export default function HourPurchasePage({ onBack }) {
   const [loading,   setLoading]   = useState(true);
   const [buying,    setBuying]    = useState(false);
   const [error,     setError]     = useState('');
+  const [myEmail, setMyEmail]           = useState(null); // null = 尚未載入
+  const [showEmailPrompt, setShowEmailPrompt] = useState(false);
+  const [emailDraft, setEmailDraft]     = useState('');
+  const [savingEmail, setSavingEmail]   = useState(false);
+  const [emailError, setEmailError]     = useState('');
 
   useEffect(() => {
     fetchHourPackages()
       .then(pkgs => { setPackages(pkgs); if (pkgs.length > 0) setSelected(pkgs[0]._id); })
       .catch(() => setError('無法載入方案'))
       .finally(() => setLoading(false));
+    fetchMyProfile().then(data => setMyEmail(data.email || '')).catch(() => setMyEmail(''));
   }, []);
 
   async function handleBuy() {
     if (!selected) return;
+    if (!myEmail) { setEmailDraft(''); setEmailError(''); setShowEmailPrompt(true); return; }
     setBuying(true);
     setError('');
     try {
@@ -39,6 +46,23 @@ export default function HourPurchasePage({ onBack }) {
     } catch (e) {
       setError(e.message);
       setBuying(false);
+    }
+  }
+
+  async function saveEmailAndBuy() {
+    const trimmed = emailDraft.trim();
+    if (!trimmed) { setEmailError('請輸入 Email'); return; }
+    setSavingEmail(true);
+    setEmailError('');
+    try {
+      await updateMyProfile(trimmed);
+      setMyEmail(trimmed);
+      setShowEmailPrompt(false);
+      handleBuy();
+    } catch (e) {
+      setEmailError(e.message);
+    } finally {
+      setSavingEmail(false);
     }
   }
 
@@ -114,6 +138,30 @@ export default function HourPurchasePage({ onBack }) {
             點擊後將跳轉至信用卡付款頁面
           </div>
         </>
+      )}
+
+      {/* First-time payment email prompt — saved to profile, auto-filled into NewebPay afterwards */}
+      {showEmailPrompt && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', padding: '28px 24px', maxWidth: '320px', width: '100%' }}>
+            <p style={{ fontSize: '15px', color: '#222', marginBottom: '6px', lineHeight: '1.6', fontWeight: '700' }}>請留下付款信箱</p>
+            <p style={{ fontSize: '13px', color: '#888', marginBottom: '16px', lineHeight: '1.6' }}>
+              第一次付款需要填寫，之後系統會自動記住，付款時不用再輸入。
+            </p>
+            <input
+              type="email" value={emailDraft} onChange={e => setEmailDraft(e.target.value)}
+              placeholder="your@email.com" autoFocus
+              style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: '10px', border: '1.5px solid #ddd', fontSize: '15px', marginBottom: '8px' }}
+            />
+            {emailError && <div style={{ color: '#e53935', fontSize: '12px', marginBottom: '8px' }}>{emailError}</div>}
+            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+              <button onClick={() => { setShowEmailPrompt(false); setEmailError(''); }} style={{ flex: 1, padding: '12px', border: '1px solid #ddd', borderRadius: '10px', background: '#fff', fontSize: '15px', cursor: 'pointer', color: '#444' }}>取消</button>
+              <button onClick={saveEmailAndBuy} disabled={savingEmail} style={{ flex: 1, padding: '12px', border: 'none', borderRadius: '10px', background: '#111', color: '#fff', fontSize: '15px', fontWeight: '600', cursor: savingEmail ? 'not-allowed' : 'pointer' }}>
+                {savingEmail ? '儲存中...' : '確定並繼續'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

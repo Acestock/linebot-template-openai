@@ -28,8 +28,9 @@ export async function fetchVenues() {
   return r.json();
 }
 
-export async function fetchVenue(id) {
-  const r = await fetch(`${BASE}/venues/${id}`);
+export async function fetchVenue(id, lineUserId) {
+  const qs = lineUserId ? `?lineUserId=${encodeURIComponent(lineUserId)}` : '';
+  const r = await fetch(`${BASE}/venues/${id}${qs}`);
   if (!r.ok) throw new Error('Failed to load venue');
   return r.json();
 }
@@ -48,6 +49,24 @@ export async function createReservation(data) {
   });
   const json = await r.json();
   if (!r.ok) throw new Error(json.error || '預約失敗');
+  return json;
+}
+
+export async function fetchMyProfile() {
+  const r = await fetch(`${BASE}/profile`, { headers: authHeaders() });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '載入個人資料失敗');
+  return json;
+}
+
+export async function updateMyProfile(email) {
+  const r = await fetch(`${BASE}/profile`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ email })
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '儲存失敗');
   return json;
 }
 

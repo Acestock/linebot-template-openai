@@ -160,18 +160,105 @@ function BlockedSlotsSection({ venues }) {
   );
 }
 
+// ── Closure Days section (全站公休日管理) ───────────────────────────────────
+function ClosureDaysSection() {
+  const [days, setDays]           = useState([]);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate]     = useState('');
+  const [reason, setReason]       = useState('');
+  const [saving, setSaving]       = useState(false);
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const loadDays = useCallback(() => {
+    authFetch(`${API_BASE}/api/closure-days`).then(r => r.json())
+      .then(d => setDays(Array.isArray(d) ? d : [])).catch(() => {});
+  }, []);
+  useEffect(loadDays, [loadDays]);
+
+  async function handleAdd() {
+    if (!startDate || !reason) return alert('請至少填寫起始日期與原因');
+    if (endDate && endDate < startDate) return alert('結束日期不能早於起始日期');
+    setSaving(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/closure-days`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startDate, endDate: endDate || startDate, reason })
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || '新增失敗'); }
+      setStartDate(''); setEndDate(''); setReason('');
+      loadDays();
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('確定刪除此公休日？')) return;
+    await authFetch(`${API_BASE}/api/closure-days/${id}`, { method: 'DELETE' });
+    loadDays();
+  }
+
+  return (
+    <div style={{ marginTop: '24px', borderTop: '2px solid #f0f0f0', paddingTop: '20px' }}>
+      <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '4px', color: '#333' }}>公休日管理</div>
+      <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '14px' }}>設定後，該期間全站（所有場地、所有預約方式）皆無法預約，前台會顯示您填寫的原因</div>
+
+      <div style={{ background: '#f9f9f9', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ flex: 1 }}>
+            <Field label="起始日期">
+              <input type="date" style={inputStyle} value={startDate} min={today}
+                onChange={e => setStartDate(e.target.value)} />
+            </Field>
+          </div>
+          <div style={{ flex: 1 }}>
+            <Field label="結束日期（選填，單日可留空）">
+              <input type="date" style={inputStyle} value={endDate} min={startDate || today}
+                onChange={e => setEndDate(e.target.value)} />
+            </Field>
+          </div>
+        </div>
+        <Field label="公休原因（會顯示給用戶看）">
+          <input style={inputStyle} value={reason} onChange={e => setReason(e.target.value)} placeholder="例：內部消毒整理、颱風停止營業" />
+        </Field>
+        <button onClick={handleAdd} disabled={saving} style={{ ...btn('#111'), width: '100%', marginTop: '4px' }}>
+          {saving ? '新增中...' : '＋ 新增公休日'}
+        </button>
+      </div>
+
+      {days.length === 0
+        ? <div style={{ color: '#aaa', textAlign: 'center', padding: '16px' }}>尚無公休日設定</div>
+        : days.map(d => {
+          const dateStr = new Date(d.date).toLocaleDateString('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric', weekday: 'short' });
+          return (
+            <div key={d._id} style={{ border: '1px solid #eee', borderRadius: '10px', padding: '10px 14px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: '600', fontSize: '14px' }}>{dateStr}</div>
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{d.reason}</div>
+              </div>
+              <button onClick={() => handleDelete(d._id)} style={btn('#ffebee', '#c62828')}>刪除</button>
+            </div>
+          );
+        })
+      }
+    </div>
+  );
+}
+
 // ── Tab 1: 場地管理 ──────────────────────────────────────────────────────────
 function VenueTab() {
   const [venues, setVenues]   = useState([]);
   const [form, setForm]       = useState(null);
   const [saving, setSaving]   = useState(false);
+  const [bypassText, setBypassText] = useState('');
 
   const load = useCallback(() => {
     authFetch(`${API_BASE}/api/venues`).then(r => r.json()).then(setVenues).catch(() => {});
   }, []);
   useEffect(load, [load]);
 
-  const emptyForm = { name: '', address: '', transportInfo: '', imageUrl: '', imageUrls: [], businessHours: '', facilities: '', rules: '', howToUse: '', color: '#2196F3', maxCapacityPerSlot: 10, isActive: true, strategy: 1, s2OpenHour: 7, s2CloseHour: 22, shortSession: { enabled: false, minHourPrice: 40, ratio1h: 0.25, ratio2h: 0.60, ratio3h: 0.80, maxCapacityBlock: 2 } };
+  const emptyForm = { name: '', address: '', transportInfo: '', imageUrl: '', imageUrls: [], businessHours: '', facilities: '', rules: '', howToUse: '', color: '#2196F3', maxCapacityPerSlot: 10, isActive: true, strategy: 1, s2OpenHour: 7, s2CloseHour: 22, shortSession: { enabled: false, minHourPrice: 40, ratio1h: 0.25, ratio2h: 0.60, ratio3h: 0.80, maxCapacityBlock: 2 }, maintenanceMode: false, maintenanceBypassUserIds: [] };
 
   async function save() {
     if (!form.name) return alert('請輸入場地名稱');
@@ -179,7 +266,8 @@ function VenueTab() {
     try {
       const method = form._id ? 'PATCH' : 'POST';
       const url = form._id ? `${API_BASE}/api/venues/${form._id}` : `${API_BASE}/api/venues`;
-      await authFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      const maintenanceBypassUserIds = bypassText.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+      await authFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, maintenanceBypassUserIds }) });
       setForm(null); load();
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
@@ -199,7 +287,7 @@ function VenueTab() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-        <button onClick={() => setForm(emptyForm)} style={btn('#111')}>＋ 新增場地</button>
+        <button onClick={() => { setForm(emptyForm); setBypassText(''); }} style={btn('#111')}>＋ 新增場地</button>
       </div>
 
       {venues.length === 0 && <div style={{ color: '#aaa', textAlign: 'center', padding: '24px' }}>尚無場地，點右上角新增</div>}
@@ -208,12 +296,17 @@ function VenueTab() {
         <div key={v._id} style={{ border: '1px solid #eee', borderRadius: '10px', padding: '12px 14px', marginBottom: '8px', borderLeft: `4px solid ${v.color}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <div style={{ fontWeight: '600', fontSize: '14px' }}>{v.name}</div>
+              <div style={{ fontWeight: '600', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {v.name}
+                {v.maintenanceMode && (
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#c62828', background: '#ffebee', borderRadius: '4px', padding: '2px 6px' }}>維護中</span>
+                )}
+              </div>
               <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{v.address || '（未設地址）'} · 每時段上限 {v.maxCapacityPerSlot} 人</div>
             </div>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <button onClick={() => toggleActive(v)} style={btn(v.isActive ? '#e8f5e9' : '#fce4ec', v.isActive ? '#2e7d32' : '#c62828')}>{v.isActive ? '啟用' : '停用'}</button>
-              <button onClick={() => setForm({ ...v })} style={btn('#f5f5f5', '#333')}>編輯</button>
+              <button onClick={() => { setForm({ ...v }); setBypassText((v.maintenanceBypassUserIds || []).join('\n')); }} style={btn('#f5f5f5', '#333')}>編輯</button>
               <button onClick={() => del(v._id)} style={btn('#ffebee', '#c62828')}>刪除</button>
             </div>
           </div>
@@ -334,6 +427,27 @@ function VenueTab() {
                     </Field>
                   </div>
                 </>
+              )}
+            </div>
+
+            {/* Maintenance mode */}
+            <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ fontWeight: '600', fontSize: '13px', color: '#555', marginBottom: '10px' }}>平台維護模式</div>
+              <Field label="">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!form.maintenanceMode} onChange={e => setForm(f => ({ ...f, maintenanceMode: e.target.checked }))} />
+                  關閉預約平台（使用者點入後會看到「平台維護中」，無法預約）
+                </label>
+              </Field>
+              {form.maintenanceMode && (
+                <Field label="白名單 LINE User ID（維護中仍可正常使用，一行一個或逗號分隔）">
+                  <textarea
+                    style={textareaStyle} rows={3}
+                    value={bypassText}
+                    onChange={e => setBypassText(e.target.value)}
+                    placeholder={'U1234567890abcdef...\nU0987654321fedcba...'}
+                  />
+                </Field>
               )}
             </div>
 
@@ -909,6 +1023,7 @@ function SystemSettingsTab() {
   };
 
   return (
+    <>
     <form onSubmit={handleSave}>
       {/* LIFF title */}
       <div style={{ marginBottom: '20px' }}>
@@ -983,6 +1098,8 @@ function SystemSettingsTab() {
         </span>
       )}
     </form>
+    <ClosureDaysSection />
+    </>
   );
 }
 
@@ -1335,6 +1452,7 @@ function AnalyticsTab() {
 
 // ── Staff Door Modal ──────────────────────────────────────────────────────────
 function StaffDoorModal({ onClose }) {
+  const [mode,      setMode]      = useState('temp'); // 'temp' | 'permanent'
   const [venues,    setVenues]    = useState([]);
   const [venueId,   setVenueId]   = useState('');
   const [qrImg,     setQrImg]     = useState('');
@@ -1343,11 +1461,53 @@ function StaffDoorModal({ onClose }) {
   const [loading,   setLoading]   = useState(false);
   const timerRef = useRef(null);
 
+  // 永久 QR
+  const [permToken,   setPermToken]   = useState(null); // 後端目前存的永久碼紀錄，null = 尚未建立
+  const [permQrImg,   setPermQrImg]   = useState('');
+  const [permLoading, setPermLoading] = useState(false);
+
   useEffect(() => {
     authFetch(`${API_BASE}/api/venues`).then(r => r.json())
       .then(vs => { setVenues(vs); if (vs.length) setVenueId(vs[0]._id); })
       .catch(() => {});
   }, []);
+
+  // 切到永久 QR 分頁，或換選場地時，查詢該場地目前的永久碼
+  useEffect(() => {
+    if (mode !== 'permanent' || !venueId) return;
+    setPermQrImg(''); setPermToken(null);
+    authFetch(`${API_BASE}/api/staff-tokens/permanent?venueId=${venueId}`).then(r => r.json())
+      .then(async st => {
+        setPermToken(st);
+        if (st?.token) {
+          const img = await QRCode.toDataURL(st.token, { width: 240, margin: 2, color: { dark: '#111', light: '#fff' } });
+          setPermQrImg(img);
+        }
+      })
+      .catch(() => {});
+  }, [mode, venueId]);
+
+  async function generatePermanent() {
+    if (!venueId) return alert('請選擇場地');
+    if (permToken && !confirm('重新產生會讓目前這組永久 QR 立即失效，員工需改用新的 QR 才能進場，確定要繼續嗎？')) return;
+    setPermLoading(true);
+    try {
+      const venue = venues.find(v => v._id === venueId);
+      const res = await authFetch(`${API_BASE}/api/staff-tokens/permanent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venueId, venueName: venue?.name || '' })
+      });
+      const st = await res.json();
+      setPermToken(st);
+      const img = await QRCode.toDataURL(st.token, { width: 240, margin: 2, color: { dark: '#111', light: '#fff' } });
+      setPermQrImg(img);
+    } catch (e) {
+      alert('產生失敗：' + e.message);
+    } finally {
+      setPermLoading(false);
+    }
+  }
 
   // countdown
   useEffect(() => {
@@ -1399,6 +1559,20 @@ function StaffDoorModal({ onClose }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✕</button>
         </div>
 
+        {/* Mode toggle */}
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', background: '#f5f5f5', borderRadius: '10px', padding: '3px' }}>
+          {[['temp', '臨時 QR（5 分鐘）'], ['permanent', '永久 QR']].map(([key, label]) => (
+            <button key={key} onClick={() => setMode(key)}
+              style={{
+                flex: 1, padding: '8px 6px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                fontSize: '13px', fontWeight: '700',
+                background: mode === key ? '#fff' : 'transparent',
+                color: mode === key ? '#111' : '#888',
+                boxShadow: mode === key ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'
+              }}>{label}</button>
+          ))}
+        </div>
+
         {/* Venue selector */}
         <div style={{ marginBottom: '14px' }}>
           <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '4px' }}>選擇場地</label>
@@ -1410,45 +1584,83 @@ function StaffDoorModal({ onClose }) {
           </select>
         </div>
 
-        {/* Generate button */}
-        <button
-          onClick={generate}
-          disabled={loading}
-          style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', background: '#111', color: '#fff', fontWeight: '700', fontSize: '15px', cursor: 'pointer', marginBottom: '20px' }}
-        >
-          {loading ? '產生中...' : expired ? '🔄 重新產生 QR' : qrImg ? '🔄 重新產生' : '🚪 產生開門 QR'}
-        </button>
+        {mode === 'temp' ? (
+          <>
+            {/* Generate button */}
+            <button
+              onClick={generate}
+              disabled={loading}
+              style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', background: '#111', color: '#fff', fontWeight: '700', fontSize: '15px', cursor: 'pointer', marginBottom: '20px' }}
+            >
+              {loading ? '產生中...' : expired ? '🔄 重新產生 QR' : qrImg ? '🔄 重新產生' : '🚪 產生開門 QR'}
+            </button>
 
-        {/* QR display */}
-        {qrImg && (
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>
-              {venueName}・工作人員專用
-            </div>
-            <div style={{
-              display: 'inline-block', padding: '12px', borderRadius: '12px',
-              border: expired ? '3px solid #ffcdd2' : '3px solid #c8e6c9',
-              opacity: expired ? 0.4 : 1, transition: 'opacity 0.3s'
-            }}>
-              <img src={qrImg} alt="Staff QR" style={{ width: '200px', height: '200px', display: 'block' }} />
-            </div>
-
-            {/* Countdown */}
-            <div style={{ marginTop: '12px' }}>
-              {expired ? (
-                <div style={{ fontSize: '13px', color: '#e53935', fontWeight: '700' }}>⚠ QR 已過期，請重新產生</div>
-              ) : (
-                <div style={{ fontSize: '22px', fontWeight: '800', color: secsLeft <= 60 ? '#e53935' : '#2e7d32', fontVariantNumeric: 'tabular-nums' }}>
-                  {mm}:{ss}
-                  <span style={{ fontSize: '12px', fontWeight: '400', color: '#aaa', marginLeft: '6px' }}>剩餘有效時間</span>
+            {/* QR display */}
+            {qrImg && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>
+                  {venueName}・工作人員專用
                 </div>
-              )}
-            </div>
+                <div style={{
+                  display: 'inline-block', padding: '12px', borderRadius: '12px',
+                  border: expired ? '3px solid #ffcdd2' : '3px solid #c8e6c9',
+                  opacity: expired ? 0.4 : 1, transition: 'opacity 0.3s'
+                }}>
+                  <img src={qrImg} alt="Staff QR" style={{ width: '200px', height: '200px', display: 'block' }} />
+                </div>
 
-            <div style={{ fontSize: '11px', color: '#aaa', marginTop: '8px' }}>
-              閘門掃描此 QR 即可開門・5 分鐘內有效
-            </div>
-          </div>
+                {/* Countdown */}
+                <div style={{ marginTop: '12px' }}>
+                  {expired ? (
+                    <div style={{ fontSize: '13px', color: '#e53935', fontWeight: '700' }}>⚠ QR 已過期，請重新產生</div>
+                  ) : (
+                    <div style={{ fontSize: '22px', fontWeight: '800', color: secsLeft <= 60 ? '#e53935' : '#2e7d32', fontVariantNumeric: 'tabular-nums' }}>
+                      {mm}:{ss}
+                      <span style={{ fontSize: '12px', fontWeight: '400', color: '#aaa', marginLeft: '6px' }}>剩餘有效時間</span>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ fontSize: '11px', color: '#aaa', marginTop: '8px' }}>
+                  閘門掃描此 QR 即可開門・5 分鐘內有效
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Generate / rotate button */}
+            <button
+              onClick={generatePermanent}
+              disabled={permLoading}
+              style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', background: '#111', color: '#fff', fontWeight: '700', fontSize: '15px', cursor: 'pointer', marginBottom: '20px' }}
+            >
+              {permLoading ? '產生中...' : permToken ? '🔄 重新產生（舊碼立即失效）' : '🔒 產生永久 QR'}
+            </button>
+
+            {/* QR display */}
+            {permQrImg && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>
+                  {venueName}・工作人員專用（永久有效）
+                </div>
+                <div style={{ display: 'inline-block', padding: '12px', borderRadius: '12px', border: '3px solid #c8e6c9' }}>
+                  <img src={permQrImg} alt="Permanent Staff QR" style={{ width: '200px', height: '200px', display: 'block' }} />
+                </div>
+                {permToken?.createdAt && (
+                  <div style={{ fontSize: '11px', color: '#aaa', marginTop: '10px' }}>
+                    建立於 {new Date(permToken.createdAt).toLocaleString('zh-TW')}
+                  </div>
+                )}
+                <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px' }}>
+                  閘門掃描此 QR 即可開門・不會過期，需手動「重新產生」才會失效
+                </div>
+              </div>
+            )}
+            {!permQrImg && !permLoading && (
+              <div style={{ textAlign: 'center', color: '#bbb', fontSize: '13px', padding: '16px 0' }}>此場地尚未建立永久 QR</div>
+            )}
+          </>
         )}
       </div>
     </div>

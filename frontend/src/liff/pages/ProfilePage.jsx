@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
-import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitPaymentForm, fetchMyCoupons, fetchShortSessionPrice, fetchMyHourPurchases, payWithHours } from '../api';
+import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitPaymentForm, fetchMyCoupons, fetchShortSessionPrice, fetchMyHourPurchases, payWithHours, fetchMyProfile, updateMyProfile } from '../api';
 import TasksTab from './TasksTab';
 
 const STATUS_MAP = {
@@ -16,6 +16,17 @@ function getStatusInfo(status, unpaidExit) {
   if (status === 'completed' && unpaidExit) return STATUS_MAP.unpaid_checkout;
   if (status === 'completed' && unpaidExit === false) return STATUS_MAP.completed;
   return STATUS_MAP[status] || STATUS_MAP.confirmed;
+}
+
+// 折扣券可能是固定金額或百分比折扣，統一算出實際折抵的金額（與後端 /reservations/:id/payment 的算法一致）
+function couponDiscountValue(coupon, totalPrice) {
+  if (!coupon) return 0;
+  return coupon.discountType === 'percent'
+    ? totalPrice - Math.round(totalPrice * (1 - coupon.discountPercent / 100))
+    : coupon.discountAmount;
+}
+function couponLabel(coupon) {
+  return coupon.discountType === 'percent' ? `${coupon.discountPercent}% 折扣` : `折抵 $${coupon.discountAmount}`;
 }
 
 const SLOT_LABELS = { morning: '早上', afternoon: '下午', evening: '晚上' };
@@ -58,6 +69,33 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
   );
 }
 
+// ── First-time payment email prompt — saved to profile, auto-filled into NewebPay afterwards ──
+function EmailPromptModal({ onConfirm, onCancel, saving, error }) {
+  const [value, setValue] = useState('');
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', padding: '28px 24px', maxWidth: '320px', width: '100%' }}>
+        <p style={{ fontSize: '15px', color: '#222', marginBottom: '6px', lineHeight: '1.6', fontWeight: '700' }}>請留下付款信箱</p>
+        <p style={{ fontSize: '13px', color: '#888', marginBottom: '16px', lineHeight: '1.6' }}>
+          第一次付款需要填寫，之後系統會自動記住，付款時不用再輸入。
+        </p>
+        <input
+          type="email" value={value} onChange={e => setValue(e.target.value)}
+          placeholder="your@email.com" autoFocus
+          style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: '10px', border: '1.5px solid #ddd', fontSize: '15px', marginBottom: '8px' }}
+        />
+        {error && <div style={{ color: '#e53935', fontSize: '12px', marginBottom: '8px' }}>{error}</div>}
+        <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+          <button onClick={onCancel} style={{ flex: 1, padding: '12px', border: '1px solid #ddd', borderRadius: '10px', background: '#fff', fontSize: '15px', cursor: 'pointer', color: '#444' }}>取消</button>
+          <button onClick={() => onConfirm(value)} disabled={saving} style={{ flex: 1, padding: '12px', border: 'none', borderRadius: '10px', background: '#111', color: '#fff', fontSize: '15px', fontWeight: '600', cursor: saving ? 'not-allowed' : 'pointer' }}>
+            {saving ? '儲存中...' : '確定並繼續'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Booking detail view (shared between tabs, readOnly hides action buttons) ───
 function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const [cancelling, setCancelling]     = useState(false);
@@ -77,6 +115,11 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const [hourBalance, setHourBalance]   = useState(null);
   const [showHourConfirm, setShowHourConfirm] = useState(false);
   const [deducting, setDeducting]       = useState(false);
+  const [myEmail, setMyEmail]           = useState(null); // null = 尚未載入
+  const [showEmailPrompt, setShowEmailPrompt] = useState(false);
+  const [savingEmail, setSavingEmail]   = useState(false);
+  const [emailError, setEmailError]     = useState('');
+  const paySkipConfirmRef = useRef(false); // 記住被 email 提示打斷前，原本是否已跳過確認視窗（計時入場流程會先自己跳一次確認）
 
   const isShortSession = r.mode === 'walkin_short';
   const isStrategy2    = (r.strategy ?? 1) === 2;
@@ -109,11 +152,12 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   useEffect(() => {
     if (needsPayment) {
       fetchMyCoupons().then(data => setCoupons(Array.isArray(data) ? data : [])).catch(() => {});
+      fetchMyProfile().then(data => setMyEmail(data.email || '')).catch(() => setMyEmail(''));
     }
   }, [needsPayment]);
 
   const effectivePrice = selectedCoupon
-    ? Math.max(0, r.totalPrice - selectedCoupon.discountAmount)
+    ? Math.max(0, r.totalPrice - couponDiscountValue(selectedCoupon, r.totalPrice))
     : r.totalPrice;
 
   async function handleShowQr() {
@@ -161,9 +205,10 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   }
 
   async function handlePay(skipConfirm = false) {
+    if (!myEmail) { paySkipConfirmRef.current = skipConfirm; setShowEmailPrompt(true); return; }
     if (!skipConfirm) {
       const payLabel = selectedCoupon
-        ? `使用折扣券折抵 $${selectedCoupon.discountAmount}，實付 $${effectivePrice}，確認前往付款？`
+        ? `使用折扣券折抵 $${couponDiscountValue(selectedCoupon, r.totalPrice)}，實付 $${effectivePrice}，確認前往付款？`
         : '確認前往付款？\n將跳轉至藍新金流付款頁面。';
       setConfirmModal({
         message: payLabel,
@@ -185,6 +230,23 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
     } catch (e) {
       alert(e.message);
       setPaying(false);
+    }
+  }
+
+  async function saveEmailAndContinue(value) {
+    const trimmed = value.trim();
+    if (!trimmed) { setEmailError('請輸入 Email'); return; }
+    setSavingEmail(true);
+    setEmailError('');
+    try {
+      await updateMyProfile(trimmed);
+      setMyEmail(trimmed);
+      setShowEmailPrompt(false);
+      handlePay(paySkipConfirmRef.current);
+    } catch (e) {
+      setEmailError(e.message);
+    } finally {
+      setSavingEmail(false);
     }
   }
 
@@ -238,7 +300,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
     if (selectedCoupon) {
       return effectivePrice === 0
         ? `折扣券全額折抵（原 $${r.totalPrice}）`
-        : `${actionText}（$${r.totalPrice} - $${selectedCoupon.discountAmount} = $${effectivePrice}）`;
+        : `${actionText}（$${r.totalPrice} - $${couponDiscountValue(selectedCoupon, r.totalPrice)} = $${effectivePrice}）`;
     }
     return `${actionText}（$${r.totalPrice}）`;
   }
@@ -351,8 +413,8 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
                 style={{ accentColor: '#1976d2', width: '16px', height: '16px' }}
               />
               <div>
-                <div style={{ fontSize: '13px', fontWeight: '600', color: '#222' }}>{c.taskTitle || '折扣券'}</div>
-                <div style={{ fontSize: '12px', color: '#1976d2', fontWeight: '700' }}>折抵 ${c.discountAmount}</div>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: '#222' }}>{c.taskTitle || '讀享招待'}</div>
+                <div style={{ fontSize: '12px', color: '#1976d2', fontWeight: '700' }}>{couponLabel(c)}</div>
               </div>
             </label>
           ))}
@@ -471,6 +533,16 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
           onCancel={() => setConfirmModal(null)}
         />
       )}
+
+      {/* First-time payment email prompt */}
+      {showEmailPrompt && (
+        <EmailPromptModal
+          saving={savingEmail}
+          error={emailError}
+          onConfirm={saveEmailAndContinue}
+          onCancel={() => { setShowEmailPrompt(false); setEmailError(''); }}
+        />
+      )}
     </div>
   );
 }
@@ -566,6 +638,35 @@ function HistoryTab({ list, loading }) {
 
 // ── Sub-tab: 個人資料 ──────────────────────────────────────────────────────────
 function PersonalInfoTab({ user }) {
+  const [email, setEmail]       = useState('');
+  const [editing, setEditing]   = useState(false);
+  const [draft, setDraft]       = useState('');
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState('');
+  const [loaded, setLoaded]     = useState(false);
+
+  useEffect(() => {
+    fetchMyProfile()
+      .then(data => setEmail(data.email || ''))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  async function handleSave() {
+    const trimmed = draft.trim();
+    setSaving(true);
+    setError('');
+    try {
+      await updateMyProfile(trimmed);
+      setEmail(trimmed);
+      setEditing(false);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div style={{ padding: '24px 16px', overflowY: 'auto', flex: 1 }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '28px' }}>
@@ -582,6 +683,36 @@ function PersonalInfoTab({ user }) {
       <div style={{ background: '#fff', borderRadius: '12px', padding: '16px', boxShadow: '0 1px 6px rgba(0,0,0,0.08)' }}>
         <InfoRow label="LINE 名稱" value={user?.displayName || '—'} />
         <InfoRow label="LINE User ID" value={user?.userId || '—'} />
+      </div>
+
+      <div style={{ background: '#fff', borderRadius: '12px', padding: '16px', boxShadow: '0 1px 6px rgba(0,0,0,0.08)', marginTop: '12px' }}>
+        <div style={{ fontSize: '13px', fontWeight: '700', color: '#333', marginBottom: '4px' }}>付款信箱</div>
+        <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '10px' }}>付款時會自動帶入藍新金流頁面，不用重複輸入</div>
+        {editing ? (
+          <>
+            <input
+              type="email" value={draft} onChange={e => setDraft(e.target.value)}
+              placeholder="your@email.com" autoFocus
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #ddd', fontSize: '15px', marginBottom: '8px' }}
+            />
+            {error && <div style={{ color: '#e53935', fontSize: '12px', marginBottom: '8px' }}>{error}</div>}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => { setEditing(false); setError(''); }} style={{ flex: 1, padding: '9px', border: '1px solid #ddd', borderRadius: '8px', background: '#fff', fontSize: '14px', cursor: 'pointer', color: '#444' }}>取消</button>
+              <button onClick={handleSave} disabled={saving} style={{ flex: 1, padding: '9px', border: 'none', borderRadius: '8px', background: '#111', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: saving ? 'not-allowed' : 'pointer' }}>
+                {saving ? '儲存中...' : '儲存'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '14px', color: email ? '#222' : '#bbb' }}>
+              {loaded ? (email || '尚未設定') : '載入中...'}
+            </span>
+            <button onClick={() => { setDraft(email); setEditing(true); }} style={{ padding: '5px 14px', borderRadius: '6px', border: '1px solid #d0d9e6', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#444', fontWeight: '500' }}>
+              {email ? '編輯' : '新增'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -655,7 +786,7 @@ function HourBalanceTab() {
   );
 }
 
-const SUB_TABS = ['當前預約', '任務', '時數', '預約紀錄', '個人資料'];
+const SUB_TABS = ['當前預約', '任務/折扣', '時數', '預約紀錄', '個人資料'];
 
 export default function ProfilePage({ user }) {
   const [subTab, setSubTab] = useState(0);

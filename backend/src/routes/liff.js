@@ -12,14 +12,17 @@ const TaskSubmission = require('../models/TaskSubmission');
 const Coupon = require('../models/Coupon');
 const DurationPlan = require('../models/DurationPlan');
 const StaffToken   = require('../models/StaffToken');
+const CustomerSetting = require('../models/CustomerSetting');
 const { getAvailableSlots, checkSlotAvailability } = require('../services/strategy2Service');
+const { getActiveClosure } = require('../services/closureDayService');
 const { createOrderParams: _ecpayCreateOrder }   = require('../services/ecpayService');
 const { createOrderParams: _newebpayCreateOrder } = require('../services/newebpayService');
 // Switch gateway via env: PAYMENT_GATEWAY=ecpay to fall back to ECPay (default: newebpay)
-const createOrderParams = (reservation) =>
+// email（選填）：僅 NewebPay 支援帶入預先填好付款人信箱，ECPay 端會忽略多餘的參數
+const createOrderParams = (reservation, email) =>
   (process.env.PAYMENT_GATEWAY || 'newebpay').toLowerCase() === 'ecpay'
     ? _ecpayCreateOrder(reservation)
-    : _newebpayCreateOrder(reservation);
+    : _newebpayCreateOrder(reservation, email);
 const { pushMessage } = require('../services/lineService');
 const {
   timeToMinutes,
@@ -121,6 +124,15 @@ async function getSlotAvailability(venueId, maxCapacity, dateStr) {
   const slotKeys = ['morning', 'afternoon', 'evening'];
   const result = {};
 
+  // 全站公休：三個時段一律回傳已封鎖 + 原因，略過後續查詢
+  const closure = await getActiveClosure(dateStr);
+  if (closure) {
+    for (const slot of slotKeys) {
+      result[slot] = { remaining: 0, total: maxCapacity, blocked: true, closureReason: closure.reason };
+    }
+    return result;
+  }
+
   // Check for active blocked slots on this date
   const blocks = await BlockedSlot.find({
     venueId, isActive: true,
@@ -186,6 +198,36 @@ router.post('/auth', async (req, res) => {
   }
 });
 
+// ── GET /api/liff/profile ──────────────────────────────────────────────────────
+// 目前只有 email（付款信箱，記住後自動帶入藍新金流付款頁的信箱欄位）
+router.get('/profile', liffAuth, async (req, res) => {
+  try {
+    const cs = await CustomerSetting.findOne({ lineUserId: req.liffUser.lineUserId }).lean();
+    res.json({ email: cs?.email || '' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PATCH /api/liff/profile ────────────────────────────────────────────────────
+router.patch('/profile', liffAuth, async (req, res) => {
+  try {
+    const { email } = req.body;
+    const trimmed = (email || '').trim();
+    if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return res.status(400).json({ error: 'Email 格式不正確' });
+    }
+    await CustomerSetting.findOneAndUpdate(
+      { lineUserId: req.liffUser.lineUserId },
+      { email: trimmed },
+      { upsert: true }
+    );
+    res.json({ email: trimmed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /api/liff/venues ───────────────────────────────────────────────────────
 // Returns active venues with 5-day slot availability (today + next 4 days)
 router.get('/venues', async (req, res) => {
@@ -214,6 +256,13 @@ router.get('/venues/:id', async (req, res) => {
   try {
     const venue = await Venue.findById(req.params.id).lean();
     if (!venue || !venue.isActive) return res.status(404).json({ error: 'Venue not found' });
+
+    // 平台維護模式：非白名單使用者只回傳場地名稱，前端顯示維護畫面
+    const lineUserId = req.query.lineUserId || '';
+    if (venue.maintenanceMode && !(venue.maintenanceBypassUserIds || []).includes(lineUserId)) {
+      return res.json({ _id: venue._id, name: venue.name, maintenanceMode: true });
+    }
+
     const plans = await VenuePlan.find({ venueId: req.params.id, isActive: true }).sort({ order: 1 }).lean();
     const now = new Date();
     const announcements = await Announcement.find({
@@ -274,6 +323,7 @@ router.get('/venues/:id/short-session-quote', async (req, res) => {
     res.json({
       available,
       remaining: slotAvail.remaining,
+      closureReason: slotAvail.closureReason || null,
       currentSlot,
       checkInMinute,
       tiers: tiers.map(t => ({
@@ -305,6 +355,9 @@ router.get('/venues/:id/strategy2-slots', async (req, res) => {
     if (!date) return res.status(400).json({ error: 'date 為必填' });
     // durationMinutes=0 means all-day; must handle 0 explicitly (falsy)
     const dur = durationMinutes !== undefined ? parseInt(durationMinutes, 10) : 90;
+
+    const closure = await getActiveClosure(date);
+    if (closure) return res.json({ slots: [], closed: true, reason: closure.reason });
 
     const slots = await getAvailableSlots(
       venue._id, date,
@@ -404,6 +457,10 @@ router.post('/reservations', liffAuth, async (req, res) => {
 
     const lineUserId = req.liffUser.lineUserId;
 
+    // 平台維護模式（伺服器端強制檢查，非僅前端阻擋）
+    if (venue.maintenanceMode && !(venue.maintenanceBypassUserIds || []).includes(lineUserId))
+      return res.status(409).json({ error: '平台維護中，暫停預約，請稍後再試' });
+
     // ── 未付款鎖定 ──────────────────────────────────────────────────────────
     const hasUnpaidExit = await Reservation.findOne({ lineUserId, unpaidExit: true });
     if (hasUnpaidExit)
@@ -422,10 +479,9 @@ router.post('/reservations', liffAuth, async (req, res) => {
       const sTime = new Date(startTime);
       const eTime = new Date(endTime);
 
-      // 容量檢查
-      const avail = await checkSlotAvailability(venueId, sTime, eTime, venue.maxCapacityPerSlot);
-      if (!avail.available)
-        return res.status(409).json({ error: '此時段座位已滿，請選擇其他時間' });
+      // 全站公休（伺服器端強制檢查，非僅前端阻擋）
+      const closureS2 = await getActiveClosure(sTime.toISOString().slice(0, 10));
+      if (closureS2) return res.status(409).json({ error: `公休：${closureS2.reason}` });
 
       // 重複預約防呆：同用戶同場地時間重疊
       const dupS2 = await Reservation.findOne({
@@ -435,6 +491,12 @@ router.post('/reservations', liffAuth, async (req, res) => {
         endTime:   { $gt: sTime }
       });
       if (dupS2) return res.status(409).json({ error: '您在此時段已有預約，請勿重複預約' });
+
+      // 容量檢查：刻意放在最後、緊接著寫入預約之前，縮小「查詢」跟「寫入」中間的空窗，
+      // 降低兩人同時搶最後名額時都通過檢查、導致超收的機率（非 100% 杜絕，但改動單純）
+      const avail = await checkSlotAvailability(venueId, sTime, eTime, venue.maxCapacityPerSlot);
+      if (!avail.available)
+        return res.status(409).json({ error: '此時段座位已滿，請選擇其他時間' });
 
       // 入場時間範圍：提前 15 分鐘到延後 30 分鐘
       const checkIn15Min = new Date(sTime.getTime() - 15 * 60 * 1000);
@@ -472,6 +534,11 @@ router.post('/reservations', liffAuth, async (req, res) => {
       return res.status(400).json({ error: 'venueId, date, slots required' });
 
     const dateStr = typeof date === 'string' ? date : new Date(date).toISOString().slice(0, 10);
+
+    // 全站公休（伺服器端強制檢查，非僅前端阻擋）
+    const closureS1 = await getActiveClosure(dateStr);
+    if (closureS1) return res.status(409).json({ error: `公休：${closureS1.reason}` });
+
     const avail   = await getSlotAvailability(venueId, venue.maxCapacityPerSlot, dateStr);
 
     const isShortSession = mode === 'walkin_short';
@@ -664,10 +731,17 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
     let coupon = null;
     if (couponId) {
       coupon = await Coupon.findOne({ _id: couponId, lineUserId: req.liffUser.lineUserId, status: 'valid' });
+      if (coupon && coupon.expiresAt && coupon.expiresAt < new Date()) {
+        coupon.status = 'expired';
+        await coupon.save();
+        coupon = null;
+      }
       if (coupon) {
-        effectivePrice = Math.max(0, r.totalPrice - coupon.discountAmount);
+        effectivePrice = coupon.discountType === 'percent'
+          ? Math.round(r.totalPrice * (1 - coupon.discountPercent / 100))
+          : Math.max(0, r.totalPrice - coupon.discountAmount);
         r.appliedCouponId = coupon._id;
-        r.discountAmount = coupon.discountAmount;
+        r.discountAmount = r.totalPrice - effectivePrice; // 統一存實際折抵金額，不論券的類型
         await r.save();
 
         if (effectivePrice === 0) {
@@ -689,7 +763,8 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
     const reservationForPayment = effectivePrice !== r.totalPrice
       ? { ...r.toObject(), totalPrice: effectivePrice }
       : r;
-    const { params, apiUrl, tradeNo } = createOrderParams(reservationForPayment);
+    const customerSetting = await CustomerSetting.findOne({ lineUserId: req.liffUser.lineUserId }).lean();
+    const { params, apiUrl, tradeNo } = createOrderParams(reservationForPayment, customerSetting?.email);
     r.paymentRef = tradeNo;
     await r.save();
 
@@ -918,8 +993,10 @@ router.post('/tasks/:id/submit', liffAuth, async (req, res) => {
 // ── GET /api/liff/coupons ─────────────────────────────────────────────────────
 router.get('/coupons', liffAuth, async (req, res) => {
   try {
-    const coupons = await Coupon.find({ lineUserId: req.liffUser.lineUserId, status: 'valid' })
-      .sort({ createdAt: -1 }).lean();
+    const coupons = await Coupon.find({
+      lineUserId: req.liffUser.lineUserId, status: 'valid',
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }]
+    }).sort({ createdAt: -1 }).lean();
     res.json(coupons);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -931,10 +1008,10 @@ const HourPackage  = require('../models/HourPackage');
 const HourPurchase = require('../models/HourPurchase');
 const { createHourOrderParams: _ecpayHourOrder }   = require('../services/ecpayService');
 const { createHourOrderParams: _newebpayHourOrder } = require('../services/newebpayService');
-const createHourOrderParams = (purchase) =>
+const createHourOrderParams = (purchase, email) =>
   (process.env.PAYMENT_GATEWAY || 'newebpay').toLowerCase() === 'ecpay'
     ? _ecpayHourOrder(purchase)
-    : _newebpayHourOrder(purchase);
+    : _newebpayHourOrder(purchase, email);
 
 router.get('/hour-packages', async (req, res) => {
   try {
@@ -973,7 +1050,8 @@ router.post('/hour-purchases', liffAuth, async (req, res) => {
       expiresAt,
     });
 
-    const { params, apiUrl, tradeNo } = createHourOrderParams(purchase);
+    const customerSetting = await CustomerSetting.findOne({ lineUserId: req.liffUser.lineUserId }).lean();
+    const { params, apiUrl, tradeNo } = createHourOrderParams(purchase, customerSetting?.email);
     purchase.paymentRef = tradeNo;
     await purchase.save();
 
