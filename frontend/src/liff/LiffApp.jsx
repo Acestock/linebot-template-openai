@@ -174,6 +174,7 @@ export default function LiffApp() {
       {page.name === 'detail' && (
         <VenueDetailPage
           venueId={page.params.venueId}
+          user={user}
           onReserve={(venue) => navigate('reserve', { venue, mode: 'advance' })}
           onWalkIn={(venue)  => navigate('reserve', { venue, mode: venue.shortSession?.enabled ? 'walkin_short' : 'walkin' })}
         />

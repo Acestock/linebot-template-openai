@@ -256,6 +256,13 @@ router.get('/venues/:id', async (req, res) => {
   try {
     const venue = await Venue.findById(req.params.id).lean();
     if (!venue || !venue.isActive) return res.status(404).json({ error: 'Venue not found' });
+
+    // 平台維護模式：非白名單使用者只回傳場地名稱，前端顯示維護畫面
+    const lineUserId = req.query.lineUserId || '';
+    if (venue.maintenanceMode && !(venue.maintenanceBypassUserIds || []).includes(lineUserId)) {
+      return res.json({ _id: venue._id, name: venue.name, maintenanceMode: true });
+    }
+
     const plans = await VenuePlan.find({ venueId: req.params.id, isActive: true }).sort({ order: 1 }).lean();
     const now = new Date();
     const announcements = await Announcement.find({
@@ -449,6 +456,10 @@ router.post('/reservations', liffAuth, async (req, res) => {
     if (!venue || !venue.isActive) return res.status(404).json({ error: 'Venue not found' });
 
     const lineUserId = req.liffUser.lineUserId;
+
+    // 平台維護模式（伺服器端強制檢查，非僅前端阻擋）
+    if (venue.maintenanceMode && !(venue.maintenanceBypassUserIds || []).includes(lineUserId))
+      return res.status(409).json({ error: '平台維護中，暫停預約，請稍後再試' });
 
     // ── 未付款鎖定 ──────────────────────────────────────────────────────────
     const hasUnpaidExit = await Reservation.findOne({ lineUserId, unpaidExit: true });

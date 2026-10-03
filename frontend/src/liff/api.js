@@ -28,8 +28,9 @@ export async function fetchVenues() {
   return r.json();
 }
 
-export async function fetchVenue(id) {
-  const r = await fetch(`${BASE}/venues/${id}`);
+export async function fetchVenue(id, lineUserId) {
+  const qs = lineUserId ? `?lineUserId=${encodeURIComponent(lineUserId)}` : '';
+  const r = await fetch(`${BASE}/venues/${id}${qs}`);
   if (!r.ok) throw new Error('Failed to load venue');
   return r.json();
 }

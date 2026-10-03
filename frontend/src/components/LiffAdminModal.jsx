@@ -251,13 +251,14 @@ function VenueTab() {
   const [venues, setVenues]   = useState([]);
   const [form, setForm]       = useState(null);
   const [saving, setSaving]   = useState(false);
+  const [bypassText, setBypassText] = useState('');
 
   const load = useCallback(() => {
     authFetch(`${API_BASE}/api/venues`).then(r => r.json()).then(setVenues).catch(() => {});
   }, []);
   useEffect(load, [load]);
 
-  const emptyForm = { name: '', address: '', transportInfo: '', imageUrl: '', imageUrls: [], businessHours: '', facilities: '', rules: '', howToUse: '', color: '#2196F3', maxCapacityPerSlot: 10, isActive: true, strategy: 1, s2OpenHour: 7, s2CloseHour: 22, shortSession: { enabled: false, minHourPrice: 40, ratio1h: 0.25, ratio2h: 0.60, ratio3h: 0.80, maxCapacityBlock: 2 } };
+  const emptyForm = { name: '', address: '', transportInfo: '', imageUrl: '', imageUrls: [], businessHours: '', facilities: '', rules: '', howToUse: '', color: '#2196F3', maxCapacityPerSlot: 10, isActive: true, strategy: 1, s2OpenHour: 7, s2CloseHour: 22, shortSession: { enabled: false, minHourPrice: 40, ratio1h: 0.25, ratio2h: 0.60, ratio3h: 0.80, maxCapacityBlock: 2 }, maintenanceMode: false, maintenanceBypassUserIds: [] };
 
   async function save() {
     if (!form.name) return alert('請輸入場地名稱');
@@ -265,7 +266,8 @@ function VenueTab() {
     try {
       const method = form._id ? 'PATCH' : 'POST';
       const url = form._id ? `${API_BASE}/api/venues/${form._id}` : `${API_BASE}/api/venues`;
-      await authFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      const maintenanceBypassUserIds = bypassText.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+      await authFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, maintenanceBypassUserIds }) });
       setForm(null); load();
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
@@ -285,7 +287,7 @@ function VenueTab() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-        <button onClick={() => setForm(emptyForm)} style={btn('#111')}>＋ 新增場地</button>
+        <button onClick={() => { setForm(emptyForm); setBypassText(''); }} style={btn('#111')}>＋ 新增場地</button>
       </div>
 
       {venues.length === 0 && <div style={{ color: '#aaa', textAlign: 'center', padding: '24px' }}>尚無場地，點右上角新增</div>}
@@ -294,12 +296,17 @@ function VenueTab() {
         <div key={v._id} style={{ border: '1px solid #eee', borderRadius: '10px', padding: '12px 14px', marginBottom: '8px', borderLeft: `4px solid ${v.color}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <div style={{ fontWeight: '600', fontSize: '14px' }}>{v.name}</div>
+              <div style={{ fontWeight: '600', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {v.name}
+                {v.maintenanceMode && (
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#c62828', background: '#ffebee', borderRadius: '4px', padding: '2px 6px' }}>維護中</span>
+                )}
+              </div>
               <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{v.address || '（未設地址）'} · 每時段上限 {v.maxCapacityPerSlot} 人</div>
             </div>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <button onClick={() => toggleActive(v)} style={btn(v.isActive ? '#e8f5e9' : '#fce4ec', v.isActive ? '#2e7d32' : '#c62828')}>{v.isActive ? '啟用' : '停用'}</button>
-              <button onClick={() => setForm({ ...v })} style={btn('#f5f5f5', '#333')}>編輯</button>
+              <button onClick={() => { setForm({ ...v }); setBypassText((v.maintenanceBypassUserIds || []).join('\n')); }} style={btn('#f5f5f5', '#333')}>編輯</button>
               <button onClick={() => del(v._id)} style={btn('#ffebee', '#c62828')}>刪除</button>
             </div>
           </div>
@@ -420,6 +427,27 @@ function VenueTab() {
                     </Field>
                   </div>
                 </>
+              )}
+            </div>
+
+            {/* Maintenance mode */}
+            <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ fontWeight: '600', fontSize: '13px', color: '#555', marginBottom: '10px' }}>平台維護模式</div>
+              <Field label="">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!form.maintenanceMode} onChange={e => setForm(f => ({ ...f, maintenanceMode: e.target.checked }))} />
+                  關閉預約平台（使用者點入後會看到「平台維護中」，無法預約）
+                </label>
+              </Field>
+              {form.maintenanceMode && (
+                <Field label="白名單 LINE User ID（維護中仍可正常使用，一行一個或逗號分隔）">
+                  <textarea
+                    style={textareaStyle} rows={3}
+                    value={bypassText}
+                    onChange={e => setBypassText(e.target.value)}
+                    placeholder={'U1234567890abcdef...\nU0987654321fedcba...'}
+                  />
+                </Field>
               )}
             </div>
 
