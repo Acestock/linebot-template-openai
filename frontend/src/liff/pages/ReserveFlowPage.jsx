@@ -198,20 +198,20 @@ function WalkInShortFlow({ venue: initialVenue, onBack, onDone }) {
 }
 
 // Thin router — no hooks here, so conditional return is safe
-export default function ReserveFlowPage({ venue, mode, onBack, onDone }) {
+export default function ReserveFlowPage({ venue, mode, initialDate, onBack, onDone }) {
   if (mode === 'walkin_short') {
     return <WalkInShortFlow venue={venue} onBack={onBack} onDone={onDone} />;
   }
   if (venue?.strategy === 2) {
-    return <Strategy2Flow venue={venue} onBack={onBack} onDone={onDone} />;
+    return <Strategy2Flow venue={venue} initialDate={initialDate} onBack={onBack} onDone={onDone} />;
   }
-  return <RegularReserveFlow venue={venue} mode={mode} onBack={onBack} onDone={onDone} />;
+  return <RegularReserveFlow venue={venue} mode={mode} initialDate={initialDate} onBack={onBack} onDone={onDone} />;
 }
 
 // ── 策略二：自由時段制預約流程 ─────────────────────────────────────────────────
-function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
+function Strategy2Flow({ venue: initialVenue, initialDate, onBack, onDone }) {
   const [step,          setStep]          = useState(0);  // 0=日期 1=時長 2=時段 3=確認
-  const [date,          setDate]          = useState(toDateStr(new Date()));
+  const [date,          setDate]          = useState(initialDate || toDateStr(new Date()));
   const [plans,         setPlans]         = useState([]);
   const [selPlan,       setSelPlan]       = useState(null);
   const [slots,         setSlots]         = useState([]);
@@ -224,7 +224,7 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
   const venue = initialVenue;
 
   const today = toDateStr(new Date());
-  const maxDate = toDateStr(new Date(Date.now() + 6 * 24 * 60 * 60 * 1000));
+  const maxDate = toDateStr(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
 
   // Load duration plans
   useEffect(() => {
@@ -464,13 +464,13 @@ function toEarlyTime(isoStr, offsetMin) {
   return `${h}:${m}`;
 }
 
-function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
+function RegularReserveFlow({ venue: initialVenue, mode, initialDate, onBack, onDone }) {
   const isWalkIn = mode === 'walkin';
   const totalSteps = isWalkIn ? 2 : 3;
 
   const [step, setStep]         = useState(0);
   const [venue, setVenue]       = useState(initialVenue);
-  const [date, setDate]         = useState(toDateStr(new Date()));
+  const [date, setDate]         = useState(isWalkIn ? toDateStr(new Date()) : (initialDate || toDateStr(new Date())));
   const [selectedSlots, setSelectedSlots] = useState(isWalkIn ? [getCurrentSlot()] : []);
   const [selectedPlan, setSelectedPlan]   = useState(null);
   const [avail, setAvail]       = useState(null);
@@ -511,7 +511,7 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
     ? plans.filter(p => p.isActive !== false && p.slots?.includes(currentSlotKey))
     : [];
   const today = toDateStr(new Date());
-  const maxDate = toDateStr(new Date(Date.now() + 6 * 24 * 60 * 60 * 1000));
+  const maxDate = toDateStr(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
 
   function toggleSlot(key) {
     setSelectedSlots(prev =>

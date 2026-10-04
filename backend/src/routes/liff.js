@@ -234,7 +234,7 @@ router.get('/venues', async (req, res) => {
   try {
     const venues = await Venue.find({ isActive: true }).sort({ order: 1, createdAt: 1 }).lean();
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const days = Array.from({ length: 5 }, (_, i) =>
+    const days = Array.from({ length: 8 }, (_, i) =>
       new Date(today.getTime() + i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     );
 

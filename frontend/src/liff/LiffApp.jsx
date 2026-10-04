@@ -163,7 +163,7 @@ export default function LiffApp() {
       {/* Page content */}
       {page.name === 'list' && (
         <VenueListPage
-          onSelect={(venueId) => navigate('detail', { venueId })}
+          onSelect={(venueId, date) => navigate('detail', { venueId, date })}
           onMyBookings={() => navigate('my')}
           onHourPackage={() => navigate('hour-package')}
         />
@@ -175,14 +175,15 @@ export default function LiffApp() {
         <VenueDetailPage
           venueId={page.params.venueId}
           user={user}
-          onReserve={(venue) => navigate('reserve', { venue, mode: 'advance' })}
-          onWalkIn={(venue)  => navigate('reserve', { venue, mode: venue.shortSession?.enabled ? 'walkin_short' : 'walkin' })}
+          onReserve={(venue) => navigate('reserve', { venue, mode: 'advance', date: page.params.date })}
+          onWalkIn={(venue)  => navigate('reserve', { venue, mode: venue.shortSession?.enabled ? 'walkin_short' : 'walkin', date: page.params.date })}
         />
       )}
       {page.name === 'reserve' && (
         <ReserveFlowPage
           venue={page.params.venue}
           mode={page.params.mode}
+          initialDate={page.params.date}
           onBack={handleBack}
           onDone={() => navigate('profile')}
         />

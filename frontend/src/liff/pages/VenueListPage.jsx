@@ -117,7 +117,7 @@ export default function VenueListPage({ onSelect, onHourPackage }) {
   const [loading, setLoading] = useState(true);
   const tabBarRef = useRef(null);
 
-  const days = getDays(5);
+  const days = getDays(8);
 
   useEffect(() => {
     fetchVenues().then(setVenues).catch(() => {}).finally(() => setLoading(false));
@@ -150,7 +150,7 @@ export default function VenueListPage({ onSelect, onHourPackage }) {
       ) : venues.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: '#aaa' }}>目前沒有可預約的場地</div>
       ) : venues.map(v => (
-        <VenueCard key={v._id} venue={v} dateKey={days[tab].key} onClick={() => onSelect(v._id)} />
+        <VenueCard key={v._id} venue={v} dateKey={days[tab].key} onClick={() => onSelect(v._id, days[tab].key)} />
       ))}
       {!loading && onHourPackage && <HourPackageCard onClick={onHourPackage} />}
 
