@@ -10,6 +10,7 @@ const BlockedSlot = require('../models/BlockedSlot');
 const Task = require('../models/Task');
 const TaskSubmission = require('../models/TaskSubmission');
 const Coupon = require('../models/Coupon');
+const DiscountCode = require('../models/DiscountCode');
 const DurationPlan = require('../models/DurationPlan');
 const StaffToken   = require('../models/StaffToken');
 const CustomerSetting = require('../models/CustomerSetting');
@@ -34,6 +35,24 @@ const {
 } = require('../services/shortSessionService');
 
 const router = express.Router();
+
+// ── 折扣碼：驗證是否可用（啟用中、在效期內、未達使用上限） ───────────────────────
+async function checkDiscountCode(codeRaw) {
+  const code = (codeRaw || '').trim().toUpperCase();
+  if (!code) return null;
+  const now = new Date();
+  const dc = await DiscountCode.findOne({ code, isActive: true });
+  if (!dc) return null;
+  if (dc.startAt && dc.startAt > now) return null;
+  if (dc.endAt && dc.endAt < now) return null;
+  if (dc.maxUses > 0 && dc.usedCount >= dc.maxUses) return null;
+  return dc;
+}
+function discountCodeValue(dc, totalPrice) {
+  return dc.discountType === 'percent'
+    ? totalPrice - Math.round(totalPrice * (1 - dc.discountPercent / 100))
+    : Math.min(dc.discountAmount, totalPrice);
+}
 
 // ── LIFF Session store (in-memory, 30min TTL) ─────────────────────────────────
 const liffSessions = new Map(); // token → { lineUserId, displayName, pictureUrl, expiresAt }
@@ -681,6 +700,25 @@ router.get('/reservations/:id/short-session-price', liffAuth, async (req, res) =
   }
 });
 
+// ── POST /api/liff/reservations/:id/discount-code/validate ────────────────────
+// 試算折扣碼可折抵金額，不消耗使用次數（真正扣用量在付款成功的 webhook）
+router.post('/reservations/:id/discount-code/validate', liffAuth, async (req, res) => {
+  try {
+    const r = await Reservation.findById(req.params.id).lean();
+    if (!r) return res.status(404).json({ error: 'Not found' });
+    if (r.lineUserId !== req.liffUser.lineUserId)
+      return res.status(403).json({ error: 'Forbidden' });
+
+    const dc = await checkDiscountCode(req.body.code);
+    if (!dc) return res.status(404).json({ error: '折扣碼無效、已過期或已達使用上限' });
+
+    const discount = discountCodeValue(dc, r.totalPrice);
+    res.json({ valid: true, code: dc.code, discountAmount: discount, effectivePrice: Math.max(0, r.totalPrice - discount) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/liff/reservations/:id/payment ───────────────────────────────────
 // Initiate payment (NewebPay by default; set PAYMENT_GATEWAY=ecpay to use ECPay)
 // Returns { form: { action, fields } } for the client to POST via hidden form
@@ -725,8 +763,8 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
       return res.json({ skip: true });
     }
 
-    // Apply coupon if provided
-    const { couponId } = req.body;
+    // Apply coupon or discount code if provided（互斥，coupon 優先）
+    const { couponId, discountCode } = req.body;
     let effectivePrice = r.totalPrice;
     let coupon = null;
     if (couponId) {
@@ -756,6 +794,25 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
           await r.save();
           return res.json({ skip: true });
         }
+      }
+    } else if (discountCode) {
+      const dc = await checkDiscountCode(discountCode);
+      if (!dc) return res.status(409).json({ error: '折扣碼無效、已過期或已達使用上限' });
+
+      const discount = discountCodeValue(dc, r.totalPrice);
+      effectivePrice = Math.max(0, r.totalPrice - discount);
+      r.appliedDiscountCode = dc.code;
+      r.discountAmount = discount;
+      await r.save();
+
+      if (effectivePrice === 0) {
+        // Full discount — no gateway roundtrip, so count usage right away
+        await DiscountCode.updateOne({ _id: dc._id }, { $inc: { usedCount: 1 } });
+        r.paymentStatus = 'paid';
+        r.status = 'completed';
+        r.unpaidExit = false;
+        await r.save();
+        return res.json({ skip: true });
       }
     }
 

@@ -1840,4 +1840,67 @@ router.delete('/hour-packages/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── Discount Codes（公開折扣碼，結帳時用戶自行輸入） ───────────────────────────
+const DiscountCode = require('../models/DiscountCode');
+
+router.get('/discount-codes', async (req, res) => {
+  try {
+    const codes = await DiscountCode.find().sort({ createdAt: -1 });
+    res.json(codes);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/discount-codes', async (req, res) => {
+  try {
+    const { code, discountType, discountAmount, discountPercent, maxUses, startAt, endAt, isActive, note } = req.body;
+    if (!code || !code.trim()) return res.status(400).json({ error: '請輸入折扣碼' });
+
+    const type = discountType === 'percent' ? 'percent' : 'amount';
+    if (type === 'amount' && !(Number(discountAmount) > 0)) {
+      return res.status(400).json({ error: '折抵金額需大於 0' });
+    }
+    if (type === 'percent' && !(Number(discountPercent) > 0 && Number(discountPercent) < 100)) {
+      return res.status(400).json({ error: '折扣百分比需介於 1～99' });
+    }
+
+    const dc = await DiscountCode.create({
+      code: code.trim(),
+      discountType: type,
+      discountAmount: type === 'amount' ? Number(discountAmount) : 0,
+      discountPercent: type === 'percent' ? Number(discountPercent) : 0,
+      maxUses: Number(maxUses) || 0,
+      startAt: startAt ? new Date(startAt) : null,
+      endAt: endAt ? new Date(endAt) : null,
+      isActive: isActive !== false,
+      note: note || ''
+    });
+    res.json(dc);
+  } catch (err) {
+    if (err.code === 11000) return res.status(400).json({ error: '此折扣碼已存在' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/discount-codes/:id', async (req, res) => {
+  try {
+    const body = { ...req.body };
+    if (body.code) body.code = body.code.trim();
+    if ('startAt' in body) body.startAt = body.startAt ? new Date(body.startAt) : null;
+    if ('endAt' in body) body.endAt = body.endAt ? new Date(body.endAt) : null;
+    const dc = await DiscountCode.findByIdAndUpdate(req.params.id, body, { new: true });
+    if (!dc) return res.status(404).json({ error: 'Not found' });
+    res.json(dc);
+  } catch (err) {
+    if (err.code === 11000) return res.status(400).json({ error: '此折扣碼已存在' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/discount-codes/:id', async (req, res) => {
+  try {
+    await DiscountCode.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
-import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitPaymentForm, fetchMyCoupons, fetchShortSessionPrice, fetchMyHourPurchases, payWithHours, fetchMyProfile, updateMyProfile } from '../api';
+import { fetchMyReservations as _fetchMyReservations, cancelReservation, fetchReservationQr, checkoutReservation, initiatePayment, submitPaymentForm, fetchMyCoupons, fetchShortSessionPrice, fetchMyHourPurchases, payWithHours, fetchMyProfile, updateMyProfile, validateDiscountCode } from '../api';
 import TasksTab from './TasksTab';
 
 const STATUS_MAP = {
@@ -108,6 +108,10 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const [localPayStatus, setLocalPayStatus] = useState(r.paymentStatus || 'unpaid');
   const [coupons, setCoupons]                   = useState([]);
   const [selectedCoupon, setSelectedCoupon]     = useState(null);
+  const [codeInput, setCodeInput]               = useState('');
+  const [appliedCode, setAppliedCode]           = useState(null); // { code, discountAmount, effectivePrice }
+  const [codeError, setCodeError]               = useState('');
+  const [applyingCode, setApplyingCode]         = useState(false);
   const [shortQuote, setShortQuote]             = useState(null);
   const [shortQuoteLoading, setShortQuoteLoading] = useState(false);
   const [showShortConfirm, setShowShortConfirm] = useState(false);
@@ -158,7 +162,31 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
 
   const effectivePrice = selectedCoupon
     ? Math.max(0, r.totalPrice - couponDiscountValue(selectedCoupon, r.totalPrice))
+    : appliedCode
+    ? appliedCode.effectivePrice
     : r.totalPrice;
+
+  async function handleApplyCode() {
+    if (!codeInput.trim()) return;
+    setApplyingCode(true);
+    setCodeError('');
+    try {
+      const data = await validateDiscountCode(r._id, codeInput.trim());
+      setAppliedCode(data);
+      setSelectedCoupon(null);
+    } catch (e) {
+      setAppliedCode(null);
+      setCodeError(e.message);
+    } finally {
+      setApplyingCode(false);
+    }
+  }
+
+  function clearAppliedCode() {
+    setAppliedCode(null);
+    setCodeInput('');
+    setCodeError('');
+  }
 
   async function handleShowQr() {
     setQrLoading(true);
@@ -209,6 +237,8 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
     if (!skipConfirm) {
       const payLabel = selectedCoupon
         ? `使用折扣券折抵 $${couponDiscountValue(selectedCoupon, r.totalPrice)}，實付 $${effectivePrice}，確認前往付款？`
+        : appliedCode
+        ? `使用折扣碼折抵 $${appliedCode.discountAmount}，實付 $${effectivePrice}，確認前往付款？`
         : '確認前往付款？\n將跳轉至藍新金流付款頁面。';
       setConfirmModal({
         message: payLabel,
@@ -218,7 +248,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
     }
     setPaying(true);
     try {
-      const data = await initiatePayment(r._id, selectedCoupon?._id);
+      const data = await initiatePayment(r._id, selectedCoupon?._id, appliedCode?.code);
       if (data.skip) {
         setLocalStatus('completed');
         setLocalPayStatus('paid');
@@ -301,6 +331,11 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
       return effectivePrice === 0
         ? `折扣券全額折抵（原 $${r.totalPrice}）`
         : `${actionText}（$${r.totalPrice} - $${couponDiscountValue(selectedCoupon, r.totalPrice)} = $${effectivePrice}）`;
+    }
+    if (appliedCode) {
+      return effectivePrice === 0
+        ? `折扣碼全額折抵（原 $${r.totalPrice}）`
+        : `${actionText}（$${r.totalPrice} - $${appliedCode.discountAmount} = $${effectivePrice}）`;
     }
     return `${actionText}（$${r.totalPrice}）`;
   }
@@ -409,7 +444,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
                 type="radio"
                 name="coupon"
                 checked={selectedCoupon?._id === c._id}
-                onChange={() => setSelectedCoupon(c)}
+                onChange={() => { setSelectedCoupon(c); clearAppliedCode(); }}
                 style={{ accentColor: '#1976d2', width: '16px', height: '16px' }}
               />
               <div>
@@ -423,6 +458,42 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
               style={{ marginTop: '8px', fontSize: '12px', color: '#888', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
               取消選擇
             </button>
+          )}
+        </div>
+      )}
+
+      {/* Discount code input — shown when payment is needed */}
+      {needsPayment && (
+        <div style={{ background: '#fff', borderRadius: '12px', padding: '14px 16px', boxShadow: '0 1px 6px rgba(0,0,0,0.08)', marginTop: '12px' }}>
+          <div style={{ fontSize: '14px', fontWeight: '700', color: '#333', marginBottom: '10px' }}>輸入折扣碼（可選）</div>
+          {appliedCode ? (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: '#222' }}>{appliedCode.code}</div>
+                <div style={{ fontSize: '12px', color: '#1976d2', fontWeight: '700' }}>折抵 ${appliedCode.discountAmount}</div>
+              </div>
+              <button type="button" onClick={clearAppliedCode}
+                style={{ fontSize: '12px', color: '#888', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                取消
+              </button>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  value={codeInput}
+                  onChange={e => { setCodeInput(e.target.value); setCodeError(''); }}
+                  disabled={!!selectedCoupon}
+                  placeholder={selectedCoupon ? '已選擇折扣券，不可同時使用' : '輸入折扣碼'}
+                  style={{ flex: 1, padding: '10px 12px', border: '1.5px solid #ddd', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box' }}
+                />
+                <button type="button" onClick={handleApplyCode} disabled={applyingCode || !codeInput.trim() || !!selectedCoupon}
+                  style={{ padding: '10px 18px', border: 'none', borderRadius: '8px', background: '#111', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: 'pointer', opacity: (applyingCode || !codeInput.trim() || !!selectedCoupon) ? 0.5 : 1 }}>
+                  {applyingCode ? '驗證中...' : '套用'}
+                </button>
+              </div>
+              {codeError && <div style={{ color: '#c62828', fontSize: '12px', marginTop: '8px' }}>{codeError}</div>}
+            </>
           )}
         </div>
       )}

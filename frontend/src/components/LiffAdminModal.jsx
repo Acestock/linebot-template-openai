@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import QRCode from 'qrcode';
 import API_BASE, { authFetch } from '../config';
 
-const TABS = ['場地管理', '時段方案', '公告管理', '預約列表', '系統設定', '任務管理', '營業分析', '預購時數'];
+const TABS = ['場地管理', '時段方案', '公告管理', '預約列表', '系統設定', '任務管理', '營業分析', '預購時數', '折扣碼'];
 const SLOT_OPTIONS = [
   { key: 'morning',   label: '早上 (07–12)' },
   { key: 'afternoon', label: '下午 (12–18)' },
@@ -1210,6 +1210,166 @@ function HourPackagesTab() {
   );
 }
 
+// ── Tab 8: 折扣碼管理 ─────────────────────────────────────────────────────────
+const emptyDCode = { code: '', discountType: 'amount', discountAmount: '', discountPercent: '', maxUses: 0, startAt: '', endAt: '', isActive: true, note: '' };
+
+function toDateInputValue(d) {
+  if (!d) return '';
+  return new Date(d).toISOString().slice(0, 10);
+}
+
+function DiscountCodeTab() {
+  const [codes, setCodes]       = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [form, setForm]         = useState(emptyDCode);
+  const [editing, setEditing]   = useState(null);
+  const [saving, setSaving]     = useState(false);
+
+  function reload() {
+    authFetch(`${API_BASE}/api/discount-codes`)
+      .then(r => r.json())
+      .then(data => setCodes(Array.isArray(data) ? data : []))
+      .catch(() => setCodes([]))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { reload(); }, []);
+
+  function handleEdit(dc) {
+    setEditing(dc._id);
+    setForm({
+      code: dc.code,
+      discountType: dc.discountType,
+      discountAmount: dc.discountAmount || '',
+      discountPercent: dc.discountPercent || '',
+      maxUses: dc.maxUses || 0,
+      startAt: toDateInputValue(dc.startAt),
+      endAt: toDateInputValue(dc.endAt),
+      isActive: dc.isActive,
+      note: dc.note || ''
+    });
+  }
+
+  function handleCancel() { setEditing(null); setForm(emptyDCode); }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    if (!form.code.trim()) return alert('請輸入折扣碼');
+    setSaving(true);
+    const body = {
+      ...form,
+      code: form.code.trim(),
+      discountAmount: Number(form.discountAmount) || 0,
+      discountPercent: Number(form.discountPercent) || 0,
+      maxUses: Number(form.maxUses) || 0,
+      startAt: form.startAt || null,
+      endAt: form.endAt || null
+    };
+    try {
+      if (editing) {
+        await authFetch(`${API_BASE}/api/discount-codes/${editing}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      } else {
+        await authFetch(`${API_BASE}/api/discount-codes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      }
+      handleCancel();
+      reload();
+    } catch (err) { alert('儲存失敗'); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('確定要刪除此折扣碼？')) return;
+    await authFetch(`${API_BASE}/api/discount-codes/${id}`, { method: 'DELETE' });
+    reload();
+  }
+
+  async function toggleActive(dc) {
+    await authFetch(`${API_BASE}/api/discount-codes/${dc._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: !dc.isActive }) });
+    reload();
+  }
+
+  const inp = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px', marginBottom: '10px' };
+
+  return (
+    <div>
+      <h3 style={{ fontWeight: '700', marginBottom: '16px', fontSize: '15px' }}>折扣碼管理</h3>
+      <form onSubmit={handleSave} style={{ background: '#f9f9f9', borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
+        <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '14px', color: '#444' }}>{editing ? '編輯折扣碼' : '新增折扣碼'}</div>
+        <input placeholder="折扣碼，例：WELCOME100" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} style={inp} required />
+
+        <div style={{ display: 'flex', gap: '16px', marginBottom: '10px' }}>
+          {[{ v: 'amount', label: '固定金額' }, { v: 'percent', label: '百分比折扣' }].map(o => (
+            <label key={o.v} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+              <input type="radio" name="dcType" checked={form.discountType === o.v} onChange={() => setForm(f => ({ ...f, discountType: o.v }))} />
+              {o.label}
+            </label>
+          ))}
+        </div>
+        {form.discountType === 'amount' ? (
+          <input type="number" min="1" placeholder="折抵金額（$）" value={form.discountAmount} onChange={e => setForm(f => ({ ...f, discountAmount: e.target.value }))} style={inp} required />
+        ) : (
+          <input type="number" min="1" max="99" placeholder="折扣百分比（例：10 = 打 9 折）" value={form.discountPercent} onChange={e => setForm(f => ({ ...f, discountPercent: e.target.value }))} style={inp} required />
+        )}
+
+        <input type="number" min="0" placeholder="使用次數上限（0 = 不限）" value={form.maxUses} onChange={e => setForm(f => ({ ...f, maxUses: e.target.value }))} style={inp} />
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>生效日（留空＝不限）</div>
+            <input type="date" value={form.startAt} onChange={e => setForm(f => ({ ...f, startAt: e.target.value }))} style={{ ...inp, marginBottom: 0 }} />
+          </div>
+          <div>
+            <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>截止日（留空＝不限）</div>
+            <input type="date" value={form.endAt} onChange={e => setForm(f => ({ ...f, endAt: e.target.value }))} style={{ ...inp, marginBottom: 0 }} />
+          </div>
+        </div>
+
+        <input placeholder="備註（選填，僅後台顯示）" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={{ ...inp, marginTop: '10px' }} />
+
+        <label style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+          <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} />
+          啟用
+        </label>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button type="submit" disabled={saving} style={{ background: '#111', color: '#fff', border: 'none', borderRadius: '8px', padding: '9px 20px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
+            {saving ? '儲存中...' : editing ? '更新折扣碼' : '新增折扣碼'}
+          </button>
+          {editing && <button type="button" onClick={handleCancel} style={{ background: '#fff', color: '#555', border: '1px solid #ddd', borderRadius: '8px', padding: '9px 16px', fontSize: '14px', cursor: 'pointer' }}>取消</button>}
+        </div>
+      </form>
+
+      {loading ? <div style={{ color: '#aaa', textAlign: 'center', padding: '20px' }}>載入中...</div>
+        : codes.length === 0 ? <div style={{ color: '#aaa', textAlign: 'center', padding: '20px' }}>尚無折扣碼</div>
+        : codes.map(dc => (
+          <div key={dc._id} style={{ background: '#fff', border: '1px solid #eee', borderRadius: '10px', padding: '14px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '4px', letterSpacing: '0.5px' }}>
+                {dc.code}
+                {!dc.isActive && <span style={{ marginLeft: '6px', fontSize: '11px', color: '#aaa', background: '#f5f5f5', padding: '1px 6px', borderRadius: '4px' }}>已停用</span>}
+              </div>
+              <div style={{ fontSize: '13px', color: '#666' }}>
+                {dc.discountType === 'percent' ? `${dc.discountPercent}% 折扣` : `折抵 $${dc.discountAmount}`}
+                　已用 {dc.usedCount} / {dc.maxUses > 0 ? dc.maxUses : '不限'}
+              </div>
+              {(dc.startAt || dc.endAt) && (
+                <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>
+                  期限：{dc.startAt ? toDateInputValue(dc.startAt) : '不限'} ～ {dc.endAt ? toDateInputValue(dc.endAt) : '不限'}
+                </div>
+              )}
+              {dc.note && <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>{dc.note}</div>}
+            </div>
+            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+              <button onClick={() => toggleActive(dc)} style={{ background: dc.isActive ? '#e8f5e9' : '#fce4ec', color: dc.isActive ? '#2e7d32' : '#c62828', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}>{dc.isActive ? '啟用中' : '已停用'}</button>
+              <button onClick={() => handleEdit(dc)} style={{ background: '#f0f0f0', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}>編輯</button>
+              <button onClick={() => handleDelete(dc._id)} style={{ background: '#ffebee', color: '#c62828', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}>刪除</button>
+            </div>
+          </div>
+        ))}
+    </div>
+  );
+}
+
 // ── Tab 7: 營業額分析 ─────────────────────────────────────────────────────────
 const PERIOD_OPTIONS = [
   { key: 'week',  label: '本週' },
@@ -1930,6 +2090,7 @@ export default function LiffAdminModal({ onClose }) {
           {tab === 5 && <TasksAdminTab />}
           {tab === 6 && <AnalyticsTab />}
           {tab === 7 && <HourPackagesTab />}
+          {tab === 8 && <DiscountCodeTab />}
         </div>
       </div>
     </div>

@@ -103,14 +103,25 @@ export async function checkoutReservation(id) {
   return json;
 }
 
-export async function initiatePayment(id, couponId) {
+export async function initiatePayment(id, couponId, discountCode) {
   const r = await fetch(`${BASE}/reservations/${id}/payment`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ couponId: couponId || undefined })
+    body: JSON.stringify({ couponId: couponId || undefined, discountCode: discountCode || undefined })
   });
   const json = await r.json();
   if (!r.ok) throw new Error(json.error || '付款啟動失敗');
+  return json;
+}
+
+export async function validateDiscountCode(reservationId, code) {
+  const r = await fetch(`${BASE}/reservations/${reservationId}/discount-code/validate`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ code })
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '折扣碼無效');
   return json;
 }
 
