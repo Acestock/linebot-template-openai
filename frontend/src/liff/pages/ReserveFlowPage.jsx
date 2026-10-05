@@ -302,7 +302,7 @@ function Strategy2Flow({ venue: initialVenue, initialDate, onBack, onDone }) {
             min={today}
             max={maxDate}
             value={date}
-            onChange={e => setDate(e.target.value)}
+            onChange={e => setDate(e.target.value < today ? today : e.target.value > maxDate ? maxDate : e.target.value)}
             style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: '10px', border: '1.5px solid #e0e0e0', fontSize: '16px' }}
           />
           <button onClick={() => setStep(1)} disabled={!date} style={{ ...nextBtnStyle, marginTop: '20px', opacity: date ? 1 : 0.4 }}>
@@ -681,7 +681,7 @@ function RegularReserveFlow({ venue: initialVenue, mode, initialDate, onBack, on
           <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '14px' }}>選擇入場日期</div>
           <input
             type="date" value={date} min={today} max={maxDate}
-            onChange={e => setDate(e.target.value)}
+            onChange={e => setDate(e.target.value < today ? today : e.target.value > maxDate ? maxDate : e.target.value)}
             style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: '10px', border: '1.5px solid #ddd', fontSize: '16px' }}
           />
           {closureReason && (

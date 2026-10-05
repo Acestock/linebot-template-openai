@@ -54,6 +54,16 @@ function discountCodeValue(dc, totalPrice) {
     : Math.min(dc.discountAmount, totalPrice);
 }
 
+// ── 預約開放範圍：最多可預約到「今天起 8 天內」（與場地列表的日期分頁範圍一致） ───
+function maxBookingDateStr() {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const max = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+  return max.toISOString().slice(0, 10);
+}
+function isBeyondBookingWindow(dateStr) {
+  return dateStr > maxBookingDateStr();
+}
+
 // ── LIFF Session store (in-memory, 30min TTL) ─────────────────────────────────
 const liffSessions = new Map(); // token → { lineUserId, displayName, pictureUrl, expiresAt }
 
@@ -498,6 +508,10 @@ router.post('/reservations', liffAuth, async (req, res) => {
       const sTime = new Date(startTime);
       const eTime = new Date(endTime);
 
+      // 預約開放範圍（伺服器端強制檢查，非僅前端阻擋）
+      if (isBeyondBookingWindow(sTime.toISOString().slice(0, 10)))
+        return res.status(409).json({ error: '僅開放 8 天內的預約' });
+
       // 全站公休（伺服器端強制檢查，非僅前端阻擋）
       const closureS2 = await getActiveClosure(sTime.toISOString().slice(0, 10));
       if (closureS2) return res.status(409).json({ error: `公休：${closureS2.reason}` });
@@ -553,6 +567,10 @@ router.post('/reservations', liffAuth, async (req, res) => {
       return res.status(400).json({ error: 'venueId, date, slots required' });
 
     const dateStr = typeof date === 'string' ? date : new Date(date).toISOString().slice(0, 10);
+
+    // 預約開放範圍（伺服器端強制檢查，非僅前端阻擋）
+    if (isBeyondBookingWindow(dateStr))
+      return res.status(409).json({ error: '僅開放 8 天內的預約' });
 
     // 全站公休（伺服器端強制檢查，非僅前端阻擋）
     const closureS1 = await getActiveClosure(dateStr);
