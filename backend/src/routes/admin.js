@@ -1312,6 +1312,29 @@ router.get('/reservations', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/reservations/day?date=YYYY-MM-DD&venue=<可選>
+// 回傳當天所有預約的起訖時間資料，供後台「甘特圖」檢視用。獨立於上面的 /reservations
+// 列表 API（不分頁、不套用列表的篩選狀態），不影響既有列表功能。
+router.get('/reservations/day', async (req, res) => {
+  try {
+    const dateStr  = req.query.date || new Date().toISOString().slice(0, 10);
+    const dayStart = new Date(dateStr + 'T00:00:00+08:00');
+    const dayEnd   = new Date(dateStr + 'T23:59:59.999+08:00');
+
+    const filter = {
+      status: { $in: ['confirmed', 'checked_in', 'completed'] },
+      $or: [
+        { date: { $gte: dayStart, $lte: dayEnd } },
+        { startTime: { $gte: dayStart, $lte: dayEnd } }
+      ]
+    };
+    if (req.query.venue) filter.venueId = req.query.venue;
+
+    const items = await Reservation.find(filter).sort({ venueName: 1 }).lean();
+    res.json({ date: dateStr, items });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.patch('/reservations/:id', async (req, res) => {
   try {
     const item = await Reservation.findByIdAndUpdate(req.params.id, req.body, { new: true });

@@ -794,6 +794,7 @@ function ReservationsTab() {
   const [total, setTotal]               = useState(0);
   const [updating, setUpdating]         = useState(null);
   const [expandedId, setExpandedId]     = useState(null);
+  const [viewMode, setViewMode]         = useState('list'); // 'list' | 'gantt' — 新增的甘特圖檢視，不影響原本列表
 
   useEffect(() => {
     authFetch(`${API_BASE}/api/venues`).then(r => r.json()).then(d => setVenues(Array.isArray(d) ? d : [])).catch(() => {});
@@ -850,6 +851,15 @@ function ReservationsTab() {
 
   return (
     <div>
+      {/* View toggle — 新增的甘特圖檢視，預設仍是原本列表 */}
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+        <button type="button" onClick={() => setViewMode('list')} style={btn(viewMode === 'list' ? '#111' : '#f0f0f0', viewMode === 'list' ? '#fff' : '#555')}>列表</button>
+        <button type="button" onClick={() => setViewMode('gantt')} style={btn(viewMode === 'gantt' ? '#111' : '#f0f0f0', viewMode === 'gantt' ? '#fff' : '#555')}>甘特圖</button>
+      </div>
+
+      {viewMode === 'gantt' && <ReservationGanttView venues={venues} />}
+
+      {viewMode === 'list' && <>
       {/* Filters */}
       <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
         <input
@@ -960,6 +970,189 @@ function ReservationsTab() {
             style={{ padding: '5px 14px', border: '1px solid #ddd', borderRadius: '6px', background: '#fff', cursor: page >= totalPages ? 'default' : 'pointer', color: page >= totalPages ? '#ccc' : '#333' }}>
             下一頁 ›
           </button>
+        </div>
+      )}
+      </>}
+    </div>
+  );
+}
+
+// ── 預約甘特圖（新增，獨立於上面的列表） ──────────────────────────────────────
+function assignLanes(items) {
+  const sorted = [...items].sort((a, b) => a.start - b.start);
+  const laneEnds = []; // laneEnds[i] = 該軌道目前最後一筆的結束時間
+  const withLanes = [];
+  for (const it of sorted) {
+    let lane = laneEnds.findIndex(end => end <= it.start);
+    if (lane === -1) { lane = laneEnds.length; laneEnds.push(it.end); }
+    else laneEnds[lane] = it.end;
+    withLanes.push({ ...it, lane });
+  }
+  return { items: withLanes, laneCount: laneEnds.length };
+}
+
+function computePeakOverlap(items) {
+  if (items.length < 2) return null;
+  const events = [];
+  items.forEach(it => {
+    events.push({ t: it.start.getTime(), d: 1 });
+    events.push({ t: it.end.getTime(), d: -1 });
+  });
+  events.sort((a, b) => a.t - b.t || a.d - b.d); // 結束(-1) 排在同一時間的開始(+1) 之前，相接不算重疊
+  let count = 0, best = { count: 0, start: null, end: null };
+  for (let i = 0; i < events.length; i++) {
+    count += events[i].d;
+    if (count > best.count) {
+      best = { count, start: events[i].t, end: events[i + 1] ? events[i + 1].t : events[i].t };
+    }
+  }
+  return best.count > 1 ? best : null;
+}
+
+function fmtHM(d) {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function ReservationGanttView({ venues }) {
+  const [date, setDate]           = useState(() => new Date().toISOString().slice(0, 10));
+  const [venueId, setVenueId]     = useState('');
+  const [raw, setRaw]             = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [selected, setSelected]   = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams({ date });
+    if (venueId) params.set('venue', venueId);
+    authFetch(`${API_BASE}/api/reservations/day?${params}`)
+      .then(r => r.json())
+      .then(data => setRaw(Array.isArray(data.items) ? data.items : []))
+      .catch(() => setRaw([]))
+      .finally(() => setLoading(false));
+  }, [date, venueId]);
+
+  // 將每筆預約轉成 { start, end, ... } — 策略二用 startTime/endTime，策略一用 expectedCheckIn/expectedCheckOut
+  // （沒有預計離場時間的計時入場，暫以入場後 2 小時估算，僅供圖上顯示長度用）
+  const bars = raw.map(r => {
+    const start = new Date(r.strategy === 2 ? r.startTime : (r.expectedCheckIn || r.date));
+    const end   = new Date(
+      r.strategy === 2 ? r.endTime
+        : r.expectedCheckOut || new Date(start.getTime() + 2 * 60 * 60 * 1000)
+    );
+    return { ...r, start, end };
+  }).filter(b => !isNaN(b.start) && !isNaN(b.end) && b.end > b.start);
+
+  // 依場地分組，各自做軌道排列，避免不同場地互相擠壓
+  const groups = {};
+  bars.forEach(b => {
+    const key = b.venueId || b.venueName || '未知場地';
+    (groups[key] = groups[key] || { venueName: b.venueName || '未知場地', items: [] }).items.push(b);
+  });
+  const laidOutGroups = Object.values(groups).map(g => ({ ...g, ...assignLanes(g.items) }));
+
+  const peak = computePeakOverlap(bars);
+
+  // X 軸時間範圍：依資料自動縮放，前後留 30 分鐘緩衝，無資料時給預設範圍
+  let minT = bars.length ? Math.min(...bars.map(b => b.start.getTime())) : null;
+  let maxT = bars.length ? Math.max(...bars.map(b => b.end.getTime())) : null;
+  if (minT === null) {
+    const base = new Date(date + 'T00:00:00+08:00').getTime();
+    minT = base + 8 * 60 * 60 * 1000;
+    maxT = base + 22 * 60 * 60 * 1000;
+  } else {
+    minT -= 30 * 60 * 1000;
+    maxT += 30 * 60 * 1000;
+  }
+  const totalMs = Math.max(maxT - minT, 60 * 60 * 1000);
+
+  const LANE_H = 26, LANE_GAP = 4, ROW_LABEL_W = 84, CHART_W = 640;
+  const hourMarks = [];
+  for (let t = Math.ceil(minT / 3600000) * 3600000; t <= maxT; t += 3600000) hourMarks.push(t);
+
+  function xOf(t) { return ROW_LABEL_W + ((t - minT) / totalMs) * (CHART_W - ROW_LABEL_W); }
+
+  let curY = 20;
+  const groupBlocks = laidOutGroups.map(g => {
+    const h = g.laneCount * (LANE_H + LANE_GAP);
+    const block = { ...g, y: curY, h };
+    curY += h + 18;
+    return block;
+  });
+  const svgH = Math.max(curY, 80);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap' }}>
+        <input type="date" value={date} onChange={e => { setDate(e.target.value); setSelected(null); }} style={{ ...inputStyle, flex: '1', minWidth: '140px' }} />
+        <select value={venueId} onChange={e => { setVenueId(e.target.value); setSelected(null); }} style={{ ...inputStyle, flex: '1', minWidth: '110px' }}>
+          <option value="">所有場地</option>
+          {venues.map(v => <option key={v._id} value={v._id}>{v.name}</option>)}
+        </select>
+      </div>
+
+      {peak && (
+        <div style={{ background: '#fff3e0', color: '#e65100', borderRadius: '8px', padding: '8px 12px', fontSize: '13px', fontWeight: '600', marginBottom: '10px' }}>
+          🔥 最密集重疊時段：{fmtHM(new Date(peak.start))}–{fmtHM(new Date(peak.end))}，同時 {peak.count} 筆預約
+        </div>
+      )}
+
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
+        {Object.entries(STATUS_LABELS).filter(([k]) => k !== 'cancelled').map(([k, label]) => (
+          <div key={k} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#666' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: STATUS_COLORS[k], display: 'inline-block' }} />
+            {label}
+          </div>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{ color: '#aaa', textAlign: 'center', padding: '30px' }}>載入中...</div>
+      ) : bars.length === 0 ? (
+        <div style={{ color: '#aaa', textAlign: 'center', padding: '30px' }}>這天沒有預約紀錄</div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <svg viewBox={`0 0 ${CHART_W} ${svgH}`} width="100%" height={svgH} style={{ display: 'block', minWidth: '480px' }}>
+            {/* Hour gridlines */}
+            {hourMarks.map(t => (
+              <g key={t}>
+                <line x1={xOf(t)} y1={0} x2={xOf(t)} y2={svgH} stroke="#eee" strokeWidth="1" />
+                <text x={xOf(t)} y={12} fontSize="9" fill="#999" textAnchor="middle">
+                  {fmtHM(new Date(t))}
+                </text>
+              </g>
+            ))}
+
+            {groupBlocks.map(g => (
+              <g key={g.venueName}>
+                <text x={0} y={g.y + 14} fontSize="11" fontWeight="700" fill="#555">{g.venueName}</text>
+                {g.items.map(it => {
+                  const x  = xOf(it.start.getTime());
+                  const x2 = xOf(it.end.getTime());
+                  const y  = g.y + it.lane * (LANE_H + LANE_GAP);
+                  const isSel = selected && selected._id === it._id;
+                  return (
+                    <rect
+                      key={it._id}
+                      x={x} y={y} width={Math.max(x2 - x, 3)} height={LANE_H}
+                      rx="4" fill={STATUS_COLORS[it.status] || '#999'}
+                      opacity={isSel ? 1 : 0.85}
+                      stroke={isSel ? '#111' : 'none'} strokeWidth={isSel ? 2 : 0}
+                      onClick={() => setSelected(it)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  );
+                })}
+              </g>
+            ))}
+          </svg>
+        </div>
+      )}
+
+      {selected && (
+        <div style={{ background: '#fafafa', border: '1px solid #eee', borderRadius: '10px', padding: '12px 14px', marginTop: '10px', fontSize: '13px' }}>
+          <div style={{ fontWeight: '700', marginBottom: '4px' }}>{selected.displayName || selected.lineUserId}</div>
+          <div style={{ color: '#666' }}>{selected.venueName} · {fmtHM(selected.start)}–{fmtHM(selected.end)} · {STATUS_LABELS[selected.status]}</div>
         </div>
       )}
     </div>
