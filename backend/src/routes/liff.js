@@ -191,6 +191,83 @@ async function getSlotAvailability(venueId, maxCapacity, dateStr) {
   return result;
 }
 
+// ── Helper: 策略二場地列表用的粗略可用性（早上/下午/晚上），以「最短時長方案」判斷 ──
+// 策略二預約不會寫入 slots 欄位，不能沿用 getSlotAvailability 的查詢方式，
+// 否則列表會永遠顯示有位（見場地列表全額滿卻顯示綠色的 bug）。
+const S2_BUCKET_HOURS = { morning: [8, 12], afternoon: [12, 18], evening: [18, 24] };
+
+async function getStrategy2SlotAvailability(venue, dateStr) {
+  const maxCapacity = venue.maxCapacityPerSlot;
+  const openHour  = venue.s2OpenHour  ?? 7;
+  const closeHour = venue.s2CloseHour ?? 22;
+  const slotKeys = ['morning', 'afternoon', 'evening'];
+  const result = {};
+
+  // 全站公休：沿用既有判斷
+  const closure = await getActiveClosure(dateStr);
+  if (closure) {
+    for (const slot of slotKeys) result[slot] = { remaining: 0, total: maxCapacity, blocked: true, closureReason: closure.reason };
+    return result;
+  }
+
+  const plans = await DurationPlan.find({ venueId: venue._id, isActive: true }).lean();
+  const positiveDurations = plans.filter(p => p.durationMinutes > 0).map(p => p.durationMinutes);
+  const shortestMinutes = positiveDurations.length
+    ? Math.min(...positiveDurations)
+    : Math.max(30, (closeHour - openHour) * 60); // 只有「整天」方案時，以整天長度當最短單位
+
+  const TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const midnightUTC = Date.UTC(y, m - 1, d) - TZ_OFFSET_MS;
+  const openUTC  = midnightUTC + openHour  * 60 * 60 * 1000;
+  const closeUTC = midnightUTC + closeHour * 60 * 60 * 1000;
+
+  if (openUTC >= closeUTC) {
+    for (const slot of slotKeys) result[slot] = { remaining: 0, total: maxCapacity };
+    return result;
+  }
+
+  // 一次查出當天所有策略二預約，後續在 JS 裡計算每 30 分鐘區塊的剩餘量
+  const dayReservations = await Reservation.find({
+    venueId: venue._id, strategy: 2,
+    status: { $in: ['confirmed', 'checked_in'] },
+    startTime: { $lt: new Date(closeUTC) },
+    endTime:   { $gt: new Date(openUTC) }
+  }).select('startTime endTime').lean();
+
+  const blockMs = 30 * 60 * 1000;
+  const blockStarts = [];
+  for (let t = openUTC; t < closeUTC; t += blockMs) blockStarts.push(t);
+  const blockRemaining = blockStarts.map(bs => {
+    const be = bs + blockMs;
+    const count = dayReservations.filter(r => r.startTime.getTime() < be && r.endTime.getTime() > bs).length;
+    return Math.max(0, maxCapacity - count);
+  });
+
+  const blocksNeeded = Math.max(1, Math.ceil(shortestMinutes / 30));
+  const now = Date.now();
+
+  for (const slot of slotKeys) {
+    const [bh0, bh1] = S2_BUCKET_HOURS[slot];
+    const bucketStartUTC = Math.max(openUTC, midnightUTC + bh0 * 60 * 60 * 1000);
+    const bucketEndUTC   = Math.min(closeUTC, midnightUTC + bh1 * 60 * 60 * 1000);
+
+    let maxRemaining = 0;
+    for (let i = 0; i < blockStarts.length; i++) {
+      const bs = blockStarts[i];
+      if (bs < bucketStartUTC || bs >= bucketEndUTC) continue;
+      if (bs < now) continue; // 已過去的起始時間不算可預約
+      const windowEnd = bs + blocksNeeded * blockMs;
+      if (windowEnd > closeUTC) continue; // 最短時長從這裡開始會超過閉館時間
+      let windowMin = maxCapacity;
+      for (let k = 0; k < blocksNeeded; k++) windowMin = Math.min(windowMin, blockRemaining[i + k] ?? 0);
+      if (windowMin > maxRemaining) maxRemaining = windowMin;
+    }
+    result[slot] = { remaining: maxRemaining, total: maxCapacity };
+  }
+  return result;
+}
+
 // ── GET /api/liff/config ───────────────────────────────────────────────────────
 // 公開端點：LIFF 初始化時取得系統設定（不需 auth）
 router.get('/config', async (req, res) => {
@@ -269,7 +346,9 @@ router.get('/venues', async (req, res) => {
 
     const result = await Promise.all(venues.map(async (v) => {
       const availByDay = await Promise.all(
-        days.map(d => getSlotAvailability(v._id, v.maxCapacityPerSlot, d))
+        days.map(d => v.strategy === 2
+          ? getStrategy2SlotAvailability(v, d)
+          : getSlotAvailability(v._id, v.maxCapacityPerSlot, d))
       );
       const availability = Object.fromEntries(days.map((d, i) => [d, availByDay[i]]));
       return { ...v, availability };
