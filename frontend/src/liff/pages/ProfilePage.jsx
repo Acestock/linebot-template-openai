@@ -377,9 +377,9 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
       {/* Post-payment exit countdown banner */}
       {isPaidPendingExit && (
         <div style={{ background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: '12px', padding: '14px 16px', textAlign: 'center', marginBottom: '12px' }}>
-          <div style={{ fontWeight: '700', fontSize: '15px', color: '#2e7d32', marginBottom: '4px' }}>✅ 結帳完成！請掃碼出場</div>
+          <div style={{ fontWeight: '700', fontSize: '15px', color: '#2e7d32', marginBottom: '4px' }}>✅ 結帳完成，可以直接離場</div>
           <div style={{ fontSize: '13px', color: '#388e3c', lineHeight: '1.6' }}>
-            請出示下方 QR 給工作人員，慢慢收拾後再離場。<br />
+            出場不需要再掃 QR，請慢慢收拾後離場。<br />
             <span style={{ fontWeight: '600' }}>{countdown}</span> 後自動歸檔為「已完成」
           </div>
         </div>
