@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import QRCode from 'qrcode';
 import API_BASE, { authFetch } from '../config';
 
-const TABS = ['場地管理', '時段方案', '公告管理', '預約列表', '系統設定', '任務管理', '營業分析', '預購時數'];
+const TABS = ['場地管理', '時段方案', '公告管理', '預約列表', '系統設定', '任務管理', '營業分析', '預購時數', '折扣碼'];
 const SLOT_OPTIONS = [
   { key: 'morning',   label: '早上 (07–12)' },
   { key: 'afternoon', label: '下午 (12–18)' },
@@ -160,18 +160,105 @@ function BlockedSlotsSection({ venues }) {
   );
 }
 
+// ── Closure Days section (全站公休日管理) ───────────────────────────────────
+function ClosureDaysSection() {
+  const [days, setDays]           = useState([]);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate]     = useState('');
+  const [reason, setReason]       = useState('');
+  const [saving, setSaving]       = useState(false);
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const loadDays = useCallback(() => {
+    authFetch(`${API_BASE}/api/closure-days`).then(r => r.json())
+      .then(d => setDays(Array.isArray(d) ? d : [])).catch(() => {});
+  }, []);
+  useEffect(loadDays, [loadDays]);
+
+  async function handleAdd() {
+    if (!startDate || !reason) return alert('請至少填寫起始日期與原因');
+    if (endDate && endDate < startDate) return alert('結束日期不能早於起始日期');
+    setSaving(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/closure-days`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startDate, endDate: endDate || startDate, reason })
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || '新增失敗'); }
+      setStartDate(''); setEndDate(''); setReason('');
+      loadDays();
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('確定刪除此公休日？')) return;
+    await authFetch(`${API_BASE}/api/closure-days/${id}`, { method: 'DELETE' });
+    loadDays();
+  }
+
+  return (
+    <div style={{ marginTop: '24px', borderTop: '2px solid #f0f0f0', paddingTop: '20px' }}>
+      <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '4px', color: '#333' }}>公休日管理</div>
+      <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '14px' }}>設定後，該期間全站（所有場地、所有預約方式）皆無法預約，前台會顯示您填寫的原因</div>
+
+      <div style={{ background: '#f9f9f9', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ flex: 1 }}>
+            <Field label="起始日期">
+              <input type="date" style={inputStyle} value={startDate} min={today}
+                onChange={e => setStartDate(e.target.value)} />
+            </Field>
+          </div>
+          <div style={{ flex: 1 }}>
+            <Field label="結束日期（選填，單日可留空）">
+              <input type="date" style={inputStyle} value={endDate} min={startDate || today}
+                onChange={e => setEndDate(e.target.value)} />
+            </Field>
+          </div>
+        </div>
+        <Field label="公休原因（會顯示給用戶看）">
+          <input style={inputStyle} value={reason} onChange={e => setReason(e.target.value)} placeholder="例：內部消毒整理、颱風停止營業" />
+        </Field>
+        <button onClick={handleAdd} disabled={saving} style={{ ...btn('#111'), width: '100%', marginTop: '4px' }}>
+          {saving ? '新增中...' : '＋ 新增公休日'}
+        </button>
+      </div>
+
+      {days.length === 0
+        ? <div style={{ color: '#aaa', textAlign: 'center', padding: '16px' }}>尚無公休日設定</div>
+        : days.map(d => {
+          const dateStr = new Date(d.date).toLocaleDateString('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric', weekday: 'short' });
+          return (
+            <div key={d._id} style={{ border: '1px solid #eee', borderRadius: '10px', padding: '10px 14px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: '600', fontSize: '14px' }}>{dateStr}</div>
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{d.reason}</div>
+              </div>
+              <button onClick={() => handleDelete(d._id)} style={btn('#ffebee', '#c62828')}>刪除</button>
+            </div>
+          );
+        })
+      }
+    </div>
+  );
+}
+
 // ── Tab 1: 場地管理 ──────────────────────────────────────────────────────────
 function VenueTab() {
   const [venues, setVenues]   = useState([]);
   const [form, setForm]       = useState(null);
   const [saving, setSaving]   = useState(false);
+  const [bypassText, setBypassText] = useState('');
 
   const load = useCallback(() => {
     authFetch(`${API_BASE}/api/venues`).then(r => r.json()).then(setVenues).catch(() => {});
   }, []);
   useEffect(load, [load]);
 
-  const emptyForm = { name: '', address: '', transportInfo: '', imageUrl: '', imageUrls: [], businessHours: '', facilities: '', rules: '', howToUse: '', color: '#2196F3', maxCapacityPerSlot: 10, isActive: true, strategy: 1, s2OpenHour: 7, s2CloseHour: 22, shortSession: { enabled: false, minHourPrice: 40, ratio1h: 0.25, ratio2h: 0.60, ratio3h: 0.80, maxCapacityBlock: 2 } };
+  const emptyForm = { name: '', address: '', transportInfo: '', imageUrl: '', imageUrls: [], businessHours: '', facilities: '', rules: '', howToUse: '', color: '#2196F3', maxCapacityPerSlot: 10, isActive: true, strategy: 1, s2OpenHour: 7, s2CloseHour: 22, shortSession: { enabled: false, minHourPrice: 40, ratio1h: 0.25, ratio2h: 0.60, ratio3h: 0.80, maxCapacityBlock: 2 }, maintenanceMode: false, maintenanceBypassUserIds: [] };
 
   async function save() {
     if (!form.name) return alert('請輸入場地名稱');
@@ -179,7 +266,8 @@ function VenueTab() {
     try {
       const method = form._id ? 'PATCH' : 'POST';
       const url = form._id ? `${API_BASE}/api/venues/${form._id}` : `${API_BASE}/api/venues`;
-      await authFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      const maintenanceBypassUserIds = bypassText.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+      await authFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, maintenanceBypassUserIds }) });
       setForm(null); load();
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
@@ -199,7 +287,7 @@ function VenueTab() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-        <button onClick={() => setForm(emptyForm)} style={btn('#111')}>＋ 新增場地</button>
+        <button onClick={() => { setForm(emptyForm); setBypassText(''); }} style={btn('#111')}>＋ 新增場地</button>
       </div>
 
       {venues.length === 0 && <div style={{ color: '#aaa', textAlign: 'center', padding: '24px' }}>尚無場地，點右上角新增</div>}
@@ -208,12 +296,17 @@ function VenueTab() {
         <div key={v._id} style={{ border: '1px solid #eee', borderRadius: '10px', padding: '12px 14px', marginBottom: '8px', borderLeft: `4px solid ${v.color}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <div style={{ fontWeight: '600', fontSize: '14px' }}>{v.name}</div>
+              <div style={{ fontWeight: '600', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {v.name}
+                {v.maintenanceMode && (
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#c62828', background: '#ffebee', borderRadius: '4px', padding: '2px 6px' }}>維護中</span>
+                )}
+              </div>
               <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{v.address || '（未設地址）'} · 每時段上限 {v.maxCapacityPerSlot} 人</div>
             </div>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <button onClick={() => toggleActive(v)} style={btn(v.isActive ? '#e8f5e9' : '#fce4ec', v.isActive ? '#2e7d32' : '#c62828')}>{v.isActive ? '啟用' : '停用'}</button>
-              <button onClick={() => setForm({ ...v })} style={btn('#f5f5f5', '#333')}>編輯</button>
+              <button onClick={() => { setForm({ ...v }); setBypassText((v.maintenanceBypassUserIds || []).join('\n')); }} style={btn('#f5f5f5', '#333')}>編輯</button>
               <button onClick={() => del(v._id)} style={btn('#ffebee', '#c62828')}>刪除</button>
             </div>
           </div>
@@ -334,6 +427,27 @@ function VenueTab() {
                     </Field>
                   </div>
                 </>
+              )}
+            </div>
+
+            {/* Maintenance mode */}
+            <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ fontWeight: '600', fontSize: '13px', color: '#555', marginBottom: '10px' }}>平台維護模式</div>
+              <Field label="">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!form.maintenanceMode} onChange={e => setForm(f => ({ ...f, maintenanceMode: e.target.checked }))} />
+                  關閉預約平台（使用者點入後會看到「平台維護中」，無法預約）
+                </label>
+              </Field>
+              {form.maintenanceMode && (
+                <Field label="白名單 LINE User ID（維護中仍可正常使用，一行一個或逗號分隔）">
+                  <textarea
+                    style={textareaStyle} rows={3}
+                    value={bypassText}
+                    onChange={e => setBypassText(e.target.value)}
+                    placeholder={'U1234567890abcdef...\nU0987654321fedcba...'}
+                  />
+                </Field>
               )}
             </div>
 
@@ -680,6 +794,7 @@ function ReservationsTab() {
   const [total, setTotal]               = useState(0);
   const [updating, setUpdating]         = useState(null);
   const [expandedId, setExpandedId]     = useState(null);
+  const [viewMode, setViewMode]         = useState('list'); // 'list' | 'gantt' — 新增的甘特圖檢視，不影響原本列表
 
   useEffect(() => {
     authFetch(`${API_BASE}/api/venues`).then(r => r.json()).then(d => setVenues(Array.isArray(d) ? d : [])).catch(() => {});
@@ -736,6 +851,15 @@ function ReservationsTab() {
 
   return (
     <div>
+      {/* View toggle — 新增的甘特圖檢視，預設仍是原本列表 */}
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+        <button type="button" onClick={() => setViewMode('list')} style={btn(viewMode === 'list' ? '#111' : '#f0f0f0', viewMode === 'list' ? '#fff' : '#555')}>列表</button>
+        <button type="button" onClick={() => setViewMode('gantt')} style={btn(viewMode === 'gantt' ? '#111' : '#f0f0f0', viewMode === 'gantt' ? '#fff' : '#555')}>甘特圖</button>
+      </div>
+
+      {viewMode === 'gantt' && <ReservationGanttView venues={venues} />}
+
+      {viewMode === 'list' && <>
       {/* Filters */}
       <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
         <input
@@ -848,6 +972,189 @@ function ReservationsTab() {
           </button>
         </div>
       )}
+      </>}
+    </div>
+  );
+}
+
+// ── 預約甘特圖（新增，獨立於上面的列表） ──────────────────────────────────────
+function assignLanes(items) {
+  const sorted = [...items].sort((a, b) => a.start - b.start);
+  const laneEnds = []; // laneEnds[i] = 該軌道目前最後一筆的結束時間
+  const withLanes = [];
+  for (const it of sorted) {
+    let lane = laneEnds.findIndex(end => end <= it.start);
+    if (lane === -1) { lane = laneEnds.length; laneEnds.push(it.end); }
+    else laneEnds[lane] = it.end;
+    withLanes.push({ ...it, lane });
+  }
+  return { items: withLanes, laneCount: laneEnds.length };
+}
+
+function computePeakOverlap(items) {
+  if (items.length < 2) return null;
+  const events = [];
+  items.forEach(it => {
+    events.push({ t: it.start.getTime(), d: 1 });
+    events.push({ t: it.end.getTime(), d: -1 });
+  });
+  events.sort((a, b) => a.t - b.t || a.d - b.d); // 結束(-1) 排在同一時間的開始(+1) 之前，相接不算重疊
+  let count = 0, best = { count: 0, start: null, end: null };
+  for (let i = 0; i < events.length; i++) {
+    count += events[i].d;
+    if (count > best.count) {
+      best = { count, start: events[i].t, end: events[i + 1] ? events[i + 1].t : events[i].t };
+    }
+  }
+  return best.count > 1 ? best : null;
+}
+
+function fmtHM(d) {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function ReservationGanttView({ venues }) {
+  const [date, setDate]           = useState(() => new Date().toISOString().slice(0, 10));
+  const [venueId, setVenueId]     = useState('');
+  const [raw, setRaw]             = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [selected, setSelected]   = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams({ date });
+    if (venueId) params.set('venue', venueId);
+    authFetch(`${API_BASE}/api/reservations/day?${params}`)
+      .then(r => r.json())
+      .then(data => setRaw(Array.isArray(data.items) ? data.items : []))
+      .catch(() => setRaw([]))
+      .finally(() => setLoading(false));
+  }, [date, venueId]);
+
+  // 將每筆預約轉成 { start, end, ... } — 策略二用 startTime/endTime，策略一用 expectedCheckIn/expectedCheckOut
+  // （沒有預計離場時間的計時入場，暫以入場後 2 小時估算，僅供圖上顯示長度用）
+  const bars = raw.map(r => {
+    const start = new Date(r.strategy === 2 ? r.startTime : (r.expectedCheckIn || r.date));
+    const end   = new Date(
+      r.strategy === 2 ? r.endTime
+        : r.expectedCheckOut || new Date(start.getTime() + 2 * 60 * 60 * 1000)
+    );
+    return { ...r, start, end };
+  }).filter(b => !isNaN(b.start) && !isNaN(b.end) && b.end > b.start);
+
+  // 依場地分組，各自做軌道排列，避免不同場地互相擠壓
+  const groups = {};
+  bars.forEach(b => {
+    const key = b.venueId || b.venueName || '未知場地';
+    (groups[key] = groups[key] || { venueName: b.venueName || '未知場地', items: [] }).items.push(b);
+  });
+  const laidOutGroups = Object.values(groups).map(g => ({ ...g, ...assignLanes(g.items) }));
+
+  const peak = computePeakOverlap(bars);
+
+  // X 軸時間範圍：依資料自動縮放，前後留 30 分鐘緩衝，無資料時給預設範圍
+  let minT = bars.length ? Math.min(...bars.map(b => b.start.getTime())) : null;
+  let maxT = bars.length ? Math.max(...bars.map(b => b.end.getTime())) : null;
+  if (minT === null) {
+    const base = new Date(date + 'T00:00:00+08:00').getTime();
+    minT = base + 8 * 60 * 60 * 1000;
+    maxT = base + 22 * 60 * 60 * 1000;
+  } else {
+    minT -= 30 * 60 * 1000;
+    maxT += 30 * 60 * 1000;
+  }
+  const totalMs = Math.max(maxT - minT, 60 * 60 * 1000);
+
+  const LANE_H = 26, LANE_GAP = 4, ROW_LABEL_W = 84, CHART_W = 640;
+  const hourMarks = [];
+  for (let t = Math.ceil(minT / 3600000) * 3600000; t <= maxT; t += 3600000) hourMarks.push(t);
+
+  function xOf(t) { return ROW_LABEL_W + ((t - minT) / totalMs) * (CHART_W - ROW_LABEL_W); }
+
+  let curY = 20;
+  const groupBlocks = laidOutGroups.map(g => {
+    const h = g.laneCount * (LANE_H + LANE_GAP);
+    const block = { ...g, y: curY, h };
+    curY += h + 18;
+    return block;
+  });
+  const svgH = Math.max(curY, 80);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap' }}>
+        <input type="date" value={date} onChange={e => { setDate(e.target.value); setSelected(null); }} style={{ ...inputStyle, flex: '1', minWidth: '140px' }} />
+        <select value={venueId} onChange={e => { setVenueId(e.target.value); setSelected(null); }} style={{ ...inputStyle, flex: '1', minWidth: '110px' }}>
+          <option value="">所有場地</option>
+          {venues.map(v => <option key={v._id} value={v._id}>{v.name}</option>)}
+        </select>
+      </div>
+
+      {peak && (
+        <div style={{ background: '#fff3e0', color: '#e65100', borderRadius: '8px', padding: '8px 12px', fontSize: '13px', fontWeight: '600', marginBottom: '10px' }}>
+          🔥 最密集重疊時段：{fmtHM(new Date(peak.start))}–{fmtHM(new Date(peak.end))}，同時 {peak.count} 筆預約
+        </div>
+      )}
+
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
+        {Object.entries(STATUS_LABELS).filter(([k]) => k !== 'cancelled').map(([k, label]) => (
+          <div key={k} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#666' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: STATUS_COLORS[k], display: 'inline-block' }} />
+            {label}
+          </div>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{ color: '#aaa', textAlign: 'center', padding: '30px' }}>載入中...</div>
+      ) : bars.length === 0 ? (
+        <div style={{ color: '#aaa', textAlign: 'center', padding: '30px' }}>這天沒有預約紀錄</div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <svg viewBox={`0 0 ${CHART_W} ${svgH}`} width="100%" height={svgH} style={{ display: 'block', minWidth: '480px' }}>
+            {/* Hour gridlines */}
+            {hourMarks.map(t => (
+              <g key={t}>
+                <line x1={xOf(t)} y1={0} x2={xOf(t)} y2={svgH} stroke="#eee" strokeWidth="1" />
+                <text x={xOf(t)} y={12} fontSize="9" fill="#999" textAnchor="middle">
+                  {fmtHM(new Date(t))}
+                </text>
+              </g>
+            ))}
+
+            {groupBlocks.map(g => (
+              <g key={g.venueName}>
+                <text x={0} y={g.y + 14} fontSize="11" fontWeight="700" fill="#555">{g.venueName}</text>
+                {g.items.map(it => {
+                  const x  = xOf(it.start.getTime());
+                  const x2 = xOf(it.end.getTime());
+                  const y  = g.y + it.lane * (LANE_H + LANE_GAP);
+                  const isSel = selected && selected._id === it._id;
+                  return (
+                    <rect
+                      key={it._id}
+                      x={x} y={y} width={Math.max(x2 - x, 3)} height={LANE_H}
+                      rx="4" fill={STATUS_COLORS[it.status] || '#999'}
+                      opacity={isSel ? 1 : 0.85}
+                      stroke={isSel ? '#111' : 'none'} strokeWidth={isSel ? 2 : 0}
+                      onClick={() => setSelected(it)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  );
+                })}
+              </g>
+            ))}
+          </svg>
+        </div>
+      )}
+
+      {selected && (
+        <div style={{ background: '#fafafa', border: '1px solid #eee', borderRadius: '10px', padding: '12px 14px', marginTop: '10px', fontSize: '13px' }}>
+          <div style={{ fontWeight: '700', marginBottom: '4px' }}>{selected.displayName || selected.lineUserId}</div>
+          <div style={{ color: '#666' }}>{selected.venueName} · {fmtHM(selected.start)}–{fmtHM(selected.end)} · {STATUS_LABELS[selected.status]}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -909,6 +1216,7 @@ function SystemSettingsTab() {
   };
 
   return (
+    <>
     <form onSubmit={handleSave}>
       {/* LIFF title */}
       <div style={{ marginBottom: '20px' }}>
@@ -983,6 +1291,8 @@ function SystemSettingsTab() {
         </span>
       )}
     </form>
+    <ClosureDaysSection />
+    </>
   );
 }
 
@@ -1089,6 +1399,166 @@ function HourPackagesTab() {
             </div>
           );
         })}
+    </div>
+  );
+}
+
+// ── Tab 8: 折扣碼管理 ─────────────────────────────────────────────────────────
+const emptyDCode = { code: '', discountType: 'amount', discountAmount: '', discountPercent: '', maxUses: 0, startAt: '', endAt: '', isActive: true, note: '' };
+
+function toDateInputValue(d) {
+  if (!d) return '';
+  return new Date(d).toISOString().slice(0, 10);
+}
+
+function DiscountCodeTab() {
+  const [codes, setCodes]       = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [form, setForm]         = useState(emptyDCode);
+  const [editing, setEditing]   = useState(null);
+  const [saving, setSaving]     = useState(false);
+
+  function reload() {
+    authFetch(`${API_BASE}/api/discount-codes`)
+      .then(r => r.json())
+      .then(data => setCodes(Array.isArray(data) ? data : []))
+      .catch(() => setCodes([]))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { reload(); }, []);
+
+  function handleEdit(dc) {
+    setEditing(dc._id);
+    setForm({
+      code: dc.code,
+      discountType: dc.discountType,
+      discountAmount: dc.discountAmount || '',
+      discountPercent: dc.discountPercent || '',
+      maxUses: dc.maxUses || 0,
+      startAt: toDateInputValue(dc.startAt),
+      endAt: toDateInputValue(dc.endAt),
+      isActive: dc.isActive,
+      note: dc.note || ''
+    });
+  }
+
+  function handleCancel() { setEditing(null); setForm(emptyDCode); }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    if (!form.code.trim()) return alert('請輸入折扣碼');
+    setSaving(true);
+    const body = {
+      ...form,
+      code: form.code.trim(),
+      discountAmount: Number(form.discountAmount) || 0,
+      discountPercent: Number(form.discountPercent) || 0,
+      maxUses: Number(form.maxUses) || 0,
+      startAt: form.startAt || null,
+      endAt: form.endAt || null
+    };
+    try {
+      if (editing) {
+        await authFetch(`${API_BASE}/api/discount-codes/${editing}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      } else {
+        await authFetch(`${API_BASE}/api/discount-codes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      }
+      handleCancel();
+      reload();
+    } catch (err) { alert('儲存失敗'); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('確定要刪除此折扣碼？')) return;
+    await authFetch(`${API_BASE}/api/discount-codes/${id}`, { method: 'DELETE' });
+    reload();
+  }
+
+  async function toggleActive(dc) {
+    await authFetch(`${API_BASE}/api/discount-codes/${dc._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: !dc.isActive }) });
+    reload();
+  }
+
+  const inp = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px', marginBottom: '10px' };
+
+  return (
+    <div>
+      <h3 style={{ fontWeight: '700', marginBottom: '16px', fontSize: '15px' }}>折扣碼管理</h3>
+      <form onSubmit={handleSave} style={{ background: '#f9f9f9', borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
+        <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '14px', color: '#444' }}>{editing ? '編輯折扣碼' : '新增折扣碼'}</div>
+        <input placeholder="折扣碼，例：WELCOME100" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} style={inp} required />
+
+        <div style={{ display: 'flex', gap: '16px', marginBottom: '10px' }}>
+          {[{ v: 'amount', label: '固定金額' }, { v: 'percent', label: '百分比折扣' }].map(o => (
+            <label key={o.v} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+              <input type="radio" name="dcType" checked={form.discountType === o.v} onChange={() => setForm(f => ({ ...f, discountType: o.v }))} />
+              {o.label}
+            </label>
+          ))}
+        </div>
+        {form.discountType === 'amount' ? (
+          <input type="number" min="1" placeholder="折抵金額（$）" value={form.discountAmount} onChange={e => setForm(f => ({ ...f, discountAmount: e.target.value }))} style={inp} required />
+        ) : (
+          <input type="number" min="1" max="99" placeholder="折扣百分比（例：10 = 打 9 折）" value={form.discountPercent} onChange={e => setForm(f => ({ ...f, discountPercent: e.target.value }))} style={inp} required />
+        )}
+
+        <input type="number" min="0" placeholder="使用次數上限（0 = 不限）" value={form.maxUses} onChange={e => setForm(f => ({ ...f, maxUses: e.target.value }))} style={inp} />
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>生效日（留空＝不限）</div>
+            <input type="date" value={form.startAt} onChange={e => setForm(f => ({ ...f, startAt: e.target.value }))} style={{ ...inp, marginBottom: 0 }} />
+          </div>
+          <div>
+            <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>截止日（留空＝不限）</div>
+            <input type="date" value={form.endAt} onChange={e => setForm(f => ({ ...f, endAt: e.target.value }))} style={{ ...inp, marginBottom: 0 }} />
+          </div>
+        </div>
+
+        <input placeholder="備註（選填，僅後台顯示）" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={{ ...inp, marginTop: '10px' }} />
+
+        <label style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+          <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} />
+          啟用
+        </label>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button type="submit" disabled={saving} style={{ background: '#111', color: '#fff', border: 'none', borderRadius: '8px', padding: '9px 20px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
+            {saving ? '儲存中...' : editing ? '更新折扣碼' : '新增折扣碼'}
+          </button>
+          {editing && <button type="button" onClick={handleCancel} style={{ background: '#fff', color: '#555', border: '1px solid #ddd', borderRadius: '8px', padding: '9px 16px', fontSize: '14px', cursor: 'pointer' }}>取消</button>}
+        </div>
+      </form>
+
+      {loading ? <div style={{ color: '#aaa', textAlign: 'center', padding: '20px' }}>載入中...</div>
+        : codes.length === 0 ? <div style={{ color: '#aaa', textAlign: 'center', padding: '20px' }}>尚無折扣碼</div>
+        : codes.map(dc => (
+          <div key={dc._id} style={{ background: '#fff', border: '1px solid #eee', borderRadius: '10px', padding: '14px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '4px', letterSpacing: '0.5px' }}>
+                {dc.code}
+                {!dc.isActive && <span style={{ marginLeft: '6px', fontSize: '11px', color: '#aaa', background: '#f5f5f5', padding: '1px 6px', borderRadius: '4px' }}>已停用</span>}
+              </div>
+              <div style={{ fontSize: '13px', color: '#666' }}>
+                {dc.discountType === 'percent' ? `${dc.discountPercent}% 折扣` : `折抵 $${dc.discountAmount}`}
+                　已用 {dc.usedCount} / {dc.maxUses > 0 ? dc.maxUses : '不限'}
+              </div>
+              {(dc.startAt || dc.endAt) && (
+                <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>
+                  期限：{dc.startAt ? toDateInputValue(dc.startAt) : '不限'} ～ {dc.endAt ? toDateInputValue(dc.endAt) : '不限'}
+                </div>
+              )}
+              {dc.note && <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>{dc.note}</div>}
+            </div>
+            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+              <button onClick={() => toggleActive(dc)} style={{ background: dc.isActive ? '#e8f5e9' : '#fce4ec', color: dc.isActive ? '#2e7d32' : '#c62828', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}>{dc.isActive ? '啟用中' : '已停用'}</button>
+              <button onClick={() => handleEdit(dc)} style={{ background: '#f0f0f0', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}>編輯</button>
+              <button onClick={() => handleDelete(dc._id)} style={{ background: '#ffebee', color: '#c62828', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}>刪除</button>
+            </div>
+          </div>
+        ))}
     </div>
   );
 }
@@ -1335,6 +1805,7 @@ function AnalyticsTab() {
 
 // ── Staff Door Modal ──────────────────────────────────────────────────────────
 function StaffDoorModal({ onClose }) {
+  const [mode,      setMode]      = useState('temp'); // 'temp' | 'permanent'
   const [venues,    setVenues]    = useState([]);
   const [venueId,   setVenueId]   = useState('');
   const [qrImg,     setQrImg]     = useState('');
@@ -1343,11 +1814,53 @@ function StaffDoorModal({ onClose }) {
   const [loading,   setLoading]   = useState(false);
   const timerRef = useRef(null);
 
+  // 永久 QR
+  const [permToken,   setPermToken]   = useState(null); // 後端目前存的永久碼紀錄，null = 尚未建立
+  const [permQrImg,   setPermQrImg]   = useState('');
+  const [permLoading, setPermLoading] = useState(false);
+
   useEffect(() => {
     authFetch(`${API_BASE}/api/venues`).then(r => r.json())
       .then(vs => { setVenues(vs); if (vs.length) setVenueId(vs[0]._id); })
       .catch(() => {});
   }, []);
+
+  // 切到永久 QR 分頁，或換選場地時，查詢該場地目前的永久碼
+  useEffect(() => {
+    if (mode !== 'permanent' || !venueId) return;
+    setPermQrImg(''); setPermToken(null);
+    authFetch(`${API_BASE}/api/staff-tokens/permanent?venueId=${venueId}`).then(r => r.json())
+      .then(async st => {
+        setPermToken(st);
+        if (st?.token) {
+          const img = await QRCode.toDataURL(st.token, { width: 240, margin: 2, color: { dark: '#111', light: '#fff' } });
+          setPermQrImg(img);
+        }
+      })
+      .catch(() => {});
+  }, [mode, venueId]);
+
+  async function generatePermanent() {
+    if (!venueId) return alert('請選擇場地');
+    if (permToken && !confirm('重新產生會讓目前這組永久 QR 立即失效，員工需改用新的 QR 才能進場，確定要繼續嗎？')) return;
+    setPermLoading(true);
+    try {
+      const venue = venues.find(v => v._id === venueId);
+      const res = await authFetch(`${API_BASE}/api/staff-tokens/permanent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venueId, venueName: venue?.name || '' })
+      });
+      const st = await res.json();
+      setPermToken(st);
+      const img = await QRCode.toDataURL(st.token, { width: 240, margin: 2, color: { dark: '#111', light: '#fff' } });
+      setPermQrImg(img);
+    } catch (e) {
+      alert('產生失敗：' + e.message);
+    } finally {
+      setPermLoading(false);
+    }
+  }
 
   // countdown
   useEffect(() => {
@@ -1399,6 +1912,20 @@ function StaffDoorModal({ onClose }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✕</button>
         </div>
 
+        {/* Mode toggle */}
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', background: '#f5f5f5', borderRadius: '10px', padding: '3px' }}>
+          {[['temp', '臨時 QR（5 分鐘）'], ['permanent', '永久 QR']].map(([key, label]) => (
+            <button key={key} onClick={() => setMode(key)}
+              style={{
+                flex: 1, padding: '8px 6px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                fontSize: '13px', fontWeight: '700',
+                background: mode === key ? '#fff' : 'transparent',
+                color: mode === key ? '#111' : '#888',
+                boxShadow: mode === key ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'
+              }}>{label}</button>
+          ))}
+        </div>
+
         {/* Venue selector */}
         <div style={{ marginBottom: '14px' }}>
           <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '4px' }}>選擇場地</label>
@@ -1410,45 +1937,83 @@ function StaffDoorModal({ onClose }) {
           </select>
         </div>
 
-        {/* Generate button */}
-        <button
-          onClick={generate}
-          disabled={loading}
-          style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', background: '#111', color: '#fff', fontWeight: '700', fontSize: '15px', cursor: 'pointer', marginBottom: '20px' }}
-        >
-          {loading ? '產生中...' : expired ? '🔄 重新產生 QR' : qrImg ? '🔄 重新產生' : '🚪 產生開門 QR'}
-        </button>
+        {mode === 'temp' ? (
+          <>
+            {/* Generate button */}
+            <button
+              onClick={generate}
+              disabled={loading}
+              style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', background: '#111', color: '#fff', fontWeight: '700', fontSize: '15px', cursor: 'pointer', marginBottom: '20px' }}
+            >
+              {loading ? '產生中...' : expired ? '🔄 重新產生 QR' : qrImg ? '🔄 重新產生' : '🚪 產生開門 QR'}
+            </button>
 
-        {/* QR display */}
-        {qrImg && (
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>
-              {venueName}・工作人員專用
-            </div>
-            <div style={{
-              display: 'inline-block', padding: '12px', borderRadius: '12px',
-              border: expired ? '3px solid #ffcdd2' : '3px solid #c8e6c9',
-              opacity: expired ? 0.4 : 1, transition: 'opacity 0.3s'
-            }}>
-              <img src={qrImg} alt="Staff QR" style={{ width: '200px', height: '200px', display: 'block' }} />
-            </div>
-
-            {/* Countdown */}
-            <div style={{ marginTop: '12px' }}>
-              {expired ? (
-                <div style={{ fontSize: '13px', color: '#e53935', fontWeight: '700' }}>⚠ QR 已過期，請重新產生</div>
-              ) : (
-                <div style={{ fontSize: '22px', fontWeight: '800', color: secsLeft <= 60 ? '#e53935' : '#2e7d32', fontVariantNumeric: 'tabular-nums' }}>
-                  {mm}:{ss}
-                  <span style={{ fontSize: '12px', fontWeight: '400', color: '#aaa', marginLeft: '6px' }}>剩餘有效時間</span>
+            {/* QR display */}
+            {qrImg && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>
+                  {venueName}・工作人員專用
                 </div>
-              )}
-            </div>
+                <div style={{
+                  display: 'inline-block', padding: '12px', borderRadius: '12px',
+                  border: expired ? '3px solid #ffcdd2' : '3px solid #c8e6c9',
+                  opacity: expired ? 0.4 : 1, transition: 'opacity 0.3s'
+                }}>
+                  <img src={qrImg} alt="Staff QR" style={{ width: '200px', height: '200px', display: 'block' }} />
+                </div>
 
-            <div style={{ fontSize: '11px', color: '#aaa', marginTop: '8px' }}>
-              閘門掃描此 QR 即可開門・5 分鐘內有效
-            </div>
-          </div>
+                {/* Countdown */}
+                <div style={{ marginTop: '12px' }}>
+                  {expired ? (
+                    <div style={{ fontSize: '13px', color: '#e53935', fontWeight: '700' }}>⚠ QR 已過期，請重新產生</div>
+                  ) : (
+                    <div style={{ fontSize: '22px', fontWeight: '800', color: secsLeft <= 60 ? '#e53935' : '#2e7d32', fontVariantNumeric: 'tabular-nums' }}>
+                      {mm}:{ss}
+                      <span style={{ fontSize: '12px', fontWeight: '400', color: '#aaa', marginLeft: '6px' }}>剩餘有效時間</span>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ fontSize: '11px', color: '#aaa', marginTop: '8px' }}>
+                  閘門掃描此 QR 即可開門・5 分鐘內有效
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Generate / rotate button */}
+            <button
+              onClick={generatePermanent}
+              disabled={permLoading}
+              style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', background: '#111', color: '#fff', fontWeight: '700', fontSize: '15px', cursor: 'pointer', marginBottom: '20px' }}
+            >
+              {permLoading ? '產生中...' : permToken ? '🔄 重新產生（舊碼立即失效）' : '🔒 產生永久 QR'}
+            </button>
+
+            {/* QR display */}
+            {permQrImg && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>
+                  {venueName}・工作人員專用（永久有效）
+                </div>
+                <div style={{ display: 'inline-block', padding: '12px', borderRadius: '12px', border: '3px solid #c8e6c9' }}>
+                  <img src={permQrImg} alt="Permanent Staff QR" style={{ width: '200px', height: '200px', display: 'block' }} />
+                </div>
+                {permToken?.createdAt && (
+                  <div style={{ fontSize: '11px', color: '#aaa', marginTop: '10px' }}>
+                    建立於 {new Date(permToken.createdAt).toLocaleString('zh-TW')}
+                  </div>
+                )}
+                <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px' }}>
+                  閘門掃描此 QR 即可開門・不會過期，需手動「重新產生」才會失效
+                </div>
+              </div>
+            )}
+            {!permQrImg && !permLoading && (
+              <div style={{ textAlign: 'center', color: '#bbb', fontSize: '13px', padding: '16px 0' }}>此場地尚未建立永久 QR</div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -1718,6 +2283,7 @@ export default function LiffAdminModal({ onClose }) {
           {tab === 5 && <TasksAdminTab />}
           {tab === 6 && <AnalyticsTab />}
           {tab === 7 && <HourPackagesTab />}
+          {tab === 8 && <DiscountCodeTab />}
         </div>
       </div>
     </div>

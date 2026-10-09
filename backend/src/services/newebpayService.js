@@ -48,8 +48,9 @@ function genTradeSha(tradeInfo, key, iv) {
  * Build the form POST params for NewebPay MPG.
  * Returns { params, apiUrl, tradeNo } — same shape as ecpayService.
  * Mutates reservation.paymentRef with the MerchantOrderNo.
+ * email（選填）：已記住的付款人信箱，會帶入 MPG 頁面的「付款人信箱」欄位預先填好。
  */
-function createOrderParams(reservation) {
+function createOrderParams(reservation, email) {
   const cfg = getCfg();
   if (!cfg.MerchantID || !cfg.HashKey || !cfg.HashIV) {
     throw new Error('NEWEBPAY_MERCHANT_ID / NEWEBPAY_HASH_KEY / NEWEBPAY_HASH_IV 未設定');
@@ -87,6 +88,7 @@ function createOrderParams(reservation) {
     LoginType:       '0',
     CREDIT:          '1',
     APPLEPAY:        '1',           // Apple Pay (shown only on supported devices/browsers)
+    ...(email ? { Email: email.slice(0, 50) } : {})
   }).toString();
 
   const tradeInfo = aesEncrypt(tradeParams, cfg.HashKey, cfg.HashIV);
@@ -133,8 +135,9 @@ function verifyAndDecrypt(body) {
  * Build the form POST params for a HourPurchase payment via NewebPay.
  * Returns { params, apiUrl, tradeNo } — same shape as createOrderParams.
  * Mutates purchase.paymentRef with the MerchantOrderNo (caller must save).
+ * email（選填）：已記住的付款人信箱，會帶入 MPG 頁面的「付款人信箱」欄位預先填好。
  */
-function createHourOrderParams(purchase) {
+function createHourOrderParams(purchase, email) {
   const cfg = getCfg();
   if (!cfg.MerchantID || !cfg.HashKey || !cfg.HashIV) {
     throw new Error('NEWEBPAY_MERCHANT_ID / NEWEBPAY_HASH_KEY / NEWEBPAY_HASH_IV 未設定');
@@ -169,6 +172,7 @@ function createHourOrderParams(purchase) {
     LoginType:       '0',
     CREDIT:          '1',
     APPLEPAY:        '1',
+    ...(email ? { Email: email.slice(0, 50) } : {})
   }).toString();
 
   const tradeInfo = aesEncrypt(tradeParams, cfg.HashKey, cfg.HashIV);

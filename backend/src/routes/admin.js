@@ -856,6 +856,11 @@ router.delete('/keywords/:id', async (req, res) => {
   try {
     const kw = await Keyword.findByIdAndDelete(req.params.id);
     if (!kw) return res.status(404).json({ error: 'Keyword not found' });
+    // 卡片按鈕若觸發此關鍵字，改回外部連結模式（避免留著指向已刪除的關鍵字）
+    await ProductCard.updateMany(
+      { buttonKeywordId: req.params.id },
+      { $set: { buttonActionType: 'url', buttonKeywordId: null } }
+    );
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -874,14 +879,18 @@ router.get('/cards', async (req, res) => {
 // POST /api/cards
 router.post('/cards', async (req, res) => {
   try {
-    const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
+    const { title, subtitle, imageUrl, imageOnly, imageAspectRatio, priceItems, buttonText, buttonUrl,
+            buttonActionType, buttonKeywordId,
             headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
             template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
             titleAlign, subtitleAlign, priceAlign, showDivider, isActive } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required' });
     const card = await ProductCard.create({
-      title, subtitle: subtitle || '', imageUrl: imageUrl || '',
+      title, subtitle: subtitle || '', imageUrl: imageUrl || '', imageOnly: !!imageOnly,
+      imageAspectRatio: imageAspectRatio || '20:13',
       priceItems: priceItems || [], buttonText: buttonText || '', buttonUrl: buttonUrl || '',
+      buttonActionType: buttonActionType === 'keyword' ? 'keyword' : 'url',
+      buttonKeywordId: buttonActionType === 'keyword' ? (buttonKeywordId || null) : null,
       headerBgColor: headerBgColor || '#ffffff', titleColor: titleColor || '#111111',
       subtitleColor: subtitleColor || '#888888', buttonColor: buttonColor || '#00B900',
       bodyBgColor: bodyBgColor || '#ffffff',
@@ -899,14 +908,18 @@ router.post('/cards', async (req, res) => {
 // PUT /api/cards/:id
 router.put('/cards/:id', async (req, res) => {
   try {
-    const { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
+    const { title, subtitle, imageUrl, imageOnly, imageAspectRatio, priceItems, buttonText, buttonUrl,
+            buttonActionType, buttonKeywordId,
             headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
             template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
             titleAlign, subtitleAlign, priceAlign, showDivider, isActive } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required' });
     const card = await ProductCard.findByIdAndUpdate(
       req.params.id,
-      { title, subtitle, imageUrl, priceItems, buttonText, buttonUrl,
+      { title, subtitle, imageUrl, imageOnly: !!imageOnly, imageAspectRatio: imageAspectRatio || '20:13',
+        priceItems, buttonText, buttonUrl,
+        buttonActionType: buttonActionType === 'keyword' ? 'keyword' : 'url',
+        buttonKeywordId: buttonActionType === 'keyword' ? (buttonKeywordId || null) : null,
         headerBgColor, titleColor, subtitleColor, buttonColor, bodyBgColor,
         template, titleFontSize, subtitleFontSize, priceNameFontSize, priceFontSize,
         titleAlign, subtitleAlign, priceAlign, showDivider, isActive },
@@ -1179,6 +1192,7 @@ const VenuePlan    = require('../models/VenuePlan');
 const Announcement = require('../models/Announcement');
 const Reservation  = require('../models/Reservation');
 const BlockedSlot    = require('../models/BlockedSlot');
+const ClosureDay      = require('../models/ClosureDay');
 const StaffToken     = require('../models/StaffToken');
 const DurationPlan   = require('../models/DurationPlan');
 
@@ -1298,6 +1312,29 @@ router.get('/reservations', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/reservations/day?date=YYYY-MM-DD&venue=<可選>
+// 回傳當天所有預約的起訖時間資料，供後台「甘特圖」檢視用。獨立於上面的 /reservations
+// 列表 API（不分頁、不套用列表的篩選狀態），不影響既有列表功能。
+router.get('/reservations/day', async (req, res) => {
+  try {
+    const dateStr  = req.query.date || new Date().toISOString().slice(0, 10);
+    const dayStart = new Date(dateStr + 'T00:00:00+08:00');
+    const dayEnd   = new Date(dateStr + 'T23:59:59.999+08:00');
+
+    const filter = {
+      status: { $in: ['confirmed', 'checked_in', 'completed'] },
+      $or: [
+        { date: { $gte: dayStart, $lte: dayEnd } },
+        { startTime: { $gte: dayStart, $lte: dayEnd } }
+      ]
+    };
+    if (req.query.venue) filter.venueId = req.query.venue;
+
+    const items = await Reservation.find(filter).sort({ venueName: 1 }).lean();
+    res.json({ date: dateStr, items });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.patch('/reservations/:id', async (req, res) => {
   try {
     const item = await Reservation.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -1340,6 +1377,45 @@ router.delete('/blocked-slots/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── Closure Days（全站公休日）─────────────────────────────────────────────────
+router.get('/closure-days', async (req, res) => {
+  try {
+    const items = await ClosureDay.find().sort({ date: -1, createdAt: -1 }).lean();
+    res.json(items);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 支援單日（只填 startDate）或區間（startDate～endDate）；區間會依每一天各自新增一筆紀錄，
+// 讓既有「查詢單日是否公休」的邏輯完全不用修改。
+router.post('/closure-days', async (req, res) => {
+  try {
+    const { startDate, endDate, reason } = req.body;
+    if (!startDate || !reason) return res.status(400).json({ error: 'startDate, reason 為必填' });
+
+    const start = new Date(startDate);
+    const end = endDate ? new Date(endDate) : start;
+    if (isNaN(start) || isNaN(end)) return res.status(400).json({ error: '日期格式錯誤' });
+    if (end < start) return res.status(400).json({ error: '結束日期不能早於起始日期' });
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const spanDays = Math.round((end - start) / dayMs) + 1;
+    if (spanDays > 90) return res.status(400).json({ error: '一次最多只能設定 90 天' });
+
+    const docs = Array.from({ length: spanDays }, (_, i) =>
+      ({ date: new Date(start.getTime() + i * dayMs), reason })
+    );
+    const items = await ClosureDay.insertMany(docs);
+    res.json(items);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.delete('/closure-days/:id', async (req, res) => {
+  try {
+    await ClosureDay.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── Tasks ────────────────────────────────────────────────────────────────────
 
 function buildTaskFlexMessage(task) {
@@ -1368,6 +1444,43 @@ function buildTaskFlexMessage(task) {
           contents: [{
             type: 'button', style: 'primary', color: '#E67E22',
             action: { type: 'uri', label: '前往任務', uri: liffUrl }
+          }]
+        }
+      } : {})
+    }
+  };
+}
+
+// 建立「您收到折扣券」的 Flex 訊息，附上前往個人任務頁（折扣券列表所在處）的按鈕
+function buildCouponFlexMessage(coupon) {
+  const liffId = process.env.LIFF_ID || '';
+  const liffUrl = liffId ? `https://liff.line.me/${liffId}?page=tasks` : '';
+  const desc = coupon.discountType === 'percent'
+    ? `${coupon.discountPercent}% 折扣（打${10 - coupon.discountPercent / 10}折）`
+    : `折抵 $${coupon.discountAmount}`;
+  return {
+    type: 'flex',
+    altText: `🎁 讀享招待：您收到一張折扣券（${desc}）`,
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#C9A882',
+        contents: [{ type: 'text', text: '🎁 讀享招待', color: '#ffffff', weight: 'bold', size: 'md' }]
+      },
+      body: {
+        type: 'box', layout: 'vertical', spacing: 'sm',
+        contents: [
+          { type: 'text', text: desc, weight: 'bold', size: 'lg', color: '#C9A882', wrap: true },
+          ...(coupon.note ? [{ type: 'text', text: coupon.note, size: 'sm', color: '#555555', wrap: true }] : []),
+          ...(coupon.expiresAt ? [{ type: 'text', text: `使用期限：${new Date(coupon.expiresAt).toLocaleDateString('zh-TW')}`, size: 'xs', color: '#999999', margin: 'md' }] : [])
+        ]
+      },
+      ...(liffUrl ? {
+        footer: {
+          type: 'box', layout: 'vertical',
+          contents: [{
+            type: 'button', style: 'primary', color: '#C9A882',
+            action: { type: 'uri', label: '查看我的折扣券', uri: liffUrl }
           }]
         }
       } : {})
@@ -1492,6 +1605,48 @@ router.get('/coupons', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/coupons — 後台手動發送折扣券給指定客戶（需曾與官方帳號互動過，用 lineUserId 指定）
+router.post('/coupons', async (req, res) => {
+  try {
+    const { lineUserId, displayName, discountType, discountAmount, discountPercent, note, expiresAt } = req.body;
+    if (!lineUserId) return res.status(400).json({ error: 'lineUserId 為必填' });
+
+    const type = discountType === 'percent' ? 'percent' : 'amount';
+    if (type === 'amount' && !(Number(discountAmount) > 0)) {
+      return res.status(400).json({ error: '折抵金額需大於 0' });
+    }
+    if (type === 'percent' && !(Number(discountPercent) > 0 && Number(discountPercent) < 100)) {
+      return res.status(400).json({ error: '折扣百分比需介於 1～99' });
+    }
+
+    const coupon = await Coupon.create({
+      lineUserId, displayName: displayName || '',
+      discountType: type,
+      discountAmount: type === 'amount' ? Number(discountAmount) : 0,
+      discountPercent: type === 'percent' ? Number(discountPercent) : 0,
+      note: note || '',
+      status: 'valid',
+      expiresAt: expiresAt ? new Date(expiresAt) : null
+    });
+
+    await pushLineMessage(lineUserId, buildCouponFlexMessage(coupon));
+
+    res.json(coupon);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/coupons/:id — 作廢尚未使用的折扣券（軟刪除，保留紀錄）
+router.delete('/coupons/:id', async (req, res) => {
+  try {
+    const coupon = await Coupon.findById(req.params.id);
+    if (!coupon) return res.status(404).json({ error: 'Coupon not found' });
+    if (coupon.status === 'used') return res.status(400).json({ error: '已使用的折扣券無法作廢' });
+    coupon.status = 'expired';
+    await coupon.save();
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── Duration Plans (策略二方案) ──────────────────────────────────────────────
 router.get('/venues/:venueId/duration-plans', async (req, res) => {
   try {
@@ -1534,6 +1689,46 @@ router.delete('/venues/:venueId/duration-plans/:planId', async (req, res) => {
 });
 
 // ─── Staff Door Tokens ────────────────────────────────────────────────────────
+
+// GET /api/staff-tokens/permanent?venueId=xxx — 查詢該場地目前使用中的永久 QR（沒有則回傳 null）
+router.get('/staff-tokens/permanent', async (req, res) => {
+  try {
+    const { venueId } = req.query;
+    if (!venueId) return res.status(400).json({ error: 'venueId 為必填' });
+    const st = await StaffToken.findOne({ venueId, isPermanent: true }).lean();
+    res.json(st || null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/staff-tokens/permanent — 產生／重新產生永久 QR（同場地舊碼會立即失效）
+router.post('/staff-tokens/permanent', async (req, res) => {
+  try {
+    const { venueId, venueName } = req.body;
+    if (!venueId) return res.status(400).json({ error: 'venueId 為必填' });
+    await StaffToken.deleteMany({ venueId, isPermanent: true });
+    const token     = require('crypto').randomUUID();
+    const expiresAt = new Date(Date.now() + 50 * 365 * 24 * 60 * 60 * 1000); // 50 年後，等同永久
+    const st = await StaffToken.create({
+      token, venueId, venueName: venueName || '', isPermanent: true, expiresAt
+    });
+    res.json(st);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/staff-tokens/permanent/:venueId — 撤銷該場地的永久 QR（不補發新碼）
+router.delete('/staff-tokens/permanent/:venueId', async (req, res) => {
+  try {
+    await StaffToken.deleteMany({ venueId: req.params.venueId, isPermanent: true });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/staff-tokens  — generate a 5-minute gate-open QR token for staff
 router.post('/staff-tokens', async (req, res) => {
   try {
@@ -1664,6 +1859,69 @@ router.patch('/hour-packages/:id', async (req, res) => {
 router.delete('/hour-packages/:id', async (req, res) => {
   try {
     await HourPackage.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Discount Codes（公開折扣碼，結帳時用戶自行輸入） ───────────────────────────
+const DiscountCode = require('../models/DiscountCode');
+
+router.get('/discount-codes', async (req, res) => {
+  try {
+    const codes = await DiscountCode.find().sort({ createdAt: -1 });
+    res.json(codes);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/discount-codes', async (req, res) => {
+  try {
+    const { code, discountType, discountAmount, discountPercent, maxUses, startAt, endAt, isActive, note } = req.body;
+    if (!code || !code.trim()) return res.status(400).json({ error: '請輸入折扣碼' });
+
+    const type = discountType === 'percent' ? 'percent' : 'amount';
+    if (type === 'amount' && !(Number(discountAmount) > 0)) {
+      return res.status(400).json({ error: '折抵金額需大於 0' });
+    }
+    if (type === 'percent' && !(Number(discountPercent) > 0 && Number(discountPercent) < 100)) {
+      return res.status(400).json({ error: '折扣百分比需介於 1～99' });
+    }
+
+    const dc = await DiscountCode.create({
+      code: code.trim(),
+      discountType: type,
+      discountAmount: type === 'amount' ? Number(discountAmount) : 0,
+      discountPercent: type === 'percent' ? Number(discountPercent) : 0,
+      maxUses: Number(maxUses) || 0,
+      startAt: startAt ? new Date(startAt) : null,
+      endAt: endAt ? new Date(endAt) : null,
+      isActive: isActive !== false,
+      note: note || ''
+    });
+    res.json(dc);
+  } catch (err) {
+    if (err.code === 11000) return res.status(400).json({ error: '此折扣碼已存在' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/discount-codes/:id', async (req, res) => {
+  try {
+    const body = { ...req.body };
+    if (body.code) body.code = body.code.trim();
+    if ('startAt' in body) body.startAt = body.startAt ? new Date(body.startAt) : null;
+    if ('endAt' in body) body.endAt = body.endAt ? new Date(body.endAt) : null;
+    const dc = await DiscountCode.findByIdAndUpdate(req.params.id, body, { new: true });
+    if (!dc) return res.status(404).json({ error: 'Not found' });
+    res.json(dc);
+  } catch (err) {
+    if (err.code === 11000) return res.status(400).json({ error: '此折扣碼已存在' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/discount-codes/:id', async (req, res) => {
+  try {
+    await DiscountCode.findByIdAndDelete(req.params.id);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
