@@ -274,7 +274,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
       setShowEmailPrompt(false);
       handlePay(paySkipConfirmRef.current);
     } catch (e) {
-      setEmailError(e.message);
+      setEmailError('儲存失敗，請重開此預約系統頁面再試一次');
     } finally {
       setSavingEmail(false);
     }
