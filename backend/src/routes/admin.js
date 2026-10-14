@@ -1746,7 +1746,12 @@ router.post('/staff-tokens', async (req, res) => {
 // GET /api/analytics?period=week|month|year[&venueId=...]
 router.get('/analytics', async (req, res) => {
   try {
-    const { period = 'month', venueId } = req.query;
+    const { period = 'month', venueId, revenueMode = 'net' } = req.query;
+    // net   = 實收營收：totalPrice 扣除折扣券/折扣碼/預購時數折抵的實際折抵金額
+    // gross = 總預計營收：以原價 totalPrice 計算，不扣折扣
+    const revenueExpr = revenueMode === 'gross'
+      ? '$totalPrice'
+      : { $subtract: ['$totalPrice', { $ifNull: ['$discountAmount', 0] }] };
 
     const now = new Date();
     const tz  = 'Asia/Taipei';
@@ -1776,7 +1781,7 @@ router.get('/analytics', async (req, res) => {
         { $match: revMatch },
         { $group: {
           _id: { $dateToString: { format: groupFmt, date: '$paidAt', timezone: tz } },
-          revenue: { $sum: '$totalPrice' },
+          revenue: { $sum: revenueExpr },
           count:   { $sum: 1 }
         }},
         { $sort: { _id: 1 } }
@@ -1785,7 +1790,7 @@ router.get('/analytics', async (req, res) => {
         { $match: revMatch },
         { $group: {
           _id:     '$venueName',
-          revenue: { $sum: '$totalPrice' },
+          revenue: { $sum: revenueExpr },
           count:   { $sum: 1 }
         }},
         { $sort: { revenue: -1 } }
@@ -1816,6 +1821,7 @@ router.get('/analytics', async (req, res) => {
 
     res.json({
       period,
+      revenueMode,
       summary: {
         totalRevenue,
         totalVisitors,

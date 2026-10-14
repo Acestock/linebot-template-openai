@@ -1621,15 +1621,16 @@ function AnalyticsTab() {
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(false);
   const [metric,  setMetric]  = useState('revenue'); // 'revenue' | 'visitors'
+  const [revenueMode, setRevenueMode] = useState('net'); // 'net'=實收營收 | 'gross'=總預計營收
 
   const load = useCallback(() => {
     setLoading(true);
-    authFetch(`${API_BASE}/api/analytics?period=${period}`)
+    authFetch(`${API_BASE}/api/analytics?period=${period}&revenueMode=${revenueMode}`)
       .then(r => r.json())
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [period]);
+  }, [period, revenueMode]);
   useEffect(load, [load]);
 
   const fmtMoney = n => `$${Number(n).toLocaleString()}`;
@@ -1671,6 +1672,23 @@ function AnalyticsTab() {
         <button onClick={load} style={{ marginLeft: 'auto', padding: '6px 12px', borderRadius: '20px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#888' }}>重整</button>
       </div>
 
+      {/* Revenue mode toggle */}
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', alignItems: 'center' }}>
+        <span style={{ fontSize: '12px', color: '#888', fontWeight: '600' }}>營收口徑</span>
+        {[{ key: 'net', label: '實收營收' }, { key: 'gross', label: '總預計營收' }].map(o => (
+          <button
+            key={o.key}
+            onClick={() => setRevenueMode(o.key)}
+            style={{
+              padding: '4px 12px', borderRadius: '14px', border: 'none', cursor: 'pointer',
+              fontWeight: '600', fontSize: '12px',
+              background: revenueMode === o.key ? '#111' : '#f0f0f0',
+              color:      revenueMode === o.key ? '#fff' : '#777'
+            }}
+          >{o.label}</button>
+        ))}
+      </div>
+
       {loading && <div style={{ textAlign: 'center', padding: '40px', color: '#aaa' }}>載入中...</div>}
 
       {!loading && data && data.summary && (
@@ -1678,7 +1696,7 @@ function AnalyticsTab() {
           {/* Summary cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '20px' }}>
             {[
-              { label: '總營業額', value: fmtMoney(data.summary.totalRevenue), sub: `${data.summary.totalPaidCount} 筆付款`, color: '#1b5e20', bg: '#e8f5e9' },
+              { label: revenueMode === 'gross' ? '總預計營收' : '實收營收', value: fmtMoney(data.summary.totalRevenue), sub: `${data.summary.totalPaidCount} 筆付款`, color: '#1b5e20', bg: '#e8f5e9' },
               { label: '總入場人次', value: `${data.summary.totalVisitors} 人`, sub: '已入場 + 已完成', color: '#1565c0', bg: '#e3f2fd' },
               { label: '客單價', value: data.summary.totalVisitors > 0 ? fmtMoney(data.summary.avgRevenuePerVisitor) : '—', sub: '平均每人次', color: '#6a1b9a', bg: '#f3e5f5' }
             ].map(c => (

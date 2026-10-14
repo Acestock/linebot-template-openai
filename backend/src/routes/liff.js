@@ -888,6 +888,7 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
           r.paymentStatus = 'paid';
           r.status = 'completed';
           r.unpaidExit = false;
+          r.paidAt = new Date();
           await r.save();
           return res.json({ skip: true });
         }
@@ -908,6 +909,7 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
         r.paymentStatus = 'paid';
         r.status = 'completed';
         r.unpaidExit = false;
+        r.paidAt = new Date();
         await r.save();
         return res.json({ skip: true });
       }
@@ -1249,6 +1251,10 @@ router.post('/reservations/:id/pay-with-hours', liffAuth, async (req, res) => {
 
     r.paymentStatus = 'paid';
     r.status        = 'completed';
+    r.paidAt        = new Date();
+    // 時數折抵：金額已在購買時數當下收過款，這筆預約本身沒有新收到現金，
+    // 實收營收計算時視為全額折抵（discountAmount = totalPrice），但原價仍計入「總預計營收」
+    r.discountAmount = r.totalPrice;
     await r.save();
 
     res.json({ ok: true, deductedMinutes: neededMinutes });
