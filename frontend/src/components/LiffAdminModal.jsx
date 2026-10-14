@@ -1786,31 +1786,42 @@ function AnalyticsTab() {
             {data.rows.length === 0
               ? <div style={{ textAlign: 'center', color: '#aaa', padding: '16px', fontSize: '13px' }}>本期無資料</div>
               : (
-                <div style={{ border: '1px solid #eee', borderRadius: '10px', overflow: 'hidden' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', padding: '8px 14px', background: '#fafafa', borderBottom: '1px solid #eee' }}>
-                    {['日期', '營業額', '入場人次', '付款筆數'].map(h => (
-                      <div key={h} style={{ fontSize: '11px', fontWeight: '700', color: '#888' }}>{h}</div>
+                <div style={{ border: '1px solid #eee', borderRadius: '10px', overflowX: 'auto' }}>
+                  <div style={{ minWidth: '620px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '0.9fr 1fr 0.9fr 0.8fr 0.9fr 0.9fr 1fr', padding: '8px 14px', background: '#fafafa', borderBottom: '1px solid #eee' }}>
+                      {['日期', '營業額', '入場人次', '付款筆數', '折扣券', '折扣碼', '時數折抵'].map(h => (
+                        <div key={h} style={{ fontSize: '11px', fontWeight: '700', color: '#888' }}>{h}</div>
+                      ))}
+                    </div>
+                    {[...data.rows].reverse().map((r, i) => (
+                      <div key={r.period} style={{
+                        display: 'grid', gridTemplateColumns: '0.9fr 1fr 0.9fr 0.8fr 0.9fr 0.9fr 1fr',
+                        padding: '9px 14px',
+                        borderBottom: i < data.rows.length - 1 ? '1px solid #f5f5f5' : 'none',
+                        background: i % 2 === 0 ? '#fff' : '#fafafa'
+                      }}>
+                        <div style={{ fontSize: '12px', color: '#444' }}>{periodLabel(r.period, period)}</div>
+                        <div style={{ fontSize: '13px', fontWeight: r.revenue > 0 ? '700' : '400', color: r.revenue > 0 ? '#1b5e20' : '#ccc' }}>
+                          {r.revenue > 0 ? fmtMoney(r.revenue) : '—'}
+                        </div>
+                        <div style={{ fontSize: '13px', color: r.visitors > 0 ? '#333' : '#ccc' }}>
+                          {r.visitors > 0 ? `${r.visitors} 人` : '—'}
+                        </div>
+                        <div style={{ fontSize: '12px', color: r.paidCount > 0 ? '#555' : '#ccc' }}>
+                          {r.paidCount > 0 ? `${r.paidCount} 筆` : '—'}
+                        </div>
+                        <div style={{ fontSize: '12px', color: r.couponAmount > 0 ? '#c62828' : '#ccc' }}>
+                          {r.couponAmount > 0 ? `-${fmtMoney(r.couponAmount)}` : '—'}
+                        </div>
+                        <div style={{ fontSize: '12px', color: r.discountCodeAmount > 0 ? '#c62828' : '#ccc' }}>
+                          {r.discountCodeAmount > 0 ? `-${fmtMoney(r.discountCodeAmount)}` : '—'}
+                        </div>
+                        <div style={{ fontSize: '12px', color: r.hourCreditAmount > 0 ? '#7B61FF' : '#ccc' }}>
+                          {r.hourCreditAmount > 0 ? `-${fmtMoney(r.hourCreditAmount)}` : '—'}
+                        </div>
+                      </div>
                     ))}
                   </div>
-                  {[...data.rows].reverse().map((r, i) => (
-                    <div key={r.period} style={{
-                      display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr',
-                      padding: '9px 14px',
-                      borderBottom: i < data.rows.length - 1 ? '1px solid #f5f5f5' : 'none',
-                      background: i % 2 === 0 ? '#fff' : '#fafafa'
-                    }}>
-                      <div style={{ fontSize: '12px', color: '#444' }}>{periodLabel(r.period, period)}</div>
-                      <div style={{ fontSize: '13px', fontWeight: r.revenue > 0 ? '700' : '400', color: r.revenue > 0 ? '#1b5e20' : '#ccc' }}>
-                        {r.revenue > 0 ? fmtMoney(r.revenue) : '—'}
-                      </div>
-                      <div style={{ fontSize: '13px', color: r.visitors > 0 ? '#333' : '#ccc' }}>
-                        {r.visitors > 0 ? `${r.visitors} 人` : '—'}
-                      </div>
-                      <div style={{ fontSize: '12px', color: r.paidCount > 0 ? '#555' : '#ccc' }}>
-                        {r.paidCount > 0 ? `${r.paidCount} 筆` : '—'}
-                      </div>
-                    </div>
-                  ))}
                 </div>
               )
             }

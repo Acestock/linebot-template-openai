@@ -1753,6 +1753,24 @@ router.get('/analytics', async (req, res) => {
       ? '$totalPrice'
       : { $subtract: ['$totalPrice', { $ifNull: ['$discountAmount', 0] }] };
 
+    // 折抵來源分欄：依 appliedCouponId / appliedDiscountCode 是否有值判斷來源，
+    // 都沒有但 discountAmount > 0 的就是預購時數折抵（pay-with-hours 不會寫入前兩者）
+    const couponAmountExpr = { $sum: { $cond: [{ $ifNull: ['$appliedCouponId', false] }, '$discountAmount', 0] } };
+    const discountCodeAmountExpr = { $sum: { $cond: [{ $ne: [{ $ifNull: ['$appliedDiscountCode', ''] }, ''] }, '$discountAmount', 0] } };
+    const hourCreditAmountExpr = {
+      $sum: {
+        $cond: [
+          { $and: [
+            { $eq: [{ $ifNull: ['$appliedCouponId', null] }, null] },
+            { $eq: [{ $ifNull: ['$appliedDiscountCode', ''] }, ''] },
+            { $gt: [{ $ifNull: ['$discountAmount', 0] }, 0] }
+          ]},
+          '$discountAmount',
+          0
+        ]
+      }
+    };
+
     const now = new Date();
     const tz  = 'Asia/Taipei';
     let startDate, groupFmt;
@@ -1782,7 +1800,10 @@ router.get('/analytics', async (req, res) => {
         { $group: {
           _id: { $dateToString: { format: groupFmt, date: '$paidAt', timezone: tz } },
           revenue: { $sum: revenueExpr },
-          count:   { $sum: 1 }
+          count:   { $sum: 1 },
+          couponAmount:       couponAmountExpr,
+          discountCodeAmount: discountCodeAmountExpr,
+          hourCreditAmount:   hourCreditAmountExpr
         }},
         { $sort: { _id: 1 } }
       ]),
@@ -1809,10 +1830,13 @@ router.get('/analytics', async (req, res) => {
 
     // Merge by period key
     const periodMap = {};
-    for (const r of revenueByPeriod)  periodMap[r._id] = { period: r._id, revenue: r.revenue, paidCount: r.count, visitors: 0 };
+    for (const r of revenueByPeriod)  periodMap[r._id] = {
+      period: r._id, revenue: r.revenue, paidCount: r.count, visitors: 0,
+      couponAmount: r.couponAmount, discountCodeAmount: r.discountCodeAmount, hourCreditAmount: r.hourCreditAmount
+    };
     for (const v of visitorsByPeriod) {
       if (periodMap[v._id]) periodMap[v._id].visitors = v.visitors;
-      else periodMap[v._id] = { period: v._id, revenue: 0, paidCount: 0, visitors: v.visitors };
+      else periodMap[v._id] = { period: v._id, revenue: 0, paidCount: 0, visitors: v.visitors, couponAmount: 0, discountCodeAmount: 0, hourCreditAmount: 0 };
     }
 
     const rows = Object.values(periodMap).sort((a, b) => a.period.localeCompare(b.period));
