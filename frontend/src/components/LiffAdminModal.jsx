@@ -1634,6 +1634,10 @@ function AnalyticsTab() {
   useEffect(load, [load]);
 
   const fmtMoney = n => `$${Number(n).toLocaleString()}`;
+  const fmtHours = mins => {
+    const h = mins / 60;
+    return `${h % 1 === 0 ? h : h.toFixed(1)} hr`;
+  };
 
   function periodLabel(p, period) {
     if (period === 'year') {
@@ -1780,8 +1784,15 @@ function AnalyticsTab() {
 
           {/* Detail table */}
           <div>
-            <div style={{ fontWeight: '700', fontSize: '13px', marginBottom: '8px' }}>
-              {period === 'year' ? '月別明細' : '日別明細'}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
+              <div style={{ fontWeight: '700', fontSize: '13px' }}>
+                {period === 'year' ? '月別明細' : '日別明細'}
+              </div>
+              {data.rows.reduce((s, r) => s + (r.hourCreditMinutes || 0), 0) > 0 && (
+                <div style={{ fontSize: '11px', color: '#7B61FF', background: '#f3f0ff', borderRadius: '10px', padding: '2px 10px' }}>
+                  本期時數折抵共 {fmtHours(data.rows.reduce((s, r) => s + (r.hourCreditMinutes || 0), 0))}
+                </div>
+              )}
             </div>
             {data.rows.length === 0
               ? <div style={{ textAlign: 'center', color: '#aaa', padding: '16px', fontSize: '13px' }}>本期無資料</div>
@@ -1817,7 +1828,14 @@ function AnalyticsTab() {
                           {r.discountCodeAmount > 0 ? `-${fmtMoney(r.discountCodeAmount)}` : '—'}
                         </div>
                         <div style={{ fontSize: '12px', color: r.hourCreditAmount > 0 ? '#7B61FF' : '#ccc' }}>
-                          {r.hourCreditAmount > 0 ? `-${fmtMoney(r.hourCreditAmount)}` : '—'}
+                          {r.hourCreditAmount > 0 ? (
+                            <>
+                              -{fmtMoney(r.hourCreditAmount)}
+                              {r.hourCreditMinutes > 0 && (
+                                <div style={{ fontSize: '10px', color: '#aaa', marginTop: '1px' }}>{fmtHours(r.hourCreditMinutes)}</div>
+                              )}
+                            </>
+                          ) : '—'}
                         </div>
                       </div>
                     ))}

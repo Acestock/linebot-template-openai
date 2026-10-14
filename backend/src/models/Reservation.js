@@ -24,6 +24,7 @@ const ReservationSchema = new mongoose.Schema({
   appliedCouponId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null },
   appliedDiscountCode: { type: String, default: '' },
   discountAmount:   { type: Number, default: 0 },
+  hourCreditMinutes: { type: Number, default: 0 }, // 用預購時數折抵時，實際折抵的分鐘數
   paidAt:           { type: Date, default: null },
   createdAt:        { type: Date, default: Date.now },
   // ── 策略二欄位 ───────────────────────────────────────────────────────────────

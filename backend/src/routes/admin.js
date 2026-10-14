@@ -1803,7 +1803,8 @@ router.get('/analytics', async (req, res) => {
           count:   { $sum: 1 },
           couponAmount:       couponAmountExpr,
           discountCodeAmount: discountCodeAmountExpr,
-          hourCreditAmount:   hourCreditAmountExpr
+          hourCreditAmount:   hourCreditAmountExpr,
+          hourCreditMinutes:  { $sum: { $ifNull: ['$hourCreditMinutes', 0] } }
         }},
         { $sort: { _id: 1 } }
       ]),
@@ -1832,11 +1833,12 @@ router.get('/analytics', async (req, res) => {
     const periodMap = {};
     for (const r of revenueByPeriod)  periodMap[r._id] = {
       period: r._id, revenue: r.revenue, paidCount: r.count, visitors: 0,
-      couponAmount: r.couponAmount, discountCodeAmount: r.discountCodeAmount, hourCreditAmount: r.hourCreditAmount
+      couponAmount: r.couponAmount, discountCodeAmount: r.discountCodeAmount,
+      hourCreditAmount: r.hourCreditAmount, hourCreditMinutes: r.hourCreditMinutes
     };
     for (const v of visitorsByPeriod) {
       if (periodMap[v._id]) periodMap[v._id].visitors = v.visitors;
-      else periodMap[v._id] = { period: v._id, revenue: 0, paidCount: 0, visitors: v.visitors, couponAmount: 0, discountCodeAmount: 0, hourCreditAmount: 0 };
+      else periodMap[v._id] = { period: v._id, revenue: 0, paidCount: 0, visitors: v.visitors, couponAmount: 0, discountCodeAmount: 0, hourCreditAmount: 0, hourCreditMinutes: 0 };
     }
 
     const rows = Object.values(periodMap).sort((a, b) => a.period.localeCompare(b.period));
