@@ -260,6 +260,126 @@ function ProactiveSend({ lineUserId, displayName, onSent }) {
   );
 }
 
+function SendCoupon({ lineUserId, displayName, onSent }) {
+  const [open, setOpen] = useState(false);
+  const [discountType, setDiscountType] = useState('amount'); // 'amount' | 'percent'
+  const [amount, setAmount] = useState('');
+  const [percent, setPercent] = useState('');
+  const [note, setNote] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+
+  const valid = discountType === 'amount'
+    ? Number(amount) > 0
+    : Number(percent) > 0 && Number(percent) < 100;
+
+  function reset() {
+    setOpen(false); setAmount(''); setPercent(''); setNote(''); setExpiresAt(''); setError('');
+  }
+
+  async function send() {
+    if (!valid) return;
+    setSending(true);
+    setError('');
+    try {
+      const res = await authFetch(`${API_BASE}/api/coupons`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lineUserId, displayName, discountType,
+          discountAmount: discountType === 'amount' ? Number(amount) : undefined,
+          discountPercent: discountType === 'percent' ? Number(percent) : undefined,
+          note: note.trim(),
+          expiresAt: expiresAt || undefined
+        })
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        setError(d.error || '發送失敗');
+      } else {
+        reset();
+        onSent && onSent();
+      }
+    } catch {
+      setError('網路錯誤，請稍後再試');
+    }
+    setSending(false);
+  }
+
+  return (
+    <div style={{ marginTop: '12px' }}>
+      {!open ? (
+        <button onClick={() => setOpen(true)} style={{
+          width: '100%', padding: '8px', borderRadius: '8px',
+          border: '1px dashed #bbb', background: '#fafafa', color: '#888',
+          fontSize: '13px', cursor: 'pointer'
+        }}>
+          🎁 發送折扣券給此客戶
+        </button>
+      ) : (
+        <div style={{ borderRadius: '8px', border: '1px solid #e0e0e0', overflow: 'hidden', backgroundColor: '#fff' }}>
+          <div style={{
+            padding: '8px 12px', backgroundColor: '#f5f5f5',
+            fontSize: '12px', color: '#666', borderBottom: '1px solid #e0e0e0',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+          }}>
+            <span>發送折扣券</span>
+            <button onClick={reset} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '14px', padding: 0 }}>✕</button>
+          </div>
+          <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {[['amount', '固定金額'], ['percent', '百分比折扣']].map(([key, label]) => (
+                <button key={key} onClick={() => setDiscountType(key)} style={{
+                  flex: 1, padding: '6px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600',
+                  border: discountType === key ? '1.5px solid #00B900' : '1px solid #ddd',
+                  background: discountType === key ? '#e8f5e9' : '#fff',
+                  color: discountType === key ? '#00B900' : '#888'
+                }}>{label}</button>
+              ))}
+            </div>
+            {discountType === 'amount' ? (
+              <input type="number" min="1" value={amount} onChange={e => setAmount(e.target.value)}
+                placeholder="折抵金額，例：100"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px' }} />
+            ) : (
+              <input type="number" min="1" max="99" value={percent} onChange={e => setPercent(e.target.value)}
+                placeholder="折扣百分比，例：10（代表打 9 折）"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px' }} />
+            )}
+            <input value={note} onChange={e => setNote(e.target.value)}
+              placeholder="備註（選填，會附在通知訊息裡）"
+              style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px' }} />
+            <div>
+              <label style={{ display: 'block', fontSize: '11px', color: '#999', marginBottom: '3px' }}>使用期限（選填，留空 = 永久有效）</label>
+              <input type="date" value={expiresAt} onChange={e => setExpiresAt(e.target.value)}
+                style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px' }} />
+            </div>
+          </div>
+          {error && <div style={{ padding: '0 12px 4px', fontSize: '12px', color: '#e53935' }}>{error}</div>}
+          <div style={{ padding: '8px 12px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <button onClick={reset} style={{
+              padding: '5px 14px', borderRadius: '6px', border: '1px solid #ddd',
+              background: '#fff', color: '#666', fontSize: '13px', cursor: 'pointer'
+            }}>取消</button>
+            <button
+              onClick={send}
+              disabled={sending || !valid}
+              style={{
+                padding: '5px 14px', borderRadius: '6px', border: 'none',
+                background: valid ? '#00B900' : '#ccc',
+                color: '#fff', fontSize: '13px', cursor: valid ? 'pointer' : 'default'
+              }}
+            >
+              {sending ? '傳送中...' : '傳送'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ConversationSummary({ lineUserId }) {
   const [summary, setSummary] = useState('');
   const [updatedAt, setUpdatedAt] = useState(null);
@@ -452,6 +572,7 @@ function ChatDetail({ conversation, labels = [], customerLabels = {}, onLabelsCh
 
       <SendOrderCard lineUserId={lineUserId} />
       <ProactiveSend lineUserId={lineUserId} displayName={displayName} onSent={onRefresh} />
+      <SendCoupon lineUserId={lineUserId} displayName={displayName} onSent={onRefresh} />
     </div>
   );
 }

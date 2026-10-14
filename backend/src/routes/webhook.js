@@ -22,6 +22,22 @@ const lineConfig = {
 
 router.use(line.middleware(lineConfig));
 
+// 依關鍵字設定回覆（卡片優先，否則回文字）。供 AI 語意比對命中、與卡片按鈕 postback 觸發共用。
+async function sendKeywordReply(keyword, lineUserId) {
+  if (keyword?.replyType === 'card' && keyword?.cardIds?.length > 0) {
+    const cards = await ProductCard.find({ _id: { $in: keyword.cardIds } }).lean();
+    if (cards.length > 0) {
+      await pushFlexCard(lineUserId, cards);
+      return { sendOk: true, summary: `[卡片自動回覆] ${cards.map(c => c.title).join('、')}` };
+    }
+  }
+  if (keyword?.reply) {
+    await pushMessage(lineUserId, keyword.reply);
+    return { sendOk: true, summary: `[關鍵字自動回覆] ${keyword.reply}` };
+  }
+  return { sendOk: false, summary: '' };
+}
+
 router.post('/', async (req, res) => {
   res.status(200).send('OK');
 
@@ -66,6 +82,34 @@ router.post('/', async (req, res) => {
       continue;
     }
 
+    // 商品卡片按鈕：點擊後直接觸發指定關鍵字的回覆（文字或另一組卡片），不經過 AI 語意比對
+    if (event.type === 'postback' && event.postback?.data?.startsWith('action=card_keyword')) {
+      try {
+        const lineUserId = event.source.userId;
+        const keywordId = new URLSearchParams(event.postback.data).get('keywordId');
+        const kw = keywordId ? await Keyword.findOne({ _id: keywordId, isActive: true }).lean() : null;
+        if (kw) {
+          const { sendOk, summary } = await sendKeywordReply(kw, lineUserId);
+          if (sendOk) {
+            const profile = await getUserProfile(lineUserId);
+            await dbService.createMessage({
+              lineUserId,
+              displayName: profile.displayName || '',
+              userMessage: event.postback.displayText || kw.trigger,
+              replyToken: event.replyToken,
+              aiReplies: ['', '', ''],
+              urgency: 'normal', intent: 'none',
+              status: 'replied', selectedReply: summary, repliedAt: new Date()
+            });
+            sseService.broadcast('new-message', { lineUserId });
+          }
+        }
+      } catch (err) {
+        console.error('[Webhook] Postback card_keyword error:', err.message);
+      }
+      continue;
+    }
+
     if (event.type !== 'message' || event.message.type !== 'text') continue;
 
     const { replyToken, source, message } = event;
@@ -82,33 +126,43 @@ router.post('/', async (req, res) => {
       ]);
       const conversationSummary = customerSetting?.conversationSummary || '';
 
-      const { replies, urgency, intent, keywordMatch } = await openaiService.analyzeMessage(
-        userMessage, businessProfile, keywords, faqs, conversationSummary
-      );
+      // 精準比對：訊息文字與關鍵字 trigger 完全一致時（例如圖文選單快捷文字）直接回覆，
+      // 跳過 AI 語意分析，避免等待 GPT-4o 的 2-5 秒延遲。比對不到才照舊交給 AI 做語意判斷。
+      const exactKw = keywords.find(k => k.trigger.trim() === userMessage.trim());
+      if (exactKw) {
+        const { sendOk, summary: autoReplySummary } = await sendKeywordReply(exactKw, lineUserId);
+        if (sendOk) {
+          await dbService.createMessage({
+            lineUserId,
+            displayName: lineProfile.displayName || '',
+            userMessage,
+            replyToken,
+            aiReplies: ['', '', ''],
+            urgency: 'normal', intent: 'none',
+            status: 'replied',
+            selectedReply: autoReplySummary,
+            repliedAt: new Date()
+          });
+          console.log(`[Webhook] Exact keyword match "${exactKw.trigger}" for ${lineProfile.displayName || lineUserId}`);
+          sseService.broadcast('new-message', { lineUserId });
+          continue;
+        }
+      }
+
+      // 全域「自動回覆」關閉時，整段 AI 訊息分析（情緒/意圖/語意關鍵字比對/回覆建議）都不跑，
+      // 只保留上面不花 AI 額度的精準關鍵字比對，藉此節省用量。訊息仍會存成 pending 給客服人工處理，
+      // 需要時客服仍可在後台對單則訊息點「取得建議」另外呼叫 AI。
+      let replies = ['', '', ''], urgency = 'normal', intent = 'none', keywordMatch = null;
+      if (businessProfile?.autoReply) {
+        ({ replies, urgency, intent, keywordMatch } = await openaiService.analyzeMessage(
+          userMessage, businessProfile, keywords, faqs, conversationSummary
+        ));
+      }
 
       // Keyword matched — auto-reply immediately, no admin review needed
       if (keywordMatch && keywordMatch.trigger) {
         const matchedKw = keywords.find(k => k.trigger === keywordMatch.trigger);
-
-        let autoReplySummary = '';
-        let sendOk = false;
-
-        if (matchedKw?.replyType === 'card' && matchedKw?.cardIds?.length > 0) {
-          // Send Flex Message card(s) as bubble or carousel
-          const cards = await ProductCard.find({ _id: { $in: matchedKw.cardIds } }).lean();
-          if (cards.length > 0) {
-            await pushFlexCard(lineUserId, cards);
-            autoReplySummary = `[卡片自動回覆] ${cards.map(c => c.title).join('、')}`;
-            sendOk = true;
-          }
-        }
-
-        if (!sendOk && keywordMatch.reply) {
-          // Fall back to text reply
-          await pushMessage(lineUserId, keywordMatch.reply);
-          autoReplySummary = `[關鍵字自動回覆] ${keywordMatch.reply}`;
-          sendOk = true;
-        }
+        const { sendOk, summary: autoReplySummary } = await sendKeywordReply(matchedKw, lineUserId);
 
         if (sendOk) {
           await dbService.createMessage({

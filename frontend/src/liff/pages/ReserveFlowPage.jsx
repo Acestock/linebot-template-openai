@@ -139,8 +139,12 @@ function WalkInShortFlow({ venue: initialVenue, onBack, onDone }) {
         <div style={{ background: '#ffebee', borderRadius: '10px', padding: '14px', color: '#c62828', fontSize: '14px' }}>{quoteErr}</div>
       ) : !quote?.available ? (
         <div style={{ background: '#fff3e0', borderRadius: '12px', padding: '16px', border: '1px solid #ffcc80', marginBottom: '16px' }}>
-          <div style={{ fontWeight: '700', fontSize: '14px', color: '#e65100', marginBottom: '4px' }}>目前暫停計時入場</div>
-          <div style={{ fontSize: '13px', color: '#bf360c' }}>場內剩餘座位不足，請稍後再試或改為預約入場。</div>
+          <div style={{ fontWeight: '700', fontSize: '14px', color: '#e65100', marginBottom: '4px' }}>
+            {quote?.closureReason ? '今日公休' : '目前暫停計時入場'}
+          </div>
+          <div style={{ fontSize: '13px', color: '#bf360c' }}>
+            {quote?.closureReason || '場內剩餘座位不足，請稍後再試或改為預約入場。'}
+          </div>
         </div>
       ) : (
         <>
@@ -194,32 +198,33 @@ function WalkInShortFlow({ venue: initialVenue, onBack, onDone }) {
 }
 
 // Thin router — no hooks here, so conditional return is safe
-export default function ReserveFlowPage({ venue, mode, onBack, onDone }) {
+export default function ReserveFlowPage({ venue, mode, initialDate, onBack, onDone }) {
   if (mode === 'walkin_short') {
     return <WalkInShortFlow venue={venue} onBack={onBack} onDone={onDone} />;
   }
   if (venue?.strategy === 2) {
-    return <Strategy2Flow venue={venue} onBack={onBack} onDone={onDone} />;
+    return <Strategy2Flow venue={venue} initialDate={initialDate} onBack={onBack} onDone={onDone} />;
   }
-  return <RegularReserveFlow venue={venue} mode={mode} onBack={onBack} onDone={onDone} />;
+  return <RegularReserveFlow venue={venue} mode={mode} initialDate={initialDate} onBack={onBack} onDone={onDone} />;
 }
 
 // ── 策略二：自由時段制預約流程 ─────────────────────────────────────────────────
-function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
+function Strategy2Flow({ venue: initialVenue, initialDate, onBack, onDone }) {
   const [step,          setStep]          = useState(0);  // 0=日期 1=時長 2=時段 3=確認
-  const [date,          setDate]          = useState(toDateStr(new Date()));
+  const [date,          setDate]          = useState(initialDate || toDateStr(new Date()));
   const [plans,         setPlans]         = useState([]);
   const [selPlan,       setSelPlan]       = useState(null);
   const [slots,         setSlots]         = useState([]);
   const [selSlot,       setSelSlot]       = useState(null);
   const [slotsLoading,  setSlotsLoading]  = useState(false);
+  const [closureReason, setClosureReason] = useState('');
   const [submitting,    setSubmitting]    = useState(false);
   const [error,         setError]         = useState('');
   const [done,          setDone]          = useState(false);
   const venue = initialVenue;
 
   const today = toDateStr(new Date());
-  const maxDate = toDateStr(new Date(Date.now() + 6 * 24 * 60 * 60 * 1000));
+  const maxDate = toDateStr(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
 
   // Load duration plans
   useEffect(() => {
@@ -234,8 +239,9 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
     setSlotsLoading(true);
     setSlots([]);
     setSelSlot(null);
+    setClosureReason('');
     fetchStrategy2Slots(venue._id, date, selPlan.durationMinutes)
-      .then(r => setSlots(r.slots || []))
+      .then(r => { setSlots(r.slots || []); setClosureReason(r.closed ? r.reason : ''); })
       .catch(() => {})
       .finally(() => setSlotsLoading(false));
   }, [selPlan, date, venue._id]);
@@ -296,7 +302,7 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
             min={today}
             max={maxDate}
             value={date}
-            onChange={e => setDate(e.target.value)}
+            onChange={e => setDate(e.target.value < today ? today : e.target.value > maxDate ? maxDate : e.target.value)}
             style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: '10px', border: '1.5px solid #e0e0e0', fontSize: '16px' }}
           />
           <button onClick={() => setStep(1)} disabled={!date} style={{ ...nextBtnStyle, marginTop: '20px', opacity: date ? 1 : 0.4 }}>
@@ -364,7 +370,13 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
 
           {slotsLoading && <div style={{ textAlign: 'center', color: '#aaa', padding: '40px' }}>載入中...</div>}
 
-          {!slotsLoading && slots.length === 0 && (
+          {!slotsLoading && closureReason && (
+            <div style={{ background: '#ffebee', borderRadius: '10px', padding: '14px', color: '#c62828', fontSize: '14px', marginBottom: '16px' }}>
+              <strong>公休：</strong>{closureReason}
+            </div>
+          )}
+
+          {!slotsLoading && !closureReason && slots.length === 0 && (
             <div style={{ textAlign: 'center', color: '#aaa', padding: '40px' }}>當日無可用時段</div>
           )}
 
@@ -452,13 +464,13 @@ function toEarlyTime(isoStr, offsetMin) {
   return `${h}:${m}`;
 }
 
-function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
+function RegularReserveFlow({ venue: initialVenue, mode, initialDate, onBack, onDone }) {
   const isWalkIn = mode === 'walkin';
   const totalSteps = isWalkIn ? 2 : 3;
 
   const [step, setStep]         = useState(0);
   const [venue, setVenue]       = useState(initialVenue);
-  const [date, setDate]         = useState(toDateStr(new Date()));
+  const [date, setDate]         = useState(isWalkIn ? toDateStr(new Date()) : (initialDate || toDateStr(new Date())));
   const [selectedSlots, setSelectedSlots] = useState(isWalkIn ? [getCurrentSlot()] : []);
   const [selectedPlan, setSelectedPlan]   = useState(null);
   const [avail, setAvail]       = useState(null);
@@ -493,12 +505,13 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [date, venue]);
+  const closureReason = avail?.morning?.closureReason || avail?.afternoon?.closureReason || avail?.evening?.closureReason || '';
   const currentSlotKey = isWalkIn ? getCurrentSlot() : null;
   const walkInPlans = isWalkIn
     ? plans.filter(p => p.isActive !== false && p.slots?.includes(currentSlotKey))
     : [];
   const today = toDateStr(new Date());
-  const maxDate = toDateStr(new Date(Date.now() + 6 * 24 * 60 * 60 * 1000));
+  const maxDate = toDateStr(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
 
   function toggleSlot(key) {
     setSelectedSlots(prev =>
@@ -668,10 +681,15 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
           <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '14px' }}>選擇入場日期</div>
           <input
             type="date" value={date} min={today} max={maxDate}
-            onChange={e => setDate(e.target.value)}
+            onChange={e => setDate(e.target.value < today ? today : e.target.value > maxDate ? maxDate : e.target.value)}
             style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: '10px', border: '1.5px solid #ddd', fontSize: '16px' }}
           />
-          <button onClick={() => setStep(1)} style={nextBtnStyle}>下一步</button>
+          {closureReason && (
+            <div style={{ background: '#ffebee', borderRadius: '10px', padding: '12px 14px', marginTop: '12px', fontSize: '13px', color: '#c62828' }}>
+              <strong>公休：</strong>{closureReason}
+            </div>
+          )}
+          <button onClick={() => setStep(1)} disabled={!!closureReason} style={{ ...nextBtnStyle, opacity: closureReason ? 0.4 : 1 }}>下一步</button>
         </div>
       )}
 
@@ -702,9 +720,11 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                       {slotAvail && (
                         <span style={{ fontSize: '12px', color: full ? '#c62828' : '#2e7d32' }}>
-                          {slotAvail.blocked
-                            ? (slotAvail.eventName ? `活動：${slotAvail.eventName}` : '已包場')
-                            : full ? '已額滿' : `剩 ${slotAvail.remaining}`}
+                          {slotAvail.closureReason
+                            ? `公休：${slotAvail.closureReason}`
+                            : slotAvail.blocked
+                              ? (slotAvail.eventName ? `活動：${slotAvail.eventName}` : '已包場')
+                              : full ? '已額滿' : `剩 ${slotAvail.remaining}`}
                         </span>
                       )}
                       <PriceTag plan={plan} style={{}} />
