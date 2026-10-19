@@ -59,10 +59,22 @@ function isPlanOnSaleNow(plan) {
   return !!(plan.onSale && plan.salePrice > 0 && (!plan.saleEndAt || new Date(plan.saleEndAt) > new Date()));
 }
 
+// ── 台北時間（UTC+8）的「今天」日期字串 ─────────────────────────────────────────
+// 伺服器（Railway）是以 UTC 計時，若直接用 `new Date(); setHours(0,0,0,0)` 取得的
+// 「今天」其實是 UTC 的今天。台北時間 00:00–08:00 這段 UTC 還沒跨過午夜，會少算
+// 一天，導致 8 天預約視窗/場地列表在這段時間少了最後一天（顯示已額滿、無法預約）。
+function taipeiTodayStr() {
+  const taipei = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return taipei.toISOString().slice(0, 10);
+}
+function taipeiTodayUTCMidnightMs() {
+  const [y, m, d] = taipeiTodayStr().split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
 // ── 預約開放範圍：最多可預約到「今天起 8 天內」（與場地列表的日期分頁範圍一致） ───
 function maxBookingDateStr() {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const max = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const max = new Date(taipeiTodayUTCMidnightMs() + 7 * 24 * 60 * 60 * 1000);
   return max.toISOString().slice(0, 10);
 }
 function isBeyondBookingWindow(dateStr) {
@@ -344,9 +356,9 @@ router.patch('/profile', liffAuth, async (req, res) => {
 router.get('/venues', async (req, res) => {
   try {
     const venues = await Venue.find({ isActive: true }).sort({ order: 1, createdAt: 1 }).lean();
-    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const todayUTCMidnightMs = taipeiTodayUTCMidnightMs();
     const days = Array.from({ length: 8 }, (_, i) =>
-      new Date(today.getTime() + i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      new Date(todayUTCMidnightMs + i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     );
 
     const result = await Promise.all(venues.map(async (v) => {
