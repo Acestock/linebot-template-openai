@@ -945,6 +945,7 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
       const { transactionId, paymentUrl } = await requestLinePay(reservationForPayment);
       r.paymentRef = transactionId;
       r.paymentMethod = 'linepay';
+      r.linepayPendingAmount = reservationForPayment.totalPrice; // Confirm 時原封不動沿用，不重新計算
       await r.save();
       return res.json({ redirectUrl: paymentUrl });
     }

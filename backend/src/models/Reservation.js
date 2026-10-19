@@ -18,6 +18,7 @@ const ReservationSchema = new mongoose.Schema({
   unpaidExit:       { type: Boolean, default: false },
   paymentRef:       { type: String, default: '' },
   paymentMethod:    { type: String, enum: ['newebpay', 'linepay'], default: 'newebpay' },
+  linepayPendingAmount: { type: Number, default: 0 }, // LINE Pay Request 當下實際送出的金額，Confirm 時原封不動沿用，避免跟 discountAmount 殘留值算出不同金額
   qrToken:          { type: String, default: '' },
   note:             { type: String, default: '' },
   reminderSentAt:   { type: Date, default: null },

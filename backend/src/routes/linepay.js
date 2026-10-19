@@ -77,7 +77,12 @@ router.all('/confirm', async (req, res) => {
     } else if (!transactionId) {
       mainMsg = '缺少交易編號，請至「預約紀錄」確認狀態或聯繫客服。';
     } else {
-      const effectiveAmount = Math.max(1, Math.round(r.totalPrice - (r.discountAmount || 0)));
+      // 沿用 Request 當下實際送出的金額，不要重新用 totalPrice - discountAmount 算一次——
+      // discountAmount 不保證歸零（沒套折扣的付款嘗試不會重設它），重算可能跟 LINE Pay
+      // 當初收到的金額對不上，導致 Confirm 回傳 1124 Error in Amount info。
+      const effectiveAmount = r.linepayPendingAmount > 0
+        ? r.linepayPendingAmount
+        : Math.max(1, Math.round(r.totalPrice - (r.discountAmount || 0)));
       const { valid, result } = await confirmPayment(transactionId, effectiveAmount);
 
       if (valid) {
