@@ -885,6 +885,7 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
     const { couponId, discountCode } = req.body;
     let effectivePrice = r.totalPrice;
     let coupon = null;
+    let discountApplied = false;
     if (couponId) {
       coupon = await Coupon.findOne({ _id: couponId, lineUserId: req.liffUser.lineUserId, status: 'valid' });
       if (coupon && coupon.expiresAt && coupon.expiresAt < new Date()) {
@@ -898,6 +899,7 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
           : Math.max(0, r.totalPrice - coupon.discountAmount);
         r.appliedCouponId = coupon._id;
         r.discountAmount = r.totalPrice - effectivePrice; // 統一存實際折抵金額，不論券的類型
+        discountApplied = true;
         await r.save();
 
         if (effectivePrice === 0) {
@@ -922,6 +924,7 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
       effectivePrice = Math.max(0, r.totalPrice - discount);
       r.appliedDiscountCode = dc.code;
       r.discountAmount = discount;
+      discountApplied = true;
       await r.save();
 
       if (effectivePrice === 0) {
@@ -934,6 +937,15 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
         await r.save();
         return res.json({ skip: true });
       }
+    }
+
+    // 這次付款沒有套用折扣券/折扣碼（或套用失敗）：清掉上一次放棄的付款嘗試殘留的折扣
+    // 紀錄，避免這次明明收全額，付款成功時卻誤把舊折扣券標記已使用、或讓折扣碼用量白白 +1
+    if (!discountApplied && (r.appliedCouponId || r.appliedDiscountCode || r.discountAmount)) {
+      r.appliedCouponId = null;
+      r.appliedDiscountCode = '';
+      r.discountAmount = 0;
+      await r.save();
     }
 
     // Build payment order with effective price (may be discounted)
