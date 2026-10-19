@@ -532,7 +532,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
       {needsPayment && (
         <>
           <button type="button"
-            onClick={isShortSession ? handleShortSessionCheckout : handlePay}
+            onClick={() => (isShortSession ? handleShortSessionCheckout() : handlePay())}
             disabled={paying || shortQuoteLoading || deducting}
             style={{ width: '100%', marginTop: '16px', padding: '14px', border: 'none', borderRadius: '10px', background: (paying || shortQuoteLoading || deducting) ? '#ccc' : '#e65100', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: (paying || shortQuoteLoading || deducting) ? 'not-allowed' : 'pointer', lineHeight: '1.4' }}>
             {payBtnLabel()}
