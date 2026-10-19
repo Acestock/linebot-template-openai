@@ -844,6 +844,18 @@ function ReservationsTab() {
       .catch(() => {});
   }, [filterVenue, filterDate, filterStatus, search, page]);
 
+  async function fixStaleUnpaidExit() {
+    if (!confirm('修復「已付款但未結帳標記未清除」的舊預約紀錄？\n（例如用預購時數折抵補款成功，但仍卡在未結帳狀態的紀錄）\n此操作可重複執行，不會影響真正未付款的紀錄。')) return;
+    try {
+      const res = await authFetch(`${API_BASE}/api/reservations/fix-stale-unpaid-exit`, { method: 'POST' });
+      const data = await res.json();
+      alert(`已修復 ${data.fixed ?? 0} 筆紀錄`);
+      loadReservations();
+    } catch (e) {
+      alert('修復失敗：' + e.message);
+    }
+  }
+
   useEffect(loadReservations, [loadReservations]);
 
   function handleFilterChange(setter) {
@@ -875,9 +887,12 @@ function ReservationsTab() {
   return (
     <div>
       {/* View toggle — 新增的甘特圖檢視，預設仍是原本列表 */}
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <button type="button" onClick={() => setViewMode('list')} style={btn(viewMode === 'list' ? '#111' : '#f0f0f0', viewMode === 'list' ? '#fff' : '#555')}>列表</button>
         <button type="button" onClick={() => setViewMode('gantt')} style={btn(viewMode === 'gantt' ? '#111' : '#f0f0f0', viewMode === 'gantt' ? '#fff' : '#555')}>甘特圖</button>
+        <button type="button" onClick={fixStaleUnpaidExit} style={{ ...btn('#fff3e0', '#e65100'), marginLeft: 'auto', fontSize: '11px' }}>
+          修復未結帳標記殘留（一次性）
+        </button>
       </div>
 
       {viewMode === 'gantt' && <ReservationGanttView venues={venues} />}

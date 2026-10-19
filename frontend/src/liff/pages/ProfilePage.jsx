@@ -12,9 +12,9 @@ const STATUS_MAP = {
   unpaid_checkout: { label: '未成功結帳', color: '#c62828', bg: '#ffebee' }
 };
 
-function getStatusInfo(status, unpaidExit) {
-  if (status === 'completed' && unpaidExit) return STATUS_MAP.unpaid_checkout;
-  if (status === 'completed' && unpaidExit === false) return STATUS_MAP.completed;
+function getStatusInfo(status, unpaidExit, paymentStatus) {
+  if (status === 'completed' && unpaidExit && paymentStatus !== 'paid') return STATUS_MAP.unpaid_checkout;
+  if (status === 'completed') return STATUS_MAP.completed;
   return STATUS_MAP[status] || STATUS_MAP.confirmed;
 }
 
@@ -330,7 +330,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
     }
   }
 
-  const st = getStatusInfo(localStatus, r.unpaidExit);
+  const st = getStatusInfo(localStatus, r.unpaidExit, localPayStatus);
   const slotsStr = (r.slots || []).map(s => SLOT_LABELS[s] || s).join(' + ');
 
   async function handleShortSessionCheckout() {
@@ -670,7 +670,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
 
 // ── Booking list card ─────────────────────────────────────────────────────────
 function BookingCard({ r, onClick }) {
-  const st = getStatusInfo(r.status, r.unpaidExit);
+  const st = getStatusInfo(r.status, r.unpaidExit, r.paymentStatus);
   const dateStr = new Date(r.date).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'short' });
   const slotsStr = (r.slots || []).map(s => SLOT_LABELS[s] || s).join(' + ');
   return (

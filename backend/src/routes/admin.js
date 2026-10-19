@@ -1343,6 +1343,20 @@ router.patch('/reservations/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/reservations/fix-stale-unpaid-exit — 一次性資料修復
+// 「用預購時數折抵」補款成功過去沒有清除 unpaidExit，導致已付款的預約仍被誤判為未結帳
+// （擋新預約、用戶端顯示未成功結帳）。找出 status=completed 且已付款但 unpaidExit 還卡在
+// true 的舊紀錄，把 unpaidExit 清掉。可重複執行，不會動到真正未付款的紀錄。
+router.post('/reservations/fix-stale-unpaid-exit', async (req, res) => {
+  try {
+    const result = await Reservation.updateMany(
+      { status: 'completed', unpaidExit: true, paymentStatus: 'paid' },
+      { $set: { unpaidExit: false } }
+    );
+    res.json({ fixed: result.modifiedCount });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── Blocked Slots (包場) ─────────────────────────────────────────────────────
 router.get('/blocked-slots', async (req, res) => {
   try {
