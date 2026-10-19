@@ -124,6 +124,9 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   const [savingEmail, setSavingEmail]   = useState(false);
   const [emailError, setEmailError]     = useState('');
   const paySkipConfirmRef = useRef(false); // 記住被 email 提示打斷前，原本是否已跳過確認視窗（計時入場流程會先自己跳一次確認）
+  const [showMethodPicker, setShowMethodPicker] = useState(false);
+  const [methodPickerMode, setMethodPickerMode] = useState('normal'); // 'normal' | 'short'（計時入場已自己跳過一次確認）
+  const payMethodRef = useRef('newebpay'); // 'newebpay' | 'linepay'
 
   const isShortSession = r.mode === 'walkin_short';
   const isStrategy2    = (r.strategy ?? 1) === 2;
@@ -232,27 +235,47 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
     });
   }
 
+  function openMethodPicker(mode) {
+    setMethodPickerMode(mode);
+    setShowMethodPicker(true);
+  }
+
+  function choosePayMethod(method) {
+    payMethodRef.current = method;
+    setShowMethodPicker(false);
+    if (methodPickerMode === 'short') {
+      handlePay(true);
+      return;
+    }
+    const methodLabel = method === 'linepay' ? 'LINE Pay' : '藍新金流';
+    const payLabel = selectedCoupon
+      ? `使用折扣券折抵 $${couponDiscountValue(selectedCoupon, r.totalPrice)}，實付 $${effectivePrice}，確認前往付款？`
+      : appliedCode
+      ? `使用折扣碼折抵 $${appliedCode.discountAmount}，實付 $${effectivePrice}，確認前往付款？`
+      : `確認前往付款？\n將跳轉至${methodLabel}付款頁面。`;
+    setConfirmModal({
+      message: payLabel,
+      onConfirm: () => { setConfirmModal(null); handlePay(true); }
+    });
+  }
+
   async function handlePay(skipConfirm = false) {
     if (!myEmail) { paySkipConfirmRef.current = skipConfirm; setShowEmailPrompt(true); return; }
     if (!skipConfirm) {
-      const payLabel = selectedCoupon
-        ? `使用折扣券折抵 $${couponDiscountValue(selectedCoupon, r.totalPrice)}，實付 $${effectivePrice}，確認前往付款？`
-        : appliedCode
-        ? `使用折扣碼折抵 $${appliedCode.discountAmount}，實付 $${effectivePrice}，確認前往付款？`
-        : '確認前往付款？\n將跳轉至藍新金流付款頁面。';
-      setConfirmModal({
-        message: payLabel,
-        onConfirm: () => { setConfirmModal(null); handlePay(true); }
-      });
+      openMethodPicker('normal');
       return;
     }
     setPaying(true);
     try {
-      const data = await initiatePayment(r._id, selectedCoupon?._id, appliedCode?.code);
+      const data = await initiatePayment(r._id, selectedCoupon?._id, appliedCode?.code, payMethodRef.current);
       if (data.skip) {
         setLocalStatus('completed');
         setLocalPayStatus('paid');
         onCompleted?.(r._id, { unpaidExit: false });
+        return;
+      }
+      if (data.redirectUrl) {
+        window.location.href = data.redirectUrl;
         return;
       }
       const { form: { action, fields } } = data;
@@ -575,7 +598,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
             <div style={{ fontSize: '12px', color: '#999', marginBottom: '16px', textAlign: 'center' }}>實際費用將在付款時以當下計算為準</div>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => setShowShortConfirm(false)} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #ddd', background: '#fff', fontSize: '14px', cursor: 'pointer', color: '#333' }}>取消</button>
-              <button onClick={() => { setShowShortConfirm(false); handlePay(true); }} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', background: '#e65100', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>確認付款</button>
+              <button onClick={() => { setShowShortConfirm(false); openMethodPicker('short'); }} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', background: '#e65100', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>確認付款</button>
             </div>
           </div>
         </div>
@@ -597,6 +620,33 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
       )}
 
       {/* Custom confirm modal — replaces native confirm() to avoid URL in title */}
+      {showMethodPicker && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 520, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', padding: '24px', width: '320px', maxWidth: '100%' }}>
+            <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '4px', textAlign: 'center' }}>選擇付款方式</div>
+            <div style={{ fontSize: '13px', color: '#999', marginBottom: '18px', textAlign: 'center' }}>應付金額 ${effectivePrice}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button type="button" onClick={() => choosePayMethod('linepay')}
+                style={{ padding: '13px', borderRadius: '10px', border: '1.5px solid #06C755', background: '#fff', color: '#06C755', fontSize: '15px', fontWeight: '700', cursor: 'pointer' }}>
+                LINE Pay
+              </button>
+              <button type="button" onClick={() => choosePayMethod('newebpay')}
+                style={{ padding: '13px', borderRadius: '10px', border: '1.5px solid #ddd', background: '#fff', color: '#333', fontSize: '15px', fontWeight: '700', cursor: 'pointer' }}>
+                信用卡
+              </button>
+              <button type="button" onClick={() => choosePayMethod('newebpay')}
+                style={{ padding: '13px', borderRadius: '10px', border: '1.5px solid #ddd', background: '#fff', color: '#333', fontSize: '15px', fontWeight: '700', cursor: 'pointer' }}>
+                Apple Pay
+              </button>
+            </div>
+            <button type="button" onClick={() => setShowMethodPicker(false)}
+              style={{ width: '100%', marginTop: '14px', padding: '10px', border: 'none', background: 'none', color: '#999', fontSize: '13px', cursor: 'pointer' }}>
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
       {confirmModal && (
         <ConfirmModal
           message={confirmModal.message}

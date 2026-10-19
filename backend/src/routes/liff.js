@@ -24,6 +24,7 @@ const createOrderParams = (reservation, email) =>
   (process.env.PAYMENT_GATEWAY || 'newebpay').toLowerCase() === 'ecpay'
     ? _ecpayCreateOrder(reservation)
     : _newebpayCreateOrder(reservation, email);
+const { requestPayment: requestLinePay } = require('../services/linepayService');
 const { pushMessage } = require('../services/lineService');
 const {
   timeToMinutes,
@@ -939,9 +940,19 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
     const reservationForPayment = effectivePrice !== r.totalPrice
       ? { ...r.toObject(), totalPrice: effectivePrice }
       : r;
+
+    if (req.body.method === 'linepay') {
+      const { transactionId, paymentUrl } = await requestLinePay(reservationForPayment);
+      r.paymentRef = transactionId;
+      r.paymentMethod = 'linepay';
+      await r.save();
+      return res.json({ redirectUrl: paymentUrl });
+    }
+
     const customerSetting = await CustomerSetting.findOne({ lineUserId: req.liffUser.lineUserId }).lean();
     const { params, apiUrl, tradeNo } = createOrderParams(reservationForPayment, customerSetting?.email);
     r.paymentRef = tradeNo;
+    r.paymentMethod = 'newebpay';
     await r.save();
 
     res.json({ form: { action: apiUrl, fields: params } });

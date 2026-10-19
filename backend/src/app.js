@@ -83,6 +83,8 @@ app.use('/api/ecpay',    ecpayRouter);     // POST /api/ecpay/callback
 app.use('/ecpay',        ecpayRouter);     // GET  /ecpay/result
 app.use('/api/newebpay', newebpayRouter);  // POST /api/newebpay/notify
 app.use('/newebpay',     newebpayRouter);  // GET  /newebpay/result
+const linepayRouter = require('./routes/linepay');
+app.use('/linepay',      linepayRouter);   // GET|POST /linepay/confirm, /linepay/cancel
 
 // All other /api/* routes require auth
 app.use('/api', authMiddleware);

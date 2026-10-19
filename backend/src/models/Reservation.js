@@ -17,6 +17,7 @@ const ReservationSchema = new mongoose.Schema({
   paymentStatus:    { type: String, enum: ['free', 'unpaid', 'paid'], default: 'unpaid' },
   unpaidExit:       { type: Boolean, default: false },
   paymentRef:       { type: String, default: '' },
+  paymentMethod:    { type: String, enum: ['newebpay', 'linepay'], default: 'newebpay' },
   qrToken:          { type: String, default: '' },
   note:             { type: String, default: '' },
   reminderSentAt:   { type: Date, default: null },

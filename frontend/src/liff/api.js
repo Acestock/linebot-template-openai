@@ -103,11 +103,11 @@ export async function checkoutReservation(id) {
   return json;
 }
 
-export async function initiatePayment(id, couponId, discountCode) {
+export async function initiatePayment(id, couponId, discountCode, method) {
   const r = await fetch(`${BASE}/reservations/${id}/payment`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ couponId: couponId || undefined, discountCode: discountCode || undefined })
+    body: JSON.stringify({ couponId: couponId || undefined, discountCode: discountCode || undefined, method: method || undefined })
   });
   const json = await r.json();
   if (!r.ok) throw new Error(json.error || '付款啟動失敗');
