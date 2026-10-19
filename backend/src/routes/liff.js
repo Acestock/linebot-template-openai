@@ -591,7 +591,9 @@ router.post('/reservations', liffAuth, async (req, res) => {
       return res.status(409).json({ error: '平台維護中，暫停預約，請稍後再試' });
 
     // ── 未付款鎖定 ──────────────────────────────────────────────────────────
-    const hasUnpaidExit = await Reservation.findOne({ lineUserId, unpaidExit: true });
+    // 同時檢查 paymentStatus：unpaidExit 曾有付款管道忘了清除的 bug（已修），
+    // 這裡額外比對 paymentStatus，就算哪個管道又漏清，已付款的紀錄也不會誤擋新預約
+    const hasUnpaidExit = await Reservation.findOne({ lineUserId, unpaidExit: true, paymentStatus: { $ne: 'paid' } });
     if (hasUnpaidExit)
       return res.status(403).json({ error: '您有未完成付款的記錄，暫時無法預約。請先至預約紀錄完成補付款，或聯絡工作人員處理。' });
 
