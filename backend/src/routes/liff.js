@@ -54,6 +54,11 @@ function discountCodeValue(dc, totalPrice) {
     : Math.min(dc.discountAmount, totalPrice);
 }
 
+// ── 策略二時長方案：判斷目前是否「真的在特價中」（開啟特價 + 特價>0 + 未過期） ──
+function isPlanOnSaleNow(plan) {
+  return !!(plan.onSale && plan.salePrice > 0 && (!plan.saleEndAt || new Date(plan.saleEndAt) > new Date()));
+}
+
 // ── 預約開放範圍：最多可預約到「今天起 8 天內」（與場地列表的日期分頁範圍一致） ───
 function maxBookingDateStr() {
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -483,7 +488,10 @@ router.get('/venues/:id/duration-plans', async (req, res) => {
   try {
     const plans = await DurationPlan.find({ venueId: req.params.id, isActive: true })
       .sort({ order: 1, createdAt: 1 }).lean();
-    res.json(plans);
+    // onSale 回傳「目前是否真的在特價中」的即時結果，而非後台原始設定值，
+    // 這樣特價結束時間一到，使用者端顯示會自動變回原價，不用手動去後台關掉開關
+    const result = plans.map(p => ({ ...p, onSale: isPlanOnSaleNow(p) }));
+    res.json(result);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -624,7 +632,7 @@ router.post('/reservations', liffAuth, async (req, res) => {
         durationPlanName: dPlan.name,
         durationMinutes:  dPlan.durationMinutes,
         slots:            [],
-        totalPrice:       (dPlan.onSale && dPlan.salePrice > 0) ? dPlan.salePrice : dPlan.price,
+        totalPrice:       isPlanOnSaleNow(dPlan) ? dPlan.salePrice : dPlan.price,
         startTime:        sTime,
         endTime:          eTime,
         expectedCheckIn:  checkIn15Min,

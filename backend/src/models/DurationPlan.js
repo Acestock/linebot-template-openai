@@ -7,6 +7,7 @@ const DurationPlanSchema = new mongoose.Schema({
   price:           { type: Number, required: true, default: 0 },
   onSale:          { type: Boolean, default: false },
   salePrice:       { type: Number, default: 0 },
+  saleEndAt:       { type: Date, default: null }, // 特價結束時間，留空 = 一直特價
   isActive:        { type: Boolean, default: true },
   order:           { type: Number, default: 0 },
   createdAt:       { type: Date, default: Date.now }

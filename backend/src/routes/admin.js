@@ -1657,13 +1657,16 @@ router.get('/venues/:venueId/duration-plans', async (req, res) => {
 
 router.post('/venues/:venueId/duration-plans', async (req, res) => {
   try {
-    const { name, durationMinutes, price, order } = req.body;
+    const { name, durationMinutes, price, order, onSale, salePrice, saleEndAt } = req.body;
     if (!name || durationMinutes === undefined || price === undefined)
       return res.status(400).json({ error: 'name, durationMinutes, price 為必填' });
     const plan = await DurationPlan.create({
       venueId: req.params.venueId, name,
       durationMinutes: +durationMinutes, price: +price,
-      order: order ?? 0
+      order: order ?? 0,
+      onSale: !!onSale,
+      salePrice: onSale ? +salePrice || 0 : 0,
+      saleEndAt: onSale && saleEndAt ? new Date(saleEndAt) : null
     });
     res.json(plan);
   } catch (err) { res.status(400).json({ error: err.message }); }

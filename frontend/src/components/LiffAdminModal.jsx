@@ -475,7 +475,7 @@ function DurationPlansSection({ venueId }) {
   }, [venueId]);
   useEffect(load, [load]);
 
-  const emptyDForm = { name: '', durationMinutes: 90, price: '', onSale: false, salePrice: '', order: 0 };
+  const emptyDForm = { name: '', durationMinutes: 90, price: '', onSale: false, salePrice: '', saleEndAt: '', order: 0 };
 
   async function dSave() {
     if (!dForm.name || dForm.price === '') return alert('請填寫方案名稱和價格');
@@ -485,7 +485,13 @@ function DurationPlansSection({ venueId }) {
       const url    = dForm._id
         ? `${API_BASE}/api/venues/${venueId}/duration-plans/${dForm._id}`
         : `${API_BASE}/api/venues/${venueId}/duration-plans`;
-      await authFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dForm, durationMinutes: +dForm.durationMinutes, price: +dForm.price, salePrice: dForm.onSale ? +dForm.salePrice : 0 }) });
+      await authFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        ...dForm,
+        durationMinutes: +dForm.durationMinutes,
+        price: +dForm.price,
+        salePrice: dForm.onSale ? +dForm.salePrice : 0,
+        saleEndAt: dForm.onSale && dForm.saleEndAt ? dForm.saleEndAt : null
+      }) });
       setDForm(null); load();
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
@@ -509,13 +515,26 @@ function DurationPlansSection({ venueId }) {
       {dPlans.map(p => (
         <div key={p._id} style={{ border: '1px solid #eee', borderRadius: '10px', padding: '10px 14px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontWeight: '600', fontSize: '14px' }}>{p.name}</div>
+            <div style={{ fontWeight: '600', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {p.name}
+              {p.onSale && p.salePrice > 0 && (
+                (!p.saleEndAt || new Date(p.saleEndAt) > new Date())
+                  ? <span style={{ fontSize: '10px', fontWeight: '700', color: '#c62828', background: '#ffebee', borderRadius: '4px', padding: '2px 6px' }}>特價中</span>
+                  : <span style={{ fontSize: '10px', fontWeight: '700', color: '#999', background: '#f5f5f5', borderRadius: '4px', padding: '2px 6px' }}>特價已過期</span>
+              )}
+            </div>
             <div style={{ fontSize: '12px', color: '#888' }}>
               {p.durationMinutes === 0 ? '整天' : `${p.durationMinutes} 分鐘`} · ${p.price}
+              {p.onSale && p.salePrice > 0 && <span style={{ color: '#c62828' }}> → ${p.salePrice}</span>}
             </div>
+            {p.onSale && p.saleEndAt && (
+              <div style={{ fontSize: '11px', color: '#aaa', marginTop: '2px' }}>
+                特價至 {new Date(p.saleEndAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
-            <button onClick={() => setDForm({ ...p, price: String(p.price) })} style={btn('#f5f5f5', '#333')}>編輯</button>
+            <button onClick={() => setDForm({ ...p, price: String(p.price), saleEndAt: p.saleEndAt ? p.saleEndAt.slice(0, 16) : '' })} style={btn('#f5f5f5', '#333')}>編輯</button>
             <button onClick={() => dDel(p._id)} style={btn('#ffebee', '#c62828')}>刪除</button>
           </div>
         </div>
@@ -547,7 +566,11 @@ function DurationPlansSection({ venueId }) {
                 開啟特價
               </label>
               {dForm.onSale && (
-                <input type="number" min="0" style={inputStyle} placeholder="特價金額" value={dForm.salePrice} onChange={e => setDForm(f => ({ ...f, salePrice: e.target.value }))} />
+                <>
+                  <input type="number" min="0" style={inputStyle} placeholder="特價金額" value={dForm.salePrice} onChange={e => setDForm(f => ({ ...f, salePrice: e.target.value }))} />
+                  <div style={{ fontSize: '12px', color: '#888', margin: '8px 0 4px' }}>特價結束時間（留空 = 一直特價，時間到會自動恢復原價）</div>
+                  <input type="datetime-local" style={inputStyle} value={dForm.saleEndAt} onChange={e => setDForm(f => ({ ...f, saleEndAt: e.target.value }))} />
+                </>
               )}
             </Field>
             <Field label="排序（數字越小越前）"><input type="number" style={{ ...inputStyle, width: '80px' }} value={dForm.order} onChange={e => setDForm(f => ({ ...f, order: +e.target.value }))} /></Field>
