@@ -298,8 +298,12 @@ function SendCoupon({ lineUserId, displayName, onSent }) {
         const d = await res.json();
         setError(d.error || '發送失敗');
       } else {
+        const d = await res.json();
         reset();
         onSent && onSent();
+        if (d.notifySent === false) {
+          alert('折扣券已建立成功，但 LINE 通知發送失敗（可能是本月訊息額度已用完），請自行告知客戶：' + (d.notifyError || ''));
+        }
       }
     } catch {
       setError('網路錯誤，請稍後再試');

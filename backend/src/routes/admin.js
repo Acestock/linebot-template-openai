@@ -1643,9 +1643,17 @@ router.post('/coupons', async (req, res) => {
       expiresAt: expiresAt ? new Date(expiresAt) : null
     });
 
-    await pushLineMessage(lineUserId, buildCouponFlexMessage(coupon));
+    // 折扣券已經存檔成功，推播通知失敗（例如 LINE 當月訊息額度用完）不應該讓整個
+    // 請求回報失敗，否則容易誤判沒成功而重複發送，造成同一用戶收到好幾張重複的券
+    let notifyError = '';
+    try {
+      await pushLineMessage(lineUserId, buildCouponFlexMessage(coupon));
+    } catch (err) {
+      notifyError = err.message;
+      console.error('[Coupon] LINE 通知發送失敗（折扣券已建立成功）:', err.message);
+    }
 
-    res.json(coupon);
+    res.json({ ...coupon.toObject(), notifySent: !notifyError, notifyError });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
