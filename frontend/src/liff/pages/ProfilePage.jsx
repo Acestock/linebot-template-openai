@@ -304,6 +304,10 @@ function DetailView({ r, onBack, onCancelled, onCompleted, readOnly }) {
   }
 
   async function openHourDeduction() {
+    if (r.strategy === 2 && r.durationMinutes === 0) {
+      alert('整天方案用時數折抵不划算，請直接結帳即可，謝謝');
+      return;
+    }
     try {
       const raw = await fetchMyHourPurchases();
       const purchases = Array.isArray(raw) ? raw : [];

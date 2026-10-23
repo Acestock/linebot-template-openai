@@ -1268,6 +1268,9 @@ router.post('/reservations/:id/pay-with-hours', liffAuth, async (req, res) => {
     if (r.lineUserId !== req.liffUser.lineUserId) return res.status(403).json({ error: '無權限' });
     if (r.paymentStatus === 'paid') return res.status(400).json({ error: '已付款' });
     if (r.totalPrice <= 0) return res.status(400).json({ error: '此預約不需付款' });
+    // 策略二整天方案不開放時數折抵（划不來），伺服器端強制檢查，非僅前端阻擋
+    if (r.strategy === 2 && r.durationMinutes === 0)
+      return res.status(400).json({ error: '整天方案用時數折抵不划算，請直接結帳即可，謝謝' });
 
     const startMs  = new Date(r.startTime || r.expectedCheckIn || r.createdAt).getTime();
     const endMs    = new Date(r.endTime   || r.expectedCheckOut || (startMs + 60 * 60 * 1000)).getTime();
