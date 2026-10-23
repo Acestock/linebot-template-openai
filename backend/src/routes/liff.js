@@ -618,6 +618,21 @@ router.post('/reservations', liffAuth, async (req, res) => {
       const closureS2 = await getActiveClosure(sTime.toISOString().slice(0, 10));
       if (closureS2) return res.status(409).json({ error: `公休：${closureS2.reason}` });
 
+      // 營業時間範圍（伺服器端強制檢查，非僅前端阻擋）：
+      // 入場不得早於開館；離場不得晚於閉館——臨時入場寬限區間的離場時間
+      // 已由前端截斷為閉館時間，這裡只是防止用戶端送出超過閉館的 endTime。
+      {
+        const openHourS2  = venue.s2OpenHour  ?? 7;
+        const closeHourS2 = venue.s2CloseHour ?? 22;
+        const taipeiDateStr = new Date(sTime.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const [dy, dm, dd] = taipeiDateStr.split('-').map(Number);
+        const midnightUTC = Date.UTC(dy, dm - 1, dd) - 8 * 60 * 60 * 1000;
+        const openUTC  = midnightUTC + openHourS2  * 60 * 60 * 1000;
+        const closeUTC = midnightUTC + closeHourS2 * 60 * 60 * 1000;
+        if (sTime.getTime() < openUTC || eTime.getTime() > closeUTC || eTime.getTime() <= sTime.getTime())
+          return res.status(409).json({ error: '預約時間超出營業時間' });
+      }
+
       // 重複預約防呆：同用戶同場地時間重疊
       const dupS2 = await Reservation.findOne({
         lineUserId, venueId, strategy: 2,

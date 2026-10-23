@@ -248,6 +248,10 @@ function Strategy2Flow({ venue: initialVenue, initialDate, onBack, onDone }) {
 
   async function handleSubmit() {
     if (!selSlot || !selPlan) return;
+    if (selSlot.truncated) {
+      const ok = window.confirm('你的入場時間不會滿這個時段，但還是會收這個時段的費用，請問是否接受');
+      if (!ok) return;
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -443,6 +447,12 @@ function Strategy2Flow({ venue: initialVenue, initialDate, onBack, onDone }) {
             <div>• 可提前 <strong>15 分鐘</strong>（{toEarlyTime(selSlot.startTime, 15)}）掃碼入場</div>
             <div>• 請於 <strong>{toEarlyTime(selSlot.startTime, -30)}</strong> 前完成報到，逾時自動取消</div>
           </div>
+          {selSlot.truncated && (
+            <div style={{ background: '#ffebee', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px', fontSize: '13px', color: '#c62828' }}>
+              <div style={{ fontWeight: '600', marginBottom: '4px' }}>⚠️ 時段提醒</div>
+              <div>你的入場時間不會滿這個時段，但還是會收這個時段的費用，請問是否接受</div>
+            </div>
+          )}
           {error && <div style={{ color: '#e53935', fontSize: '13px', marginBottom: '10px' }}>{error}</div>}
           <div style={{ display: 'flex', gap: '10px' }}>
             <button onClick={() => setStep(2)} style={backBtnStyle}>返回</button>
