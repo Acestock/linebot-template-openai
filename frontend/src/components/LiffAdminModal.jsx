@@ -1337,6 +1337,75 @@ function SystemSettingsTab() {
 // ── Tab 8: 預購時數 ──────────────────────────────────────────────────────────
 const emptyHPkg = { name: '', hours: '', price: '', validDays: '', isActive: true, order: 0 };
 
+function fmtHrMin(mins) {
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m ? `${h}時${m}分` : `${h}小時`;
+}
+
+function HourPurchaseStats() {
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    authFetch(`${API_BASE}/api/hour-purchases/summary`)
+      .then(r => r.json())
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div style={{ color: '#aaa', textAlign: 'center', padding: '20px' }}>載入中...</div>;
+  if (!data || !data.summary) return null;
+
+  return (
+    <div style={{ marginBottom: '24px' }}>
+      <h3 style={{ fontWeight: '700', marginBottom: '12px', fontSize: '15px' }}>預購時數購買統計</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '14px' }}>
+        <div style={{ background: '#f3f0ff', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+          <div style={{ fontSize: '11px', color: '#7B61FF', fontWeight: '600', marginBottom: '4px' }}>購買人數</div>
+          <div style={{ fontSize: '20px', fontWeight: '800', color: '#7B61FF' }}>{data.summary.purchaserCount} 人</div>
+          <div style={{ fontSize: '10px', color: '#999', marginTop: '2px' }}>共 {data.summary.totalPaidPurchases} 筆付款成功</div>
+        </div>
+        <div style={{ background: '#e8f5e9', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+          <div style={{ fontSize: '11px', color: '#2e7d32', fontWeight: '600', marginBottom: '4px' }}>目前剩餘時數（未過期）</div>
+          <div style={{ fontSize: '20px', fontWeight: '800', color: '#2e7d32' }}>{fmtHrMin(data.summary.totalRemainingMinutes)}</div>
+        </div>
+      </div>
+
+      {data.rows.length === 0 ? (
+        <div style={{ color: '#aaa', textAlign: 'center', padding: '16px', fontSize: '13px' }}>尚無已付款的購買紀錄</div>
+      ) : (
+        <div style={{ border: '1px solid #eee', borderRadius: '10px', overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 0.7fr 0.9fr 0.9fr', padding: '8px 14px', background: '#fafafa', borderBottom: '1px solid #eee' }}>
+            {['客戶', '購買次數', '剩餘時數', '最近到期'].map(h => (
+              <div key={h} style={{ fontSize: '11px', fontWeight: '700', color: '#888' }}>{h}</div>
+            ))}
+          </div>
+          {data.rows.map((r, i) => (
+            <div key={r.lineUserId} style={{
+              display: 'grid', gridTemplateColumns: '1.3fr 0.7fr 0.9fr 0.9fr',
+              padding: '9px 14px',
+              borderBottom: i < data.rows.length - 1 ? '1px solid #f5f5f5' : 'none',
+              background: i % 2 === 0 ? '#fff' : '#fafafa'
+            }}>
+              <div style={{ fontSize: '12px', color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {r.displayName || r.lineUserId}
+              </div>
+              <div style={{ fontSize: '12px', color: '#555' }}>{r.purchaseCount} 次</div>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: r.remainingMinutes > 0 ? '#2e7d32' : '#ccc' }}>
+                {r.remainingMinutes > 0 ? fmtHrMin(r.remainingMinutes) : '已用完'}
+              </div>
+              <div style={{ fontSize: '11px', color: '#999' }}>
+                {r.nearestExpiry ? new Date(r.nearestExpiry).toLocaleDateString('zh-TW') : '—'}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HourPackagesTab() {
   const [packages, setPackages] = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -1388,6 +1457,7 @@ function HourPackagesTab() {
 
   return (
     <div>
+      <HourPurchaseStats />
       <h3 style={{ fontWeight: '700', marginBottom: '16px', fontSize: '15px' }}>預購時數方案</h3>
       <form onSubmit={handleSave} style={{ background: '#f9f9f9', borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
         <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '14px', color: '#444' }}>{editing ? '編輯方案' : '新增方案'}</div>

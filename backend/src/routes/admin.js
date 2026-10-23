@@ -1920,6 +1920,75 @@ router.delete('/hour-packages/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/hour-purchases/summary — 確定付款成功的顧客，購買人數與目前剩餘時數
+const HourPurchase = require('../models/HourPurchase');
+
+router.get('/hour-purchases/summary', async (req, res) => {
+  try {
+    const now = new Date();
+
+    const [everPaidByUser, activeByUser, totalPaidPurchases] = await Promise.all([
+      // 曾經付款成功過的購買紀錄（不論是否已過期），用來算「總共有幾個人購買過」
+      HourPurchase.aggregate([
+        { $match: { paymentStatus: 'paid' } },
+        { $group: {
+          _id: '$lineUserId',
+          purchaseCount:   { $sum: 1 },
+          totalMinutesEver: { $sum: '$totalMinutes' },
+          totalSpent:       { $sum: '$totalPrice' }
+        }}
+      ]),
+      // 尚未過期的付款紀錄，用來算「目前實際可用的剩餘時數」
+      HourPurchase.aggregate([
+        { $match: { paymentStatus: 'paid', expiresAt: { $gt: now } } },
+        { $group: {
+          _id: '$lineUserId',
+          remainingMinutes: { $sum: { $subtract: ['$totalMinutes', '$usedMinutes'] } },
+          nearestExpiry:    { $min: '$expiresAt' }
+        }}
+      ]),
+      HourPurchase.countDocuments({ paymentStatus: 'paid' })
+    ]);
+
+    const activeMap = {};
+    for (const a of activeByUser) activeMap[a._id] = a;
+
+    // 顯示名稱沿用既有慣例：從 Message 紀錄抓該用戶最新一筆的 displayName
+    const lineUserIds = everPaidByUser.map(u => u._id);
+    const latestMsgs = await Message.aggregate([
+      { $match: { lineUserId: { $in: lineUserIds }, displayName: { $exists: true, $ne: '' } } },
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: '$lineUserId', displayName: { $first: '$displayName' } } }
+    ]);
+    const nameMap = {};
+    for (const m of latestMsgs) nameMap[m._id] = m.displayName;
+
+    const rows = everPaidByUser.map(u => {
+      const active = activeMap[u._id];
+      return {
+        lineUserId:        u._id,
+        displayName:       nameMap[u._id] || '',
+        purchaseCount:     u.purchaseCount,
+        totalMinutesEver:  u.totalMinutesEver,
+        totalSpent:        u.totalSpent,
+        remainingMinutes:  active ? Math.max(0, active.remainingMinutes) : 0,
+        nearestExpiry:     active ? active.nearestExpiry : null
+      };
+    }).sort((a, b) => b.remainingMinutes - a.remainingMinutes);
+
+    const totalRemainingMinutes = rows.reduce((s, r) => s + r.remainingMinutes, 0);
+
+    res.json({
+      summary: {
+        purchaserCount: everPaidByUser.length, // 總共有幾個人購買成功過
+        totalPaidPurchases,                    // 總購買筆數（同一人可能買多次）
+        totalRemainingMinutes                  // 目前所有人加總的可用剩餘時數
+      },
+      rows
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── Discount Codes（公開折扣碼，結帳時用戶自行輸入） ───────────────────────────
 const DiscountCode = require('../models/DiscountCode');
 
