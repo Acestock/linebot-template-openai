@@ -21,20 +21,33 @@ function generateStartSlots(dateStr, openHour, closeHour, durationMinutes) {
   const closeMs = closeHour * 60 * 60 * 1000; // may exceed 24h for late-night closing
   const closeUTC = midnightUTC + closeMs;
 
+  // 臨時入場寬限：超過「完整時長」但入場時間仍在閉館前「時長的一半」內，
+  // 允許預約，離場時間截斷為閉館時間，費用仍照方案全額計算（由呼叫端處理）。
+  const graceMs = durationMinutes > 0 ? (durationMinutes / 2) * 60 * 1000 : 0;
+
   const slots = [];
   let curUTC = midnightUTC + openMs;
 
   while (curUTC < closeUTC) {
     let endUTC;
+    let truncated = false;
     if (durationMinutes === 0) {
       // 整天方案：任何時間點入場，結束固定為閉館
       endUTC = closeUTC;
     } else {
-      endUTC = curUTC + durationMinutes * 60 * 1000;
-      if (endUTC > closeUTC) break; // 一般時長：超出閉館時間不顯示
+      const fullEndUTC = curUTC + durationMinutes * 60 * 1000;
+      if (fullEndUTC <= closeUTC) {
+        endUTC = fullEndUTC;
+      } else if (curUTC + graceMs <= closeUTC) {
+        // 寬限區間：實際可用時間不足完整時長，離場時間截斷為閉館
+        endUTC = closeUTC;
+        truncated = true;
+      } else {
+        break; // 超出寬限範圍：不顯示
+      }
     }
 
-    slots.push({ startTime: new Date(curUTC), endTime: new Date(endUTC) });
+    slots.push({ startTime: new Date(curUTC), endTime: new Date(endUTC), truncated });
     curUTC += 30 * 60 * 1000; // next 30-min slot
   }
 
@@ -84,7 +97,8 @@ async function getAvailableSlots(venueId, dateStr, openHour, closeHour, duration
       startLabel: toHHMM(s.startTime),
       endLabel:   toHHMM(s.endTime),
       available: !past && avail.available,
-      remaining: past ? 0 : avail.remaining
+      remaining: past ? 0 : avail.remaining,
+      truncated: !!s.truncated
     };
   }));
 
