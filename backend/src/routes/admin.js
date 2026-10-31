@@ -1195,6 +1195,8 @@ const BlockedSlot    = require('../models/BlockedSlot');
 const ClosureDay      = require('../models/ClosureDay');
 const StaffToken     = require('../models/StaffToken');
 const DurationPlan   = require('../models/DurationPlan');
+const WaitlistRequest = require('../models/WaitlistRequest');
+const { checkAndNotifyWaitlist, dateStrFromDate } = require('../services/strategy2Service');
 
 router.get('/venues', async (req, res) => {
   try {
@@ -1337,9 +1339,35 @@ router.get('/reservations/day', async (req, res) => {
 
 router.patch('/reservations/:id', async (req, res) => {
   try {
+    const before = await Reservation.findById(req.params.id).lean();
+    if (!before) return res.status(404).json({ error: 'Not found' });
     const item = await Reservation.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!item) return res.status(404).json({ error: 'Not found' });
+
+    // 策略二：若後台把預約改成取消，釋出容量後檢查是否有候補可通知
+    if (item.strategy === 2 && item.status === 'cancelled' && before.status !== 'cancelled' && item.startTime) {
+      checkAndNotifyWaitlist(item.venueId, dateStrFromDate(item.startTime)).catch(() => {});
+    }
+
     res.json(item);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── 空位候補（Waitlist）── 後台查看每天有哪些用戶登記了空位提醒 ─────────────────
+// GET /api/reservations/waitlist?date=YYYY-MM-DD&venueId=<可選>
+router.get('/reservations/waitlist', async (req, res) => {
+  try {
+    const { date, venueId } = req.query;
+    const filter = {};
+    if (venueId) filter.venueId = venueId;
+    if (date) {
+      const TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
+      const [y, m, d] = date.split('-').map(Number);
+      const dayStart = new Date(Date.UTC(y, m - 1, d) - TZ_OFFSET_MS);
+      const dayEnd   = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+      filter.startTime = { $gte: dayStart, $lt: dayEnd };
+    }
+    const items = await WaitlistRequest.find(filter).sort({ startTime: 1, createdAt: 1 }).lean();
+    res.json(items);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

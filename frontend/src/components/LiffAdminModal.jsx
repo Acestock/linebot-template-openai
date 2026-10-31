@@ -890,12 +890,14 @@ function ReservationsTab() {
       <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <button type="button" onClick={() => setViewMode('list')} style={btn(viewMode === 'list' ? '#111' : '#f0f0f0', viewMode === 'list' ? '#fff' : '#555')}>列表</button>
         <button type="button" onClick={() => setViewMode('gantt')} style={btn(viewMode === 'gantt' ? '#111' : '#f0f0f0', viewMode === 'gantt' ? '#fff' : '#555')}>甘特圖</button>
+        <button type="button" onClick={() => setViewMode('waitlist')} style={btn(viewMode === 'waitlist' ? '#111' : '#f0f0f0', viewMode === 'waitlist' ? '#fff' : '#555')}>空位候補</button>
         <button type="button" onClick={fixStaleUnpaidExit} style={{ ...btn('#fff3e0', '#e65100'), marginLeft: 'auto', fontSize: '11px' }}>
           修復未結帳標記殘留（一次性）
         </button>
       </div>
 
       {viewMode === 'gantt' && <ReservationGanttView venues={venues} />}
+      {viewMode === 'waitlist' && <WaitlistView venues={venues} />}
 
       {viewMode === 'list' && <>
       {/* Filters */}
@@ -1193,6 +1195,67 @@ function ReservationGanttView({ venues }) {
           <div style={{ color: '#666' }}>{selected.venueName} · {fmtHM(selected.start)}–{fmtHM(selected.end)} · {STATUS_LABELS[selected.status]}</div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 空位候補檢視（新增）：後台查看每天有哪些用戶登記了「空位提醒」 ───────────────
+const WAITLIST_STATUS_LABELS = { pending: '等待中', notified: '已通知', cancelled: '已取消' };
+const WAITLIST_STATUS_COLORS = { pending: '#f57c00', notified: '#2e7d32', cancelled: '#999' };
+
+function WaitlistView({ venues }) {
+  const [date, setDate]           = useState(toDateInputValue(new Date()));
+  const [venueId, setVenueId]     = useState('');
+  const [items, setItems]         = useState([]);
+  const [loading, setLoading]     = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (date)    params.set('date', date);
+    if (venueId) params.set('venueId', venueId);
+    authFetch(`${API_BASE}/api/reservations/waitlist?${params}`)
+      .then(r => r.json())
+      .then(d => setItems(Array.isArray(d) ? d : []))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, [date, venueId]);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap' }}>
+        <input type="date" style={{ ...inputStyle, flex: '1', minWidth: '120px' }} value={date} onChange={e => setDate(e.target.value)} />
+        <select style={{ ...inputStyle, flex: '1', minWidth: '110px' }} value={venueId} onChange={e => setVenueId(e.target.value)}>
+          <option value="">所有場地</option>
+          {venues.map(v => <option key={v._id} value={v._id}>{v.name}</option>)}
+        </select>
+      </div>
+
+      {loading && <div style={{ color: '#aaa', textAlign: 'center', padding: '24px' }}>載入中...</div>}
+      {!loading && items.length === 0 && <div style={{ color: '#aaa', textAlign: 'center', padding: '24px' }}>這天沒有人登記空位候補</div>}
+
+      {!loading && items.map(w => (
+        <div key={w._id} style={{ border: '1px solid #eee', borderRadius: '10px', marginBottom: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {w.pictureUrl ? (
+            <img src={w.pictureUrl} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0, objectFit: 'cover' }} />
+          ) : (
+            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#e0e0e0', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#999' }}>
+              {(w.displayName || '?')[0]}
+            </div>
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: '600', fontSize: '14px' }}>{w.displayName || w.lineUserId}</div>
+            <div style={{ fontSize: '12px', color: '#888' }}>
+              {w.venueName} · {fmtHM(new Date(w.startTime))}–{fmtHM(new Date(w.endTime))}
+              {w.durationPlanName ? ` · ${w.durationPlanName}` : ''}
+            </div>
+            <div style={{ fontSize: '11px', color: '#aaa', marginTop: '2px' }}>登記時間：{fmtDT(w.createdAt)}</div>
+          </div>
+          <span style={{ background: `${WAITLIST_STATUS_COLORS[w.status]}22`, color: WAITLIST_STATUS_COLORS[w.status], padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', flexShrink: 0 }}>
+            {WAITLIST_STATUS_LABELS[w.status] || w.status}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

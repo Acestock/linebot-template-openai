@@ -256,7 +256,19 @@ export async function fetchDurationPlans(venueId) {
 }
 
 export async function fetchStrategy2Slots(venueId, date, durationMinutes) {
-  const r = await fetch(`${BASE}/venues/${venueId}/strategy2-slots?date=${date}&durationMinutes=${durationMinutes}`);
+  const tokenQs = _sessionToken ? `&token=${encodeURIComponent(_sessionToken)}` : '';
+  const r = await fetch(`${BASE}/venues/${venueId}/strategy2-slots?date=${date}&durationMinutes=${durationMinutes}${tokenQs}`);
   if (!r.ok) throw new Error('無法取得可用時段');
   return r.json(); // { slots: [...] }
+}
+
+export async function requestStrategy2Waitlist(venueId, { startTime, endTime, durationPlanId }) {
+  const r = await fetch(`${BASE}/venues/${venueId}/strategy2-waitlist`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ startTime, endTime, durationPlanId })
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '登記候補失敗');
+  return json;
 }

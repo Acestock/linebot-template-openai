@@ -14,7 +14,8 @@ const DiscountCode = require('../models/DiscountCode');
 const DurationPlan = require('../models/DurationPlan');
 const StaffToken   = require('../models/StaffToken');
 const CustomerSetting = require('../models/CustomerSetting');
-const { getAvailableSlots, checkSlotAvailability } = require('../services/strategy2Service');
+const WaitlistRequest = require('../models/WaitlistRequest');
+const { getAvailableSlots, checkSlotAvailability, checkAndNotifyWaitlist, dateStrFromDate } = require('../services/strategy2Service');
 const { getActiveClosure } = require('../services/closureDayService');
 const { createOrderParams: _ecpayCreateOrder }   = require('../services/ecpayService');
 const { createOrderParams: _newebpayCreateOrder } = require('../services/newebpayService');
@@ -108,6 +109,17 @@ function liffAuth(req, res, next) {
   }
   req.liffUser = session;
   next();
+}
+
+// 非強制版本：有合法 token 就回傳對應 session，沒有或過期就回傳 null（不擋請求）
+// 用於「順便」帶出使用者資訊的公開查詢（例如查詢時段是否已候補過）
+function softLiffUser(req) {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : req.query.token;
+  if (!token) return null;
+  const session = liffSessions.get(token);
+  if (!session || Date.now() > session.expiresAt) return null;
+  return session;
 }
 
 // Verify LINE access token with LINE API
@@ -492,7 +504,69 @@ router.get('/venues/:id/strategy2-slots', async (req, res) => {
       dur,
       venue.maxCapacityPerSlot
     );
+
+    // 若帶有效 token，順便標出「已滿」時段中哪些該用戶已登記過空位候補（pending），
+    // 讓前端把對應按鈕顯示成「已登記」。
+    const softUser = softLiffUser(req);
+    if (softUser) {
+      const starts = slots.filter(s => !s.available && !s.past).map(s => new Date(s.startTime));
+      if (starts.length) {
+        const mine = await WaitlistRequest.find({
+          lineUserId: softUser.lineUserId, venueId: venue._id, status: 'pending',
+          startTime: { $in: starts }
+        }).lean();
+        const waitlistedKeys = new Set(mine.map(w => w.startTime.toISOString()));
+        slots.forEach(s => { s.waitlisted = waitlistedKeys.has(s.startTime); });
+      }
+    }
+
     res.json({ slots });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── POST /api/liff/venues/:id/strategy2-waitlist ───────────────────────────────
+// 針對策略二已滿時段登記「空位提醒」候補；純通知機制，不會幫用戶佔位。
+router.post('/venues/:id/strategy2-waitlist', liffAuth, async (req, res) => {
+  try {
+    const venue = await Venue.findById(req.params.id).lean();
+    if (!venue || !venue.isActive) return res.status(404).json({ error: '場地不存在' });
+    if (venue.strategy !== 2) return res.status(400).json({ error: '此場地非策略二' });
+
+    const { startTime, endTime, durationPlanId } = req.body;
+    if (!startTime || !endTime) return res.status(400).json({ error: 'startTime, endTime 為必填' });
+
+    const sTime = new Date(startTime);
+    const eTime = new Date(endTime);
+    if (isNaN(sTime) || isNaN(eTime) || eTime <= sTime)
+      return res.status(400).json({ error: '時段資料有誤' });
+    if (sTime <= new Date())
+      return res.status(400).json({ error: '此時段已過，無法登記候補' });
+
+    let dPlan = null;
+    if (durationPlanId) dPlan = await DurationPlan.findById(durationPlanId).lean();
+
+    // 伺服器端再次確認此時段目前確實已滿，避免無意義的候補紀錄
+    const avail = await checkSlotAvailability(venue._id, sTime, eTime, venue.maxCapacityPerSlot);
+    if (avail.available)
+      return res.status(409).json({ error: '此時段目前尚有空位，請直接預約' });
+
+    const { lineUserId, displayName, pictureUrl } = req.liffUser;
+
+    const existing = await WaitlistRequest.findOne({
+      lineUserId, venueId: venue._id, status: 'pending', startTime: sTime, endTime: eTime
+    });
+    if (existing) return res.json({ ok: true, alreadyRequested: true, waitlist: existing });
+
+    const waitlist = await WaitlistRequest.create({
+      lineUserId, displayName, pictureUrl,
+      venueId: venue._id, venueName: venue.name,
+      date: sTime, startTime: sTime, endTime: eTime,
+      durationPlanId: dPlan?._id || null,
+      durationPlanName: dPlan?.name || '',
+      durationMinutes: dPlan?.durationMinutes ?? 0,
+      status: 'pending'
+    });
+    res.json({ ok: true, waitlist });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -786,6 +860,12 @@ router.delete('/reservations/:id', liffAuth, async (req, res) => {
       return res.status(400).json({ error: '已入場或已完成的預約無法取消' });
     r.status = 'cancelled';
     await r.save();
+
+    // 策略二：釋出容量，檢查是否有候補可通知
+    if (r.strategy === 2 && r.startTime) {
+      checkAndNotifyWaitlist(r.venueId, dateStrFromDate(r.startTime)).catch(() => {});
+    }
+
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

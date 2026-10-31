@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const Reservation = require('../models/Reservation');
 const { pushMessage } = require('./lineService');
+const { checkAndNotifyWaitlist, dateStrFromDate } = require('./strategy2Service');
 
 function startReservationReminderJob() {
   cron.schedule('* * * * *', async () => {
@@ -16,10 +17,24 @@ function startReservationReminderJob() {
       );
       // 策略二：超過 startTime + 30min 仍未入場（最晚 30 分鐘內報到）
       const s2Overdue = new Date(now.getTime() - 30 * 60 * 1000);
-      await Reservation.updateMany(
+      const noShowList = await Reservation.find(
         { strategy: 2, status: 'confirmed', startTime: { $lt: s2Overdue } },
-        { $set: { status: 'cancelled' } }
-      );
+        { venueId: 1, startTime: 1 }
+      ).lean();
+      if (noShowList.length) {
+        await Reservation.updateMany(
+          { strategy: 2, status: 'confirmed', startTime: { $lt: s2Overdue } },
+          { $set: { status: 'cancelled' } }
+        );
+        // 釋出容量，對受影響的「場地＋日期」各檢查一次是否有候補可通知
+        const seen = new Set();
+        for (const r of noShowList) {
+          const key = `${r.venueId}_${dateStrFromDate(r.startTime)}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          checkAndNotifyWaitlist(r.venueId, dateStrFromDate(r.startTime)).catch(() => {});
+        }
+      }
     } catch (err) {
       console.error('[ReservationCron] Auto-cancel failed:', err.message);
     }

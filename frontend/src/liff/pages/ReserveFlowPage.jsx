@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchVenue, fetchAvailability, createReservation, getSessionToken, fetchShortSessionQuote, fetchDurationPlans, fetchStrategy2Slots } from '../api';
+import { fetchVenue, fetchAvailability, createReservation, getSessionToken, fetchShortSessionQuote, fetchDurationPlans, fetchStrategy2Slots, requestStrategy2Waitlist } from '../api';
 
 const SLOTS = [
   { key: 'morning',   label: '早上', range: '07:00–12:00', icon: '🌅' },
@@ -221,7 +221,23 @@ function Strategy2Flow({ venue: initialVenue, initialDate, onBack, onDone }) {
   const [submitting,    setSubmitting]    = useState(false);
   const [error,         setError]         = useState('');
   const [done,          setDone]          = useState(false);
+  const [waitlistBusyKey, setWaitlistBusyKey] = useState(''); // 正在送出候補的時段 key（startTime）
   const venue = initialVenue;
+
+  async function handleWaitlist(s) {
+    if (waitlistBusyKey) return;
+    setWaitlistBusyKey(s.startTime);
+    try {
+      await requestStrategy2Waitlist(venue._id, {
+        startTime: s.startTime, endTime: s.endTime, durationPlanId: selPlan?._id
+      });
+      setSlots(prev => prev.map(x => x.startTime === s.startTime ? { ...x, waitlisted: true } : x));
+    } catch (e) {
+      alert(e.message || '登記候補失敗，請重試');
+    } finally {
+      setWaitlistBusyKey('');
+    }
+  }
 
   const today = toDateStr(new Date());
   const maxDate = toDateStr(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
@@ -389,28 +405,50 @@ function Strategy2Flow({ venue: initialVenue, initialDate, onBack, onDone }) {
               {slots.map((s, i) => {
                 const isSel  = selSlot?.startTime === s.startTime;
                 const isAvail = s.available;
+                const showWaitlistBtn = !isAvail && !s.past;
                 return (
-                  <button
-                    key={i}
-                    disabled={!isAvail}
-                    onClick={() => setSelSlot(s)}
-                    style={{
-                      padding: '12px 6px', borderRadius: '10px', border: 'none',
-                      background: isSel ? 'var(--brand-color)' : isAvail ? '#f5f5f5' : '#f0f0f0',
-                      color:  isSel ? 'var(--brand-text)' : isAvail ? '#222' : '#bbb',
-                      cursor: isAvail ? 'pointer' : 'default',
-                      textAlign: 'center', transition: 'all 0.15s'
-                    }}
-                  >
-                    <div style={{ fontSize: '15px', fontWeight: '700' }}>{s.startLabel}</div>
-                    <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>→ {s.endLabel}</div>
-                    {isAvail && (
-                      <div style={{ fontSize: '10px', marginTop: '3px', color: isSel ? 'rgba(255,255,255,0.8)' : s.remaining <= 5 ? '#e53935' : '#777' }}>
-                        剩 {s.remaining} 位
-                      </div>
+                  <div key={i}>
+                    <button
+                      disabled={!isAvail}
+                      onClick={() => setSelSlot(s)}
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        padding: '12px 6px', borderRadius: '10px', border: 'none',
+                        borderBottomLeftRadius: showWaitlistBtn ? 0 : '10px',
+                        borderBottomRightRadius: showWaitlistBtn ? 0 : '10px',
+                        background: isSel ? 'var(--brand-color)' : isAvail ? '#f5f5f5' : '#f0f0f0',
+                        color:  isSel ? 'var(--brand-text)' : isAvail ? '#222' : '#bbb',
+                        cursor: isAvail ? 'pointer' : 'default',
+                        textAlign: 'center', transition: 'all 0.15s'
+                      }}
+                    >
+                      <div style={{ fontSize: '15px', fontWeight: '700' }}>{s.startLabel}</div>
+                      <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>→ {s.endLabel}</div>
+                      {isAvail && (
+                        <div style={{ fontSize: '10px', marginTop: '3px', color: isSel ? 'rgba(255,255,255,0.8)' : s.remaining <= 5 ? '#e53935' : '#777' }}>
+                          剩 {s.remaining} 位
+                        </div>
+                      )}
+                      {!isAvail && <div style={{ fontSize: '10px', marginTop: '3px' }}>已滿</div>}
+                    </button>
+                    {showWaitlistBtn && (
+                      <button
+                        disabled={s.waitlisted || waitlistBusyKey === s.startTime}
+                        onClick={() => handleWaitlist(s)}
+                        style={{
+                          width: '100%', boxSizing: 'border-box',
+                          padding: '5px 4px', border: 'none',
+                          borderBottomLeftRadius: '10px', borderBottomRightRadius: '10px',
+                          background: s.waitlisted ? '#ffe0b2' : '#fff3e0',
+                          color: s.waitlisted ? '#e65100' : '#f57c00',
+                          fontSize: '10px', fontWeight: '600',
+                          cursor: s.waitlisted ? 'default' : 'pointer'
+                        }}
+                      >
+                        {s.waitlisted ? '已登記候補' : waitlistBusyKey === s.startTime ? '登記中...' : '🔔 空位提醒'}
+                      </button>
                     )}
-                    {!isAvail && <div style={{ fontSize: '10px', marginTop: '3px' }}>已滿</div>}
-                  </button>
+                  </div>
                 );
               })}
             </div>
