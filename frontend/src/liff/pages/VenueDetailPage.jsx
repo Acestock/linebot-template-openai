@@ -207,7 +207,7 @@ function EventEntryModal({ venueId, event, onClose }) {
   );
 }
 
-export default function VenueDetailPage({ venueId, onReserve, onWalkIn }) {
+export default function VenueDetailPage({ venueId, user, onReserve, onWalkIn }) {
   const [venue, setVenue] = useState(null);
   const [plansOpen, setPlansOpen] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -216,17 +216,27 @@ export default function VenueDetailPage({ venueId, onReserve, onWalkIn }) {
   const [eventModal, setEventModal] = useState(null); // the event object
 
   useEffect(() => {
-    fetchVenue(venueId).then(v => {
+    fetchVenue(venueId, user?.userId).then(v => {
       setVenue(v);
-      if ((v.strategy ?? 1) === 2) {
+      if (!v.maintenanceMode && (v.strategy ?? 1) === 2) {
         fetchDurationPlans(v._id).then(ps => setDurationPlans(ps.filter(p => p.isActive))).catch(() => {});
       }
     }).catch(() => {}).finally(() => setLoading(false));
     fetchTodayEvents(venueId).then(setTodayEvents).catch(() => {});
-  }, [venueId]);
+  }, [venueId, user?.userId]);
 
   if (loading) return <div style={{ textAlign: 'center', padding: '60px', color: '#aaa' }}>載入中...</div>;
   if (!venue)  return <div style={{ textAlign: 'center', padding: '60px', color: '#aaa' }}>場地不存在</div>;
+
+  if (venue.maintenanceMode) {
+    return (
+      <div style={{ textAlign: 'center', padding: '80px 24px', color: '#666' }}>
+        <div style={{ fontSize: '40px', marginBottom: '16px' }}>🛠️</div>
+        <div style={{ fontSize: '17px', fontWeight: '700', marginBottom: '8px', color: '#333' }}>{venue.name}</div>
+        <div style={{ fontSize: '15px', lineHeight: '1.8' }}>平台維護中，暫停提供預約服務<br />請稍後再試</div>
+      </div>
+    );
+  }
 
   const isS2 = (venue.strategy ?? 1) === 2;
   const singlePlans = (venue.plans || []).filter(p => p.type === 'single');

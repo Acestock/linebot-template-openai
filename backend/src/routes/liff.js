@@ -10,16 +10,22 @@ const BlockedSlot = require('../models/BlockedSlot');
 const Task = require('../models/Task');
 const TaskSubmission = require('../models/TaskSubmission');
 const Coupon = require('../models/Coupon');
+const DiscountCode = require('../models/DiscountCode');
 const DurationPlan = require('../models/DurationPlan');
 const StaffToken   = require('../models/StaffToken');
-const { getAvailableSlots, checkSlotAvailability } = require('../services/strategy2Service');
+const CustomerSetting = require('../models/CustomerSetting');
+const WaitlistRequest = require('../models/WaitlistRequest');
+const { getAvailableSlots, checkSlotAvailability, checkAndNotifyWaitlist, dateStrFromDate } = require('../services/strategy2Service');
+const { getActiveClosure } = require('../services/closureDayService');
 const { createOrderParams: _ecpayCreateOrder }   = require('../services/ecpayService');
 const { createOrderParams: _newebpayCreateOrder } = require('../services/newebpayService');
 // Switch gateway via env: PAYMENT_GATEWAY=ecpay to fall back to ECPay (default: newebpay)
-const createOrderParams = (reservation) =>
+// email（選填）：僅 NewebPay 支援帶入預先填好付款人信箱，ECPay 端會忽略多餘的參數
+const createOrderParams = (reservation, email) =>
   (process.env.PAYMENT_GATEWAY || 'newebpay').toLowerCase() === 'ecpay'
     ? _ecpayCreateOrder(reservation)
-    : _newebpayCreateOrder(reservation);
+    : _newebpayCreateOrder(reservation, email);
+const { requestPayment: requestLinePay } = require('../services/linepayService');
 const { pushMessage } = require('../services/lineService');
 const {
   timeToMinutes,
@@ -31,6 +37,51 @@ const {
 } = require('../services/shortSessionService');
 
 const router = express.Router();
+
+// ── 折扣碼：驗證是否可用（啟用中、在效期內、未達使用上限） ───────────────────────
+async function checkDiscountCode(codeRaw) {
+  const code = (codeRaw || '').trim().toUpperCase();
+  if (!code) return null;
+  const now = new Date();
+  const dc = await DiscountCode.findOne({ code, isActive: true });
+  if (!dc) return null;
+  if (dc.startAt && dc.startAt > now) return null;
+  if (dc.endAt && dc.endAt < now) return null;
+  if (dc.maxUses > 0 && dc.usedCount >= dc.maxUses) return null;
+  return dc;
+}
+function discountCodeValue(dc, totalPrice) {
+  return dc.discountType === 'percent'
+    ? totalPrice - Math.round(totalPrice * (1 - dc.discountPercent / 100))
+    : Math.min(dc.discountAmount, totalPrice);
+}
+
+// ── 策略二時長方案：判斷目前是否「真的在特價中」（開啟特價 + 特價>0 + 未過期） ──
+function isPlanOnSaleNow(plan) {
+  return !!(plan.onSale && plan.salePrice > 0 && (!plan.saleEndAt || new Date(plan.saleEndAt) > new Date()));
+}
+
+// ── 台北時間（UTC+8）的「今天」日期字串 ─────────────────────────────────────────
+// 伺服器（Railway）是以 UTC 計時，若直接用 `new Date(); setHours(0,0,0,0)` 取得的
+// 「今天」其實是 UTC 的今天。台北時間 00:00–08:00 這段 UTC 還沒跨過午夜，會少算
+// 一天，導致 8 天預約視窗/場地列表在這段時間少了最後一天（顯示已額滿、無法預約）。
+function taipeiTodayStr() {
+  const taipei = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return taipei.toISOString().slice(0, 10);
+}
+function taipeiTodayUTCMidnightMs() {
+  const [y, m, d] = taipeiTodayStr().split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
+// ── 預約開放範圍：最多可預約到「今天起 8 天內」（與場地列表的日期分頁範圍一致） ───
+function maxBookingDateStr() {
+  const max = new Date(taipeiTodayUTCMidnightMs() + 7 * 24 * 60 * 60 * 1000);
+  return max.toISOString().slice(0, 10);
+}
+function isBeyondBookingWindow(dateStr) {
+  return dateStr > maxBookingDateStr();
+}
 
 // ── LIFF Session store (in-memory, 30min TTL) ─────────────────────────────────
 const liffSessions = new Map(); // token → { lineUserId, displayName, pictureUrl, expiresAt }
@@ -58,6 +109,17 @@ function liffAuth(req, res, next) {
   }
   req.liffUser = session;
   next();
+}
+
+// 非強制版本：有合法 token 就回傳對應 session，沒有或過期就回傳 null（不擋請求）
+// 用於「順便」帶出使用者資訊的公開查詢（例如查詢時段是否已候補過）
+function softLiffUser(req) {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : req.query.token;
+  if (!token) return null;
+  const session = liffSessions.get(token);
+  if (!session || Date.now() > session.expiresAt) return null;
+  return session;
 }
 
 // Verify LINE access token with LINE API
@@ -121,6 +183,15 @@ async function getSlotAvailability(venueId, maxCapacity, dateStr) {
   const slotKeys = ['morning', 'afternoon', 'evening'];
   const result = {};
 
+  // 全站公休：三個時段一律回傳已封鎖 + 原因，略過後續查詢
+  const closure = await getActiveClosure(dateStr);
+  if (closure) {
+    for (const slot of slotKeys) {
+      result[slot] = { remaining: 0, total: maxCapacity, blocked: true, closureReason: closure.reason };
+    }
+    return result;
+  }
+
   // Check for active blocked slots on this date
   const blocks = await BlockedSlot.find({
     venueId, isActive: true,
@@ -146,6 +217,83 @@ async function getSlotAvailability(venueId, maxCapacity, dateStr) {
       continue;
     }
     result[slot] = { remaining: Math.max(0, maxCapacity - count), total: maxCapacity };
+  }
+  return result;
+}
+
+// ── Helper: 策略二場地列表用的粗略可用性（早上/下午/晚上），以「最短時長方案」判斷 ──
+// 策略二預約不會寫入 slots 欄位，不能沿用 getSlotAvailability 的查詢方式，
+// 否則列表會永遠顯示有位（見場地列表全額滿卻顯示綠色的 bug）。
+const S2_BUCKET_HOURS = { morning: [8, 12], afternoon: [12, 18], evening: [18, 24] };
+
+async function getStrategy2SlotAvailability(venue, dateStr) {
+  const maxCapacity = venue.maxCapacityPerSlot;
+  const openHour  = venue.s2OpenHour  ?? 7;
+  const closeHour = venue.s2CloseHour ?? 22;
+  const slotKeys = ['morning', 'afternoon', 'evening'];
+  const result = {};
+
+  // 全站公休：沿用既有判斷
+  const closure = await getActiveClosure(dateStr);
+  if (closure) {
+    for (const slot of slotKeys) result[slot] = { remaining: 0, total: maxCapacity, blocked: true, closureReason: closure.reason };
+    return result;
+  }
+
+  const plans = await DurationPlan.find({ venueId: venue._id, isActive: true }).lean();
+  const positiveDurations = plans.filter(p => p.durationMinutes > 0).map(p => p.durationMinutes);
+  const shortestMinutes = positiveDurations.length
+    ? Math.min(...positiveDurations)
+    : Math.max(30, (closeHour - openHour) * 60); // 只有「整天」方案時，以整天長度當最短單位
+
+  const TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const midnightUTC = Date.UTC(y, m - 1, d) - TZ_OFFSET_MS;
+  const openUTC  = midnightUTC + openHour  * 60 * 60 * 1000;
+  const closeUTC = midnightUTC + closeHour * 60 * 60 * 1000;
+
+  if (openUTC >= closeUTC) {
+    for (const slot of slotKeys) result[slot] = { remaining: 0, total: maxCapacity };
+    return result;
+  }
+
+  // 一次查出當天所有策略二預約，後續在 JS 裡計算每 30 分鐘區塊的剩餘量
+  const dayReservations = await Reservation.find({
+    venueId: venue._id, strategy: 2,
+    status: { $in: ['confirmed', 'checked_in'] },
+    startTime: { $lt: new Date(closeUTC) },
+    endTime:   { $gt: new Date(openUTC) }
+  }).select('startTime endTime').lean();
+
+  const blockMs = 30 * 60 * 1000;
+  const blockStarts = [];
+  for (let t = openUTC; t < closeUTC; t += blockMs) blockStarts.push(t);
+  const blockRemaining = blockStarts.map(bs => {
+    const be = bs + blockMs;
+    const count = dayReservations.filter(r => r.startTime.getTime() < be && r.endTime.getTime() > bs).length;
+    return Math.max(0, maxCapacity - count);
+  });
+
+  const blocksNeeded = Math.max(1, Math.ceil(shortestMinutes / 30));
+  const now = Date.now();
+
+  for (const slot of slotKeys) {
+    const [bh0, bh1] = S2_BUCKET_HOURS[slot];
+    const bucketStartUTC = Math.max(openUTC, midnightUTC + bh0 * 60 * 60 * 1000);
+    const bucketEndUTC   = Math.min(closeUTC, midnightUTC + bh1 * 60 * 60 * 1000);
+
+    let maxRemaining = 0;
+    for (let i = 0; i < blockStarts.length; i++) {
+      const bs = blockStarts[i];
+      if (bs < bucketStartUTC || bs >= bucketEndUTC) continue;
+      if (bs < now) continue; // 已過去的起始時間不算可預約
+      const windowEnd = bs + blocksNeeded * blockMs;
+      if (windowEnd > closeUTC) continue; // 最短時長從這裡開始會超過閉館時間
+      let windowMin = maxCapacity;
+      for (let k = 0; k < blocksNeeded; k++) windowMin = Math.min(windowMin, blockRemaining[i + k] ?? 0);
+      if (windowMin > maxRemaining) maxRemaining = windowMin;
+    }
+    result[slot] = { remaining: maxRemaining, total: maxCapacity };
   }
   return result;
 }
@@ -186,19 +334,51 @@ router.post('/auth', async (req, res) => {
   }
 });
 
+// ── GET /api/liff/profile ──────────────────────────────────────────────────────
+// 目前只有 email（付款信箱，記住後自動帶入藍新金流付款頁的信箱欄位）
+router.get('/profile', liffAuth, async (req, res) => {
+  try {
+    const cs = await CustomerSetting.findOne({ lineUserId: req.liffUser.lineUserId }).lean();
+    res.json({ email: cs?.email || '' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PATCH /api/liff/profile ────────────────────────────────────────────────────
+router.patch('/profile', liffAuth, async (req, res) => {
+  try {
+    const { email } = req.body;
+    const trimmed = (email || '').trim();
+    if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return res.status(400).json({ error: 'Email 格式不正確' });
+    }
+    await CustomerSetting.findOneAndUpdate(
+      { lineUserId: req.liffUser.lineUserId },
+      { email: trimmed },
+      { upsert: true }
+    );
+    res.json({ email: trimmed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /api/liff/venues ───────────────────────────────────────────────────────
 // Returns active venues with 5-day slot availability (today + next 4 days)
 router.get('/venues', async (req, res) => {
   try {
     const venues = await Venue.find({ isActive: true }).sort({ order: 1, createdAt: 1 }).lean();
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const days = Array.from({ length: 5 }, (_, i) =>
-      new Date(today.getTime() + i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const todayUTCMidnightMs = taipeiTodayUTCMidnightMs();
+    const days = Array.from({ length: 8 }, (_, i) =>
+      new Date(todayUTCMidnightMs + i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     );
 
     const result = await Promise.all(venues.map(async (v) => {
       const availByDay = await Promise.all(
-        days.map(d => getSlotAvailability(v._id, v.maxCapacityPerSlot, d))
+        days.map(d => v.strategy === 2
+          ? getStrategy2SlotAvailability(v, d)
+          : getSlotAvailability(v._id, v.maxCapacityPerSlot, d))
       );
       const availability = Object.fromEntries(days.map((d, i) => [d, availByDay[i]]));
       return { ...v, availability };
@@ -214,6 +394,13 @@ router.get('/venues/:id', async (req, res) => {
   try {
     const venue = await Venue.findById(req.params.id).lean();
     if (!venue || !venue.isActive) return res.status(404).json({ error: 'Venue not found' });
+
+    // 平台維護模式：非白名單使用者只回傳場地名稱，前端顯示維護畫面
+    const lineUserId = req.query.lineUserId || '';
+    if (venue.maintenanceMode && !(venue.maintenanceBypassUserIds || []).includes(lineUserId)) {
+      return res.json({ _id: venue._id, name: venue.name, maintenanceMode: true });
+    }
+
     const plans = await VenuePlan.find({ venueId: req.params.id, isActive: true }).sort({ order: 1 }).lean();
     const now = new Date();
     const announcements = await Announcement.find({
@@ -274,6 +461,7 @@ router.get('/venues/:id/short-session-quote', async (req, res) => {
     res.json({
       available,
       remaining: slotAvail.remaining,
+      closureReason: slotAvail.closureReason || null,
       currentSlot,
       checkInMinute,
       tiers: tiers.map(t => ({
@@ -306,6 +494,9 @@ router.get('/venues/:id/strategy2-slots', async (req, res) => {
     // durationMinutes=0 means all-day; must handle 0 explicitly (falsy)
     const dur = durationMinutes !== undefined ? parseInt(durationMinutes, 10) : 90;
 
+    const closure = await getActiveClosure(date);
+    if (closure) return res.json({ slots: [], closed: true, reason: closure.reason });
+
     const slots = await getAvailableSlots(
       venue._id, date,
       venue.s2OpenHour  ?? 7,
@@ -313,7 +504,92 @@ router.get('/venues/:id/strategy2-slots', async (req, res) => {
       dur,
       venue.maxCapacityPerSlot
     );
+
+    // 若帶有效 token，順便標出「已滿」時段中哪些該用戶已登記過空位候補（pending），
+    // 讓前端把對應按鈕顯示成「已登記」。
+    const softUser = softLiffUser(req);
+    if (softUser) {
+      const starts = slots.filter(s => !s.available && !s.past).map(s => new Date(s.startTime));
+      if (starts.length) {
+        const mine = await WaitlistRequest.find({
+          lineUserId: softUser.lineUserId, venueId: venue._id, status: 'pending',
+          startTime: { $in: starts }
+        }).lean();
+        const waitlistedKeys = new Set(mine.map(w => w.startTime.toISOString()));
+        slots.forEach(s => { s.waitlisted = waitlistedKeys.has(s.startTime); });
+      }
+    }
+
     res.json({ slots });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── POST /api/liff/venues/:id/strategy2-waitlist ───────────────────────────────
+// 針對策略二已滿時段登記「空位提醒」候補；純通知機制，不會幫用戶佔位。
+router.post('/venues/:id/strategy2-waitlist', liffAuth, async (req, res) => {
+  try {
+    const venue = await Venue.findById(req.params.id).lean();
+    if (!venue || !venue.isActive) return res.status(404).json({ error: '場地不存在' });
+    if (venue.strategy !== 2) return res.status(400).json({ error: '此場地非策略二' });
+
+    const { startTime, endTime, durationPlanId } = req.body;
+    if (!startTime || !endTime) return res.status(400).json({ error: 'startTime, endTime 為必填' });
+
+    const sTime = new Date(startTime);
+    const eTime = new Date(endTime);
+    if (isNaN(sTime) || isNaN(eTime) || eTime <= sTime)
+      return res.status(400).json({ error: '時段資料有誤' });
+    if (sTime <= new Date())
+      return res.status(400).json({ error: '此時段已過，無法登記候補' });
+
+    let dPlan = null;
+    if (durationPlanId) dPlan = await DurationPlan.findById(durationPlanId).lean();
+
+    // 伺服器端再次確認此時段目前確實已滿，避免無意義的候補紀錄
+    const avail = await checkSlotAvailability(venue._id, sTime, eTime, venue.maxCapacityPerSlot);
+    if (avail.available)
+      return res.status(409).json({ error: '此時段目前尚有空位，請直接預約' });
+
+    const { lineUserId, displayName, pictureUrl } = req.liffUser;
+
+    const existing = await WaitlistRequest.findOne({
+      lineUserId, venueId: venue._id, status: 'pending', startTime: sTime, endTime: eTime
+    });
+    if (existing) return res.json({ ok: true, alreadyRequested: true, waitlist: existing });
+
+    const waitlist = await WaitlistRequest.create({
+      lineUserId, displayName, pictureUrl,
+      venueId: venue._id, venueName: venue.name,
+      date: sTime, startTime: sTime, endTime: eTime,
+      durationPlanId: dPlan?._id || null,
+      durationPlanName: dPlan?.name || '',
+      durationMinutes: dPlan?.durationMinutes ?? 0,
+      status: 'pending'
+    });
+    res.json({ ok: true, waitlist });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── DELETE /api/liff/venues/:id/strategy2-waitlist ─────────────────────────────
+// 取消先前登記的「空位提醒」候補（用戶再點一次按鈕＝取消提醒）
+router.delete('/venues/:id/strategy2-waitlist', liffAuth, async (req, res) => {
+  try {
+    const { startTime, endTime } = req.body;
+    if (!startTime || !endTime) return res.status(400).json({ error: 'startTime, endTime 為必填' });
+
+    const sTime = new Date(startTime);
+    const eTime = new Date(endTime);
+    if (isNaN(sTime) || isNaN(eTime)) return res.status(400).json({ error: '時段資料有誤' });
+
+    const waitlist = await WaitlistRequest.findOne({
+      lineUserId: req.liffUser.lineUserId, venueId: req.params.id,
+      status: 'pending', startTime: sTime, endTime: eTime
+    });
+    if (!waitlist) return res.status(404).json({ error: '找不到候補紀錄' });
+
+    waitlist.status = 'cancelled';
+    await waitlist.save();
+    res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -322,7 +598,10 @@ router.get('/venues/:id/duration-plans', async (req, res) => {
   try {
     const plans = await DurationPlan.find({ venueId: req.params.id, isActive: true })
       .sort({ order: 1, createdAt: 1 }).lean();
-    res.json(plans);
+    // onSale 回傳「目前是否真的在特價中」的即時結果，而非後台原始設定值，
+    // 這樣特價結束時間一到，使用者端顯示會自動變回原價，不用手動去後台關掉開關
+    const result = plans.map(p => ({ ...p, onSale: isPlanOnSaleNow(p) }));
+    res.json(result);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -404,8 +683,14 @@ router.post('/reservations', liffAuth, async (req, res) => {
 
     const lineUserId = req.liffUser.lineUserId;
 
+    // 平台維護模式（伺服器端強制檢查，非僅前端阻擋）
+    if (venue.maintenanceMode && !(venue.maintenanceBypassUserIds || []).includes(lineUserId))
+      return res.status(409).json({ error: '平台維護中，暫停預約，請稍後再試' });
+
     // ── 未付款鎖定 ──────────────────────────────────────────────────────────
-    const hasUnpaidExit = await Reservation.findOne({ lineUserId, unpaidExit: true });
+    // 同時檢查 paymentStatus：unpaidExit 曾有付款管道忘了清除的 bug（已修），
+    // 這裡額外比對 paymentStatus，就算哪個管道又漏清，已付款的紀錄也不會誤擋新預約
+    const hasUnpaidExit = await Reservation.findOne({ lineUserId, unpaidExit: true, paymentStatus: { $ne: 'paid' } });
     if (hasUnpaidExit)
       return res.status(403).json({ error: '您有未完成付款的記錄，暫時無法預約。請先至預約紀錄完成補付款，或聯絡工作人員處理。' });
 
@@ -422,10 +707,28 @@ router.post('/reservations', liffAuth, async (req, res) => {
       const sTime = new Date(startTime);
       const eTime = new Date(endTime);
 
-      // 容量檢查
-      const avail = await checkSlotAvailability(venueId, sTime, eTime, venue.maxCapacityPerSlot);
-      if (!avail.available)
-        return res.status(409).json({ error: '此時段座位已滿，請選擇其他時間' });
+      // 預約開放範圍（伺服器端強制檢查，非僅前端阻擋）
+      if (isBeyondBookingWindow(sTime.toISOString().slice(0, 10)))
+        return res.status(409).json({ error: '僅開放 8 天內的預約' });
+
+      // 全站公休（伺服器端強制檢查，非僅前端阻擋）
+      const closureS2 = await getActiveClosure(sTime.toISOString().slice(0, 10));
+      if (closureS2) return res.status(409).json({ error: `公休：${closureS2.reason}` });
+
+      // 營業時間範圍（伺服器端強制檢查，非僅前端阻擋）：
+      // 入場不得早於開館；離場不得晚於閉館——臨時入場寬限區間的離場時間
+      // 已由前端截斷為閉館時間，這裡只是防止用戶端送出超過閉館的 endTime。
+      {
+        const openHourS2  = venue.s2OpenHour  ?? 7;
+        const closeHourS2 = venue.s2CloseHour ?? 22;
+        const taipeiDateStr = new Date(sTime.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const [dy, dm, dd] = taipeiDateStr.split('-').map(Number);
+        const midnightUTC = Date.UTC(dy, dm - 1, dd) - 8 * 60 * 60 * 1000;
+        const openUTC  = midnightUTC + openHourS2  * 60 * 60 * 1000;
+        const closeUTC = midnightUTC + closeHourS2 * 60 * 60 * 1000;
+        if (sTime.getTime() < openUTC || eTime.getTime() > closeUTC || eTime.getTime() <= sTime.getTime())
+          return res.status(409).json({ error: '預約時間超出營業時間' });
+      }
 
       // 重複預約防呆：同用戶同場地時間重疊
       const dupS2 = await Reservation.findOne({
@@ -435,6 +738,12 @@ router.post('/reservations', liffAuth, async (req, res) => {
         endTime:   { $gt: sTime }
       });
       if (dupS2) return res.status(409).json({ error: '您在此時段已有預約，請勿重複預約' });
+
+      // 容量檢查：刻意放在最後、緊接著寫入預約之前，縮小「查詢」跟「寫入」中間的空窗，
+      // 降低兩人同時搶最後名額時都通過檢查、導致超收的機率（非 100% 杜絕，但改動單純）
+      const avail = await checkSlotAvailability(venueId, sTime, eTime, venue.maxCapacityPerSlot);
+      if (!avail.available)
+        return res.status(409).json({ error: '此時段座位已滿，請選擇其他時間' });
 
       // 入場時間範圍：提前 15 分鐘到延後 30 分鐘
       const checkIn15Min = new Date(sTime.getTime() - 15 * 60 * 1000);
@@ -450,7 +759,7 @@ router.post('/reservations', liffAuth, async (req, res) => {
         durationPlanName: dPlan.name,
         durationMinutes:  dPlan.durationMinutes,
         slots:            [],
-        totalPrice:       (dPlan.onSale && dPlan.salePrice > 0) ? dPlan.salePrice : dPlan.price,
+        totalPrice:       isPlanOnSaleNow(dPlan) ? dPlan.salePrice : dPlan.price,
         startTime:        sTime,
         endTime:          eTime,
         expectedCheckIn:  checkIn15Min,
@@ -472,6 +781,15 @@ router.post('/reservations', liffAuth, async (req, res) => {
       return res.status(400).json({ error: 'venueId, date, slots required' });
 
     const dateStr = typeof date === 'string' ? date : new Date(date).toISOString().slice(0, 10);
+
+    // 預約開放範圍（伺服器端強制檢查，非僅前端阻擋）
+    if (isBeyondBookingWindow(dateStr))
+      return res.status(409).json({ error: '僅開放 8 天內的預約' });
+
+    // 全站公休（伺服器端強制檢查，非僅前端阻擋）
+    const closureS1 = await getActiveClosure(dateStr);
+    if (closureS1) return res.status(409).json({ error: `公休：${closureS1.reason}` });
+
     const avail   = await getSlotAvailability(venueId, venue.maxCapacityPerSlot, dateStr);
 
     const isShortSession = mode === 'walkin_short';
@@ -565,6 +883,12 @@ router.delete('/reservations/:id', liffAuth, async (req, res) => {
       return res.status(400).json({ error: '已入場或已完成的預約無法取消' });
     r.status = 'cancelled';
     await r.save();
+
+    // 策略二：釋出容量，檢查是否有候補可通知
+    if (r.strategy === 2 && r.startTime) {
+      checkAndNotifyWaitlist(r.venueId, dateStrFromDate(r.startTime)).catch(() => {});
+    }
+
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -614,6 +938,25 @@ router.get('/reservations/:id/short-session-price', liffAuth, async (req, res) =
   }
 });
 
+// ── POST /api/liff/reservations/:id/discount-code/validate ────────────────────
+// 試算折扣碼可折抵金額，不消耗使用次數（真正扣用量在付款成功的 webhook）
+router.post('/reservations/:id/discount-code/validate', liffAuth, async (req, res) => {
+  try {
+    const r = await Reservation.findById(req.params.id).lean();
+    if (!r) return res.status(404).json({ error: 'Not found' });
+    if (r.lineUserId !== req.liffUser.lineUserId)
+      return res.status(403).json({ error: 'Forbidden' });
+
+    const dc = await checkDiscountCode(req.body.code);
+    if (!dc) return res.status(404).json({ error: '折扣碼無效、已過期或已達使用上限' });
+
+    const discount = discountCodeValue(dc, r.totalPrice);
+    res.json({ valid: true, code: dc.code, discountAmount: discount, effectivePrice: Math.max(0, r.totalPrice - discount) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/liff/reservations/:id/payment ───────────────────────────────────
 // Initiate payment (NewebPay by default; set PAYMENT_GATEWAY=ecpay to use ECPay)
 // Returns { form: { action, fields } } for the client to POST via hidden form
@@ -658,16 +1001,25 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
       return res.json({ skip: true });
     }
 
-    // Apply coupon if provided
-    const { couponId } = req.body;
+    // Apply coupon or discount code if provided（互斥，coupon 優先）
+    const { couponId, discountCode } = req.body;
     let effectivePrice = r.totalPrice;
     let coupon = null;
+    let discountApplied = false;
     if (couponId) {
       coupon = await Coupon.findOne({ _id: couponId, lineUserId: req.liffUser.lineUserId, status: 'valid' });
+      if (coupon && coupon.expiresAt && coupon.expiresAt < new Date()) {
+        coupon.status = 'expired';
+        await coupon.save();
+        coupon = null;
+      }
       if (coupon) {
-        effectivePrice = Math.max(0, r.totalPrice - coupon.discountAmount);
+        effectivePrice = coupon.discountType === 'percent'
+          ? Math.round(r.totalPrice * (1 - coupon.discountPercent / 100))
+          : Math.max(0, r.totalPrice - coupon.discountAmount);
         r.appliedCouponId = coupon._id;
-        r.discountAmount = coupon.discountAmount;
+        r.discountAmount = r.totalPrice - effectivePrice; // 統一存實際折抵金額，不論券的類型
+        discountApplied = true;
         await r.save();
 
         if (effectivePrice === 0) {
@@ -679,18 +1031,61 @@ router.post('/reservations/:id/payment', liffAuth, async (req, res) => {
           r.paymentStatus = 'paid';
           r.status = 'completed';
           r.unpaidExit = false;
+          r.paidAt = new Date();
           await r.save();
           return res.json({ skip: true });
         }
       }
+    } else if (discountCode) {
+      const dc = await checkDiscountCode(discountCode);
+      if (!dc) return res.status(409).json({ error: '折扣碼無效、已過期或已達使用上限' });
+
+      const discount = discountCodeValue(dc, r.totalPrice);
+      effectivePrice = Math.max(0, r.totalPrice - discount);
+      r.appliedDiscountCode = dc.code;
+      r.discountAmount = discount;
+      discountApplied = true;
+      await r.save();
+
+      if (effectivePrice === 0) {
+        // Full discount — no gateway roundtrip, so count usage right away
+        await DiscountCode.updateOne({ _id: dc._id }, { $inc: { usedCount: 1 } });
+        r.paymentStatus = 'paid';
+        r.status = 'completed';
+        r.unpaidExit = false;
+        r.paidAt = new Date();
+        await r.save();
+        return res.json({ skip: true });
+      }
+    }
+
+    // 這次付款沒有套用折扣券/折扣碼（或套用失敗）：清掉上一次放棄的付款嘗試殘留的折扣
+    // 紀錄，避免這次明明收全額，付款成功時卻誤把舊折扣券標記已使用、或讓折扣碼用量白白 +1
+    if (!discountApplied && (r.appliedCouponId || r.appliedDiscountCode || r.discountAmount)) {
+      r.appliedCouponId = null;
+      r.appliedDiscountCode = '';
+      r.discountAmount = 0;
+      await r.save();
     }
 
     // Build payment order with effective price (may be discounted)
     const reservationForPayment = effectivePrice !== r.totalPrice
       ? { ...r.toObject(), totalPrice: effectivePrice }
       : r;
-    const { params, apiUrl, tradeNo } = createOrderParams(reservationForPayment);
+
+    if (req.body.method === 'linepay') {
+      const { transactionId, paymentUrl } = await requestLinePay(reservationForPayment);
+      r.paymentRef = transactionId;
+      r.paymentMethod = 'linepay';
+      r.linepayPendingAmount = reservationForPayment.totalPrice; // Confirm 時原封不動沿用，不重新計算
+      await r.save();
+      return res.json({ redirectUrl: paymentUrl });
+    }
+
+    const customerSetting = await CustomerSetting.findOne({ lineUserId: req.liffUser.lineUserId }).lean();
+    const { params, apiUrl, tradeNo } = createOrderParams(reservationForPayment, customerSetting?.email);
     r.paymentRef = tradeNo;
+    r.paymentMethod = 'newebpay';
     await r.save();
 
     res.json({ form: { action: apiUrl, fields: params } });
@@ -918,8 +1313,10 @@ router.post('/tasks/:id/submit', liffAuth, async (req, res) => {
 // ── GET /api/liff/coupons ─────────────────────────────────────────────────────
 router.get('/coupons', liffAuth, async (req, res) => {
   try {
-    const coupons = await Coupon.find({ lineUserId: req.liffUser.lineUserId, status: 'valid' })
-      .sort({ createdAt: -1 }).lean();
+    const coupons = await Coupon.find({
+      lineUserId: req.liffUser.lineUserId, status: 'valid',
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }]
+    }).sort({ createdAt: -1 }).lean();
     res.json(coupons);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -931,10 +1328,10 @@ const HourPackage  = require('../models/HourPackage');
 const HourPurchase = require('../models/HourPurchase');
 const { createHourOrderParams: _ecpayHourOrder }   = require('../services/ecpayService');
 const { createHourOrderParams: _newebpayHourOrder } = require('../services/newebpayService');
-const createHourOrderParams = (purchase) =>
+const createHourOrderParams = (purchase, email) =>
   (process.env.PAYMENT_GATEWAY || 'newebpay').toLowerCase() === 'ecpay'
     ? _ecpayHourOrder(purchase)
-    : _newebpayHourOrder(purchase);
+    : _newebpayHourOrder(purchase, email);
 
 router.get('/hour-packages', async (req, res) => {
   try {
@@ -973,7 +1370,8 @@ router.post('/hour-purchases', liffAuth, async (req, res) => {
       expiresAt,
     });
 
-    const { params, apiUrl, tradeNo } = createHourOrderParams(purchase);
+    const customerSetting = await CustomerSetting.findOne({ lineUserId: req.liffUser.lineUserId }).lean();
+    const { params, apiUrl, tradeNo } = createHourOrderParams(purchase, customerSetting?.email);
     purchase.paymentRef = tradeNo;
     await purchase.save();
 
@@ -988,6 +1386,9 @@ router.post('/reservations/:id/pay-with-hours', liffAuth, async (req, res) => {
     if (r.lineUserId !== req.liffUser.lineUserId) return res.status(403).json({ error: '無權限' });
     if (r.paymentStatus === 'paid') return res.status(400).json({ error: '已付款' });
     if (r.totalPrice <= 0) return res.status(400).json({ error: '此預約不需付款' });
+    // 策略二整天方案不開放時數折抵（划不來），伺服器端強制檢查，非僅前端阻擋
+    if (r.strategy === 2 && r.durationMinutes === 0)
+      return res.status(400).json({ error: '整天方案用時數折抵不划算，請直接結帳即可，謝謝' });
 
     const startMs  = new Date(r.startTime || r.expectedCheckIn || r.createdAt).getTime();
     const endMs    = new Date(r.endTime   || r.expectedCheckOut || (startMs + 60 * 60 * 1000)).getTime();
@@ -1017,6 +1418,12 @@ router.post('/reservations/:id/pay-with-hours', liffAuth, async (req, res) => {
 
     r.paymentStatus = 'paid';
     r.status        = 'completed';
+    r.paidAt        = new Date();
+    r.unpaidExit    = false; // 補款成功，清除「先離場未付款」標記（其他付款管道都有做，這裡原本漏了）
+    // 時數折抵：金額已在購買時數當下收過款，這筆預約本身沒有新收到現金，
+    // 實收營收計算時視為全額折抵（discountAmount = totalPrice），但原價仍計入「總預計營收」
+    r.discountAmount = r.totalPrice;
+    r.hourCreditMinutes = neededMinutes;
     await r.save();
 
     res.json({ ok: true, deductedMinutes: neededMinutes });

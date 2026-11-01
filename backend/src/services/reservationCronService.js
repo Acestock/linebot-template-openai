@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const Reservation = require('../models/Reservation');
 const { pushMessage } = require('./lineService');
+const { checkAndNotifyWaitlist, dateStrFromDate } = require('./strategy2Service');
 
 function startReservationReminderJob() {
   cron.schedule('* * * * *', async () => {
@@ -16,10 +17,24 @@ function startReservationReminderJob() {
       );
       // 策略二：超過 startTime + 30min 仍未入場（最晚 30 分鐘內報到）
       const s2Overdue = new Date(now.getTime() - 30 * 60 * 1000);
-      await Reservation.updateMany(
+      const noShowList = await Reservation.find(
         { strategy: 2, status: 'confirmed', startTime: { $lt: s2Overdue } },
-        { $set: { status: 'cancelled' } }
-      );
+        { venueId: 1, startTime: 1 }
+      ).lean();
+      if (noShowList.length) {
+        await Reservation.updateMany(
+          { strategy: 2, status: 'confirmed', startTime: { $lt: s2Overdue } },
+          { $set: { status: 'cancelled' } }
+        );
+        // 釋出容量，對受影響的「場地＋日期」各檢查一次是否有候補可通知
+        const seen = new Set();
+        for (const r of noShowList) {
+          const key = `${r.venueId}_${dateStrFromDate(r.startTime)}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          checkAndNotifyWaitlist(r.venueId, dateStrFromDate(r.startTime)).catch(() => {});
+        }
+      }
     } catch (err) {
       console.error('[ReservationCron] Auto-cancel failed:', err.message);
     }
@@ -71,6 +86,67 @@ function startReservationReminderJob() {
       }
     } catch (err) {
       console.error('[ReservationCron] UnpaidExit detection failed:', err.message);
+    }
+  }, { timezone: 'Asia/Taipei' });
+
+  // ⑤ 00:15 — 名下有未結帳紀錄（unpaidExit）的用戶，若「今天」還有尚未入場的預約，先發訊提醒
+  cron.schedule('15 0 * * *', async () => {
+    try {
+      const now = new Date();
+      const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+      const todayEnd   = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+
+      const unpaidUsers = await Reservation.distinct('lineUserId', { unpaidExit: true });
+      if (!unpaidUsers.length) return;
+
+      const upcoming = await Reservation.find({
+        lineUserId: { $in: unpaidUsers },
+        status: 'confirmed',
+        $or: [
+          { date:      { $gte: todayStart, $lt: todayEnd } },
+          { startTime: { $gte: todayStart, $lt: todayEnd } }
+        ]
+      });
+
+      for (const r of upcoming) {
+        await pushMessage(r.lineUserId,
+          `⚠️ 提醒您：您有前次使用未完成付款的紀錄，今日（${r.venueName}）的預約將受影響。\n請儘速完成付款，或主動取消今日預約；若於 01:00 前仍未處理，系統將自動取消此筆預約。`
+        ).catch(() => {});
+      }
+    } catch (err) {
+      console.error('[ReservationCron] Unpaid-exit reminder failed:', err.message);
+    }
+  }, { timezone: 'Asia/Taipei' });
+
+  // ⑥ 01:00 — 若仍未處理（未付款 + 今日預約仍是 confirmed），自動取消並通知
+  cron.schedule('0 1 * * *', async () => {
+    try {
+      const now = new Date();
+      const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+      const todayEnd   = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+
+      const unpaidUsers = await Reservation.distinct('lineUserId', { unpaidExit: true });
+      if (!unpaidUsers.length) return;
+
+      const upcoming = await Reservation.find({
+        lineUserId: { $in: unpaidUsers },
+        status: 'confirmed',
+        $or: [
+          { date:      { $gte: todayStart, $lt: todayEnd } },
+          { startTime: { $gte: todayStart, $lt: todayEnd } }
+        ]
+      });
+
+      for (const r of upcoming) {
+        r.status = 'cancelled';
+        await r.save();
+        console.log(`[ReservationCron] Auto-cancelled ${r._id} (${r.displayName}) due to prior unpaid exit`);
+        await pushMessage(r.lineUserId,
+          `❌ 您今日（${r.venueName}）的預約已因前次未完成付款自動取消。請先完成付款後再重新預約。`
+        ).catch(() => {});
+      }
+    } catch (err) {
+      console.error('[ReservationCron] Unpaid-exit auto-cancel failed:', err.message);
     }
   }, { timezone: 'Asia/Taipei' });
 
