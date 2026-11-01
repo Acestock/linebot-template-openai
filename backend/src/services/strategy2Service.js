@@ -118,6 +118,18 @@ function toHHMM(date) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+const WEEKDAY_CN = ['日', '一', '二', '三', '四', '五', '六'];
+
+// 'MM/DD（週X）'，顯示 UTC+8 的日期——通知文字除了時間還要有日期，
+// 避免用戶分不清是哪一天的候補時段有空位
+function toDateLabel(date) {
+  const ms  = date.getTime() + 8 * 60 * 60 * 1000;
+  const tmp = new Date(ms);
+  const mo  = tmp.getUTCMonth() + 1;
+  const d   = tmp.getUTCDate();
+  return `${mo}/${d}（${WEEKDAY_CN[tmp.getUTCDay()]}）`;
+}
+
 // 將任意時間點換算成所屬的台北日期字串 'YYYY-MM-DD'
 function dateStrFromDate(date) {
   const taipei = new Date(date.getTime() + 8 * 60 * 60 * 1000);
@@ -151,7 +163,7 @@ async function checkAndNotifyWaitlist(venueId, dateStr) {
 
     await pushMessage(
       w.lineUserId,
-      `🔔 空位通知\n「${w.venueName}」您候補的時段 ${toHHMM(w.startTime)}–${toHHMM(w.endTime)} 現在有空位了！\n座位有限、額滿為止，請盡快至預約系統完成預約。`
+      `🔔 空位通知\n「${w.venueName}」您候補的時段 ${toDateLabel(w.startTime)} ${toHHMM(w.startTime)}–${toHHMM(w.endTime)} 現在有空位了！\n座位有限、額滿為止，請盡快至預約系統完成預約。`
     ).catch(() => {});
 
     w.status     = 'notified';
