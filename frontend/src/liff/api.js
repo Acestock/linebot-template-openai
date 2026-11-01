@@ -272,3 +272,14 @@ export async function requestStrategy2Waitlist(venueId, { startTime, endTime, du
   if (!r.ok) throw new Error(json.error || '登記候補失敗');
   return json;
 }
+
+export async function cancelStrategy2Waitlist(venueId, { startTime, endTime }) {
+  const r = await fetch(`${BASE}/venues/${venueId}/strategy2-waitlist`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+    body: JSON.stringify({ startTime, endTime })
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || '取消候補失敗');
+  return json;
+}

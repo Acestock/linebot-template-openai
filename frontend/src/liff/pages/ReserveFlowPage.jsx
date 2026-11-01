@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchVenue, fetchAvailability, createReservation, getSessionToken, fetchShortSessionQuote, fetchDurationPlans, fetchStrategy2Slots, requestStrategy2Waitlist } from '../api';
+import { fetchVenue, fetchAvailability, createReservation, getSessionToken, fetchShortSessionQuote, fetchDurationPlans, fetchStrategy2Slots, requestStrategy2Waitlist, cancelStrategy2Waitlist } from '../api';
 
 const SLOTS = [
   { key: 'morning',   label: '早上', range: '07:00–12:00', icon: '🌅' },
@@ -228,12 +228,18 @@ function Strategy2Flow({ venue: initialVenue, initialDate, onBack, onDone }) {
     if (waitlistBusyKey) return;
     setWaitlistBusyKey(s.startTime);
     try {
-      await requestStrategy2Waitlist(venue._id, {
-        startTime: s.startTime, endTime: s.endTime, durationPlanId: selPlan?._id
-      });
-      setSlots(prev => prev.map(x => x.startTime === s.startTime ? { ...x, waitlisted: true } : x));
+      if (s.waitlisted) {
+        // 已登記過：再點一次＝取消提醒
+        await cancelStrategy2Waitlist(venue._id, { startTime: s.startTime, endTime: s.endTime });
+        setSlots(prev => prev.map(x => x.startTime === s.startTime ? { ...x, waitlisted: false } : x));
+      } else {
+        await requestStrategy2Waitlist(venue._id, {
+          startTime: s.startTime, endTime: s.endTime, durationPlanId: selPlan?._id
+        });
+        setSlots(prev => prev.map(x => x.startTime === s.startTime ? { ...x, waitlisted: true } : x));
+      }
     } catch (e) {
-      alert(e.message || '登記候補失敗，請重試');
+      alert(e.message || (s.waitlisted ? '取消候補失敗，請重試' : '登記候補失敗，請重試'));
     } finally {
       setWaitlistBusyKey('');
     }
@@ -433,7 +439,7 @@ function Strategy2Flow({ venue: initialVenue, initialDate, onBack, onDone }) {
                     </button>
                     {showWaitlistBtn && (
                       <button
-                        disabled={s.waitlisted || waitlistBusyKey === s.startTime}
+                        disabled={waitlistBusyKey === s.startTime}
                         onClick={() => handleWaitlist(s)}
                         style={{
                           width: '100%', boxSizing: 'border-box',
@@ -442,10 +448,12 @@ function Strategy2Flow({ venue: initialVenue, initialDate, onBack, onDone }) {
                           background: s.waitlisted ? '#ffe0b2' : '#fff3e0',
                           color: s.waitlisted ? '#e65100' : '#f57c00',
                           fontSize: '10px', fontWeight: '600',
-                          cursor: s.waitlisted ? 'default' : 'pointer'
+                          cursor: waitlistBusyKey === s.startTime ? 'default' : 'pointer'
                         }}
                       >
-                        {s.waitlisted ? '已登記候補' : waitlistBusyKey === s.startTime ? '登記中...' : '🔔 空位提醒'}
+                        {waitlistBusyKey === s.startTime
+                          ? (s.waitlisted ? '取消中...' : '登記中...')
+                          : (s.waitlisted ? '已登記候補（點擊取消）' : '🔔 空位提醒')}
                       </button>
                     )}
                   </div>

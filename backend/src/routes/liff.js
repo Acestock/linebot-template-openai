@@ -570,6 +570,29 @@ router.post('/venues/:id/strategy2-waitlist', liffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── DELETE /api/liff/venues/:id/strategy2-waitlist ─────────────────────────────
+// 取消先前登記的「空位提醒」候補（用戶再點一次按鈕＝取消提醒）
+router.delete('/venues/:id/strategy2-waitlist', liffAuth, async (req, res) => {
+  try {
+    const { startTime, endTime } = req.body;
+    if (!startTime || !endTime) return res.status(400).json({ error: 'startTime, endTime 為必填' });
+
+    const sTime = new Date(startTime);
+    const eTime = new Date(endTime);
+    if (isNaN(sTime) || isNaN(eTime)) return res.status(400).json({ error: '時段資料有誤' });
+
+    const waitlist = await WaitlistRequest.findOne({
+      lineUserId: req.liffUser.lineUserId, venueId: req.params.id,
+      status: 'pending', startTime: sTime, endTime: eTime
+    });
+    if (!waitlist) return res.status(404).json({ error: '找不到候補紀錄' });
+
+    waitlist.status = 'cancelled';
+    await waitlist.save();
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── GET /api/liff/venues/:id/duration-plans ───────────────────────────────────
 router.get('/venues/:id/duration-plans', async (req, res) => {
   try {
