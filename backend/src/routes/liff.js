@@ -709,6 +709,12 @@ router.post('/reservations', liffAuth, async (req, res) => {
     if (hasUnpaidExit)
       return res.status(403).json({ error: '您有未完成付款的記錄，暫時無法預約。請先至預約紀錄完成補付款，或聯絡工作人員處理。' });
 
+    // ── 預約未到鎖定 ────────────────────────────────────────────────────────
+    // 累計未到達門檻（見 noShowService.js）會鎖住預約功能，須私訊客服人工後台解鎖
+    const customerSetting = await CustomerSetting.findOne({ lineUserId }).lean();
+    if (customerSetting?.bookingLocked)
+      return res.status(403).json({ error: '您的預約功能已因多次預約未到暫時鎖定，請私訊我們的 LINE 官方帳號聯繫工作人員解鎖。' });
+
     // ══════════════════════════════════════════════════════════════════════════
     // 策略二：自由時段制（固定起始 + 固定時長）
     // ══════════════════════════════════════════════════════════════════════════

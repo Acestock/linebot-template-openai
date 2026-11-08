@@ -14,6 +14,7 @@ const ReservationSchema = new mongoose.Schema({
   expectedCheckIn:  { type: Date },
   expectedCheckOut: { type: Date },
   status:           { type: String, enum: ['confirmed', 'checked_in', 'completed', 'cancelled'], default: 'confirmed' },
+  noShow:           { type: Boolean, default: false }, // 超過入場時間 30 分鐘被系統自動取消（非用戶/後台手動取消）
   paymentStatus:    { type: String, enum: ['free', 'unpaid', 'paid'], default: 'unpaid' },
   unpaidExit:       { type: Boolean, default: false },
   paymentRef:       { type: String, default: '' },

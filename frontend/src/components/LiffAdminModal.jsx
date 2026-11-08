@@ -891,6 +891,7 @@ function ReservationsTab() {
         <button type="button" onClick={() => setViewMode('list')} style={btn(viewMode === 'list' ? '#111' : '#f0f0f0', viewMode === 'list' ? '#fff' : '#555')}>列表</button>
         <button type="button" onClick={() => setViewMode('gantt')} style={btn(viewMode === 'gantt' ? '#111' : '#f0f0f0', viewMode === 'gantt' ? '#fff' : '#555')}>甘特圖</button>
         <button type="button" onClick={() => setViewMode('waitlist')} style={btn(viewMode === 'waitlist' ? '#111' : '#f0f0f0', viewMode === 'waitlist' ? '#fff' : '#555')}>空位候補</button>
+        <button type="button" onClick={() => setViewMode('noshow')} style={btn(viewMode === 'noshow' ? '#111' : '#f0f0f0', viewMode === 'noshow' ? '#fff' : '#555')}>未到鎖定</button>
         <button type="button" onClick={fixStaleUnpaidExit} style={{ ...btn('#fff3e0', '#e65100'), marginLeft: 'auto', fontSize: '11px' }}>
           修復未結帳標記殘留（一次性）
         </button>
@@ -898,6 +899,7 @@ function ReservationsTab() {
 
       {viewMode === 'gantt' && <ReservationGanttView venues={venues} />}
       {viewMode === 'waitlist' && <WaitlistView venues={venues} />}
+      {viewMode === 'noshow' && <NoShowLockView />}
 
       {viewMode === 'list' && <>
       {/* Filters */}
@@ -1264,6 +1266,75 @@ function WaitlistView({ venues }) {
           <span style={{ background: `${WAITLIST_STATUS_COLORS[w.status]}22`, color: WAITLIST_STATUS_COLORS[w.status], padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', flexShrink: 0 }}>
             {WAITLIST_STATUS_LABELS[w.status] || w.status}
           </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── 預約未到鎖定檢視（新增）：後台查看累計未到次數的用戶，鎖定中的可一鍵解鎖 ───────
+function NoShowLockView() {
+  const [items, setItems]   = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [unlocking, setUnlocking] = useState(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    authFetch(`${API_BASE}/api/reservations/no-show-locked`)
+      .then(r => r.json())
+      .then(d => setItems(Array.isArray(d) ? d : []))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, []);
+  useEffect(load, [load]);
+
+  async function unlock(lineUserId) {
+    if (!confirm('確定要解鎖此用戶的預約功能嗎？解鎖後未到次數會歸零，重新給 2 次機會。')) return;
+    setUnlocking(lineUserId);
+    try {
+      await authFetch(`${API_BASE}/api/reservations/no-show-locked/${lineUserId}/unlock`, { method: 'POST' });
+      load();
+    } catch (e) {
+      alert('解鎖失敗：' + e.message);
+    } finally {
+      setUnlocking(null);
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px' }}>
+        超過入場時間 30 分鐘被系統自動取消的預約會累計未到次數，達 2 次會自動鎖住該用戶的預約功能，
+        需用戶私訊 LINE 官方帳號，工作人員確認後在這裡手動解鎖。
+      </div>
+
+      {loading && <div style={{ color: '#aaa', textAlign: 'center', padding: '24px' }}>載入中...</div>}
+      {!loading && items.length === 0 && <div style={{ color: '#aaa', textAlign: 'center', padding: '24px' }}>目前沒有任何未到紀錄</div>}
+
+      {!loading && items.map(cs => (
+        <div key={cs._id} style={{ border: '1px solid #eee', borderRadius: '10px', marginBottom: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {cs.pictureUrl ? (
+            <img src={cs.pictureUrl} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0, objectFit: 'cover' }} />
+          ) : (
+            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#e0e0e0', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#999' }}>
+              {(cs.displayName || '?')[0]}
+            </div>
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: '600', fontSize: '14px' }}>{cs.displayName || cs.lineUserId}</div>
+            <div style={{ fontSize: '12px', color: '#888' }}>未到次數：{cs.noShowCount}</div>
+            {cs.lockedAt && <div style={{ fontSize: '11px', color: '#aaa', marginTop: '2px' }}>鎖定時間：{fmtDT(cs.lockedAt)}</div>}
+          </div>
+          {cs.bookingLocked ? (
+            <>
+              <span style={{ background: '#ffebee', color: '#c62828', padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', flexShrink: 0 }}>已鎖定</span>
+              <button type="button" onClick={() => unlock(cs.lineUserId)} disabled={unlocking === cs.lineUserId} style={btn('#e8f5e9', '#2e7d32')}>
+                {unlocking === cs.lineUserId ? '解鎖中...' : '解鎖'}
+              </button>
+            </>
+          ) : (
+            <span style={{ background: '#f5f5f5', color: '#999', padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', flexShrink: 0 }}>未鎖定</span>
+          )}
         </div>
       ))}
     </div>

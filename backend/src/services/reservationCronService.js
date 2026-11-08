@@ -2,30 +2,40 @@ const cron = require('node-cron');
 const Reservation = require('../models/Reservation');
 const { pushMessage } = require('./lineService');
 const { checkAndNotifyWaitlist, dateStrFromDate } = require('./strategy2Service');
+const { recordNoShowsAndMaybeLock } = require('./noShowService');
 
 function startReservationReminderJob() {
   cron.schedule('* * * * *', async () => {
     const now = new Date();
 
-    // ① 自動取消未進場的 confirmed 預約
+    // ① 自動取消未進場的 confirmed 預約——這種「超過入場時間30分鐘」的自動取消
+    //    才算「預約未到」，計入未到次數；用戶自己取消或後台手動取消都不算。
     try {
       // 策略一：超過 expectedCheckOut + 30min 仍未入場
       const overdueWindow = new Date(now.getTime() - 30 * 60 * 1000);
-      await Reservation.updateMany(
+      const s1NoShowList = await Reservation.find(
         { strategy: { $ne: 2 }, status: 'confirmed', expectedCheckOut: { $lt: overdueWindow } },
-        { $set: { status: 'cancelled' } }
-      );
+        { lineUserId: 1, displayName: 1, pictureUrl: 1, venueName: 1 }
+      ).lean();
+      if (s1NoShowList.length) {
+        await Reservation.updateMany(
+          { strategy: { $ne: 2 }, status: 'confirmed', expectedCheckOut: { $lt: overdueWindow } },
+          { $set: { status: 'cancelled', noShow: true } }
+        );
+        recordNoShowsAndMaybeLock(s1NoShowList).catch(() => {});
+      }
       // 策略二：超過 startTime + 30min 仍未入場（最晚 30 分鐘內報到）
       const s2Overdue = new Date(now.getTime() - 30 * 60 * 1000);
       const noShowList = await Reservation.find(
         { strategy: 2, status: 'confirmed', startTime: { $lt: s2Overdue } },
-        { venueId: 1, startTime: 1 }
+        { venueId: 1, startTime: 1, lineUserId: 1, displayName: 1, pictureUrl: 1, venueName: 1 }
       ).lean();
       if (noShowList.length) {
         await Reservation.updateMany(
           { strategy: 2, status: 'confirmed', startTime: { $lt: s2Overdue } },
-          { $set: { status: 'cancelled' } }
+          { $set: { status: 'cancelled', noShow: true } }
         );
+        recordNoShowsAndMaybeLock(noShowList).catch(() => {});
         // 釋出容量，對受影響的「場地＋日期」各檢查一次是否有候補可通知
         const seen = new Set();
         for (const r of noShowList) {

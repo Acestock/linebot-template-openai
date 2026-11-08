@@ -1371,6 +1371,30 @@ router.get('/reservations/waitlist', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── 預約未到鎖定（No-show lockout）─────────────────────────────────────────────
+// GET /api/reservations/no-show-locked — 目前被鎖定（或曾有未到紀錄）的用戶名單
+router.get('/reservations/no-show-locked', async (req, res) => {
+  try {
+    const items = await CustomerSetting.find({ noShowCount: { $gt: 0 } })
+      .sort({ bookingLocked: -1, lockedAt: -1, noShowCount: -1 }).lean();
+    res.json(items);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/reservations/no-show-locked/:lineUserId/unlock — 工作人員人工解鎖
+// 解鎖同時把未到次數歸零，讓用戶重新獲得 2 次機會（而不是保留次數、下一次未到就馬上再鎖）
+router.post('/reservations/no-show-locked/:lineUserId/unlock', async (req, res) => {
+  try {
+    const cs = await CustomerSetting.findOneAndUpdate(
+      { lineUserId: req.params.lineUserId },
+      { $set: { bookingLocked: false, noShowCount: 0, lockedAt: null } },
+      { new: true }
+    );
+    if (!cs) return res.status(404).json({ error: '找不到此用戶的紀錄' });
+    res.json(cs);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/reservations/fix-stale-unpaid-exit — 一次性資料修復
 // 「用預購時數折抵」補款成功過去沒有清除 unpaidExit，導致已付款的預約仍被誤判為未結帳
 // （擋新預約、用戶端顯示未成功結帳）。找出 status=completed 且已付款但 unpaidExit 還卡在
