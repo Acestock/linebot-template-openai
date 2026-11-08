@@ -1698,6 +1698,20 @@ router.delete('/coupons/:id', async (req, res) => {
 });
 
 // ─── Duration Plans (策略二方案) ──────────────────────────────────────────────
+// 後台「特價結束時間」是 <input type="datetime-local">，值是不帶時區的
+// 'YYYY-MM-DDTHH:mm'，代表的是管理者瀏覽器當地（台北）的牆上時間。
+// 伺服器本身跑在 UTC，若直接 new Date(str) 會被當成 UTC 時間解讀，
+// 導致存進資料庫的時間點比管理者實際設定的台北時間晚了 8 小時
+// （例如設定「11/14 00:00」結果存成 UTC 11/14 00:00 = 台北 11/14 08:00）。
+// 這裡手動用 +8 時區換算成正確的 UTC 時間點再存。
+function parseTaipeiDateTimeLocal(str) {
+  if (!str) return null;
+  const [datePart, timePart] = str.split('T');
+  const [y, m, d] = datePart.split('-').map(Number);
+  const [hh, mm] = (timePart || '00:00').split(':').map(Number);
+  return new Date(Date.UTC(y, m - 1, d, hh, mm) - 8 * 60 * 60 * 1000);
+}
+
 router.get('/venues/:venueId/duration-plans', async (req, res) => {
   try {
     const plans = await DurationPlan.find({ venueId: req.params.venueId }).sort({ order: 1, createdAt: 1 }).lean();
@@ -1716,7 +1730,7 @@ router.post('/venues/:venueId/duration-plans', async (req, res) => {
       order: order ?? 0,
       onSale: !!onSale,
       salePrice: onSale ? +salePrice || 0 : 0,
-      saleEndAt: onSale && saleEndAt ? new Date(saleEndAt) : null
+      saleEndAt: onSale && saleEndAt ? parseTaipeiDateTimeLocal(saleEndAt) : null
     });
     res.json(plan);
   } catch (err) { res.status(400).json({ error: err.message }); }
@@ -1724,9 +1738,13 @@ router.post('/venues/:venueId/duration-plans', async (req, res) => {
 
 router.patch('/venues/:venueId/duration-plans/:planId', async (req, res) => {
   try {
+    const update = { ...req.body };
+    if (Object.prototype.hasOwnProperty.call(update, 'saleEndAt')) {
+      update.saleEndAt = update.saleEndAt ? parseTaipeiDateTimeLocal(update.saleEndAt) : null;
+    }
     const plan = await DurationPlan.findOneAndUpdate(
       { _id: req.params.planId, venueId: req.params.venueId },
-      { $set: req.body },
+      { $set: update },
       { new: true }
     );
     if (!plan) return res.status(404).json({ error: '找不到方案' });

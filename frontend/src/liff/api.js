@@ -249,8 +249,9 @@ export async function payWithHours(reservationId) {
 }
 
 // ── Strategy 2 API ────────────────────────────────────────────────────────────
-export async function fetchDurationPlans(venueId) {
-  const r = await fetch(`${BASE}/venues/${venueId}/duration-plans`);
+export async function fetchDurationPlans(venueId, date) {
+  const qs = date ? `?date=${date}` : '';
+  const r = await fetch(`${BASE}/venues/${venueId}/duration-plans${qs}`);
   if (!r.ok) throw new Error('無法取得時長方案');
   return r.json();
 }

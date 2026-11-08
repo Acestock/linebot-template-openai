@@ -56,9 +56,21 @@ function discountCodeValue(dc, totalPrice) {
     : Math.min(dc.discountAmount, totalPrice);
 }
 
-// ── 策略二時長方案：判斷目前是否「真的在特價中」（開啟特價 + 特價>0 + 未過期） ──
+// ── 策略二時長方案：判斷在某個時間點是否「真的在特價中」（開啟特價 + 特價>0 + 未過期） ──
+function isPlanOnSaleAt(plan, instant) {
+  return !!(plan.onSale && plan.salePrice > 0 && (!plan.saleEndAt || new Date(plan.saleEndAt) > instant));
+}
+// 用「現在」判斷——沒有指定日期時的預設行為（例如場地總覽頁的特價標示預覽）
 function isPlanOnSaleNow(plan) {
-  return !!(plan.onSale && plan.salePrice > 0 && (!plan.saleEndAt || new Date(plan.saleEndAt) > new Date()));
+  return isPlanOnSaleAt(plan, new Date());
+}
+// 用「預約日期」判斷——避免特價狀態只看瀏覽當下的真實時間、而跟實際要預約的日期脫鉤
+// （例如特價設定到 11/14 00:00 結束，用戶挑 11/14 當天時方案清單就該顯示原價，
+// 不是要等「現在」這個瞬間真的過了 11/14 00:00 才會變回原價）
+function isPlanOnSaleForDate(plan, dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dayStartUTC = new Date(Date.UTC(y, m - 1, d) - 8 * 60 * 60 * 1000);
+  return isPlanOnSaleAt(plan, dayStartUTC);
 }
 
 // ── 台北時間（UTC+8）的「今天」日期字串 ─────────────────────────────────────────
@@ -594,13 +606,16 @@ router.delete('/venues/:id/strategy2-waitlist', liffAuth, async (req, res) => {
 });
 
 // ── GET /api/liff/venues/:id/duration-plans ───────────────────────────────────
+// ?date=YYYY-MM-DD（可選）：有帶就依「預約日期」判斷特價是否仍有效，
+// 沒帶則退回用「現在」判斷（例如場地總覽頁，還沒挑日期）
 router.get('/venues/:id/duration-plans', async (req, res) => {
   try {
     const plans = await DurationPlan.find({ venueId: req.params.id, isActive: true })
       .sort({ order: 1, createdAt: 1 }).lean();
     // onSale 回傳「目前是否真的在特價中」的即時結果，而非後台原始設定值，
     // 這樣特價結束時間一到，使用者端顯示會自動變回原價，不用手動去後台關掉開關
-    const result = plans.map(p => ({ ...p, onSale: isPlanOnSaleNow(p) }));
+    const { date } = req.query;
+    const result = plans.map(p => ({ ...p, onSale: date ? isPlanOnSaleForDate(p, date) : isPlanOnSaleNow(p) }));
     res.json(result);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -759,7 +774,9 @@ router.post('/reservations', liffAuth, async (req, res) => {
         durationPlanName: dPlan.name,
         durationMinutes:  dPlan.durationMinutes,
         slots:            [],
-        totalPrice:       isPlanOnSaleNow(dPlan) ? dPlan.salePrice : dPlan.price,
+        // 用實際入場時間判斷是否仍在特價期間，而非「送出預約當下」的真實時間——
+        // 避免卡在特價截止前一刻搶單到過期後才用的時段、或反過來誤收原價
+        totalPrice:       isPlanOnSaleAt(dPlan, sTime) ? dPlan.salePrice : dPlan.price,
         startTime:        sTime,
         endTime:          eTime,
         expectedCheckIn:  checkIn15Min,

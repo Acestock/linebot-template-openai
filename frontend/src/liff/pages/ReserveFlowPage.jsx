@@ -248,12 +248,15 @@ function Strategy2Flow({ venue: initialVenue, initialDate, onBack, onDone }) {
   const today = toDateStr(new Date());
   const maxDate = toDateStr(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
 
-  // Load duration plans
+  // Load duration plans — 帶上目前選的日期，特價是否有效依「預約日期」判斷，
+  // 而不是依瀏覽當下的真實時間（避免兩者脫鉤）。日期變動時方案的特價狀態可能
+  // 跟著變，連帶清掉已選方案，避免用舊日期算出來的價格殘留到確認畫面。
   useEffect(() => {
-    fetchDurationPlans(venue._id).then(ps => {
+    setSelPlan(null);
+    fetchDurationPlans(venue._id, date).then(ps => {
       setPlans(ps.filter(p => p.isActive));
     }).catch(() => {});
-  }, [venue._id]);
+  }, [venue._id, date]);
 
   // Load available slots when date or plan changes
   useEffect(() => {

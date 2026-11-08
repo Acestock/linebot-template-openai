@@ -534,7 +534,7 @@ function DurationPlansSection({ venueId }) {
             )}
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
-            <button onClick={() => setDForm({ ...p, price: String(p.price), saleEndAt: p.saleEndAt ? p.saleEndAt.slice(0, 16) : '' })} style={btn('#f5f5f5', '#333')}>編輯</button>
+            <button onClick={() => setDForm({ ...p, price: String(p.price), saleEndAt: toDateTimeLocalValue(p.saleEndAt) })} style={btn('#f5f5f5', '#333')}>編輯</button>
             <button onClick={() => dDel(p._id)} style={btn('#ffebee', '#c62828')}>刪除</button>
           </div>
         </div>
@@ -1051,6 +1051,16 @@ function computePeakOverlap(items) {
 
 function fmtHM(d) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// 把存在資料庫的時間（UTC Date / ISO 字串）轉成 <input type="datetime-local">
+// 吃的 'YYYY-MM-DDTHH:mm' 格式。用瀏覽器當地時間的 getter（跟 fmtHM/fmtDT 同慣例，
+// 管理者裝置時區已經是台北），不要直接 slice ISO 字串，否則會跟 UTC 時間對不上。
+function toDateTimeLocalValue(dateVal) {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function ReservationGanttView({ venues }) {
