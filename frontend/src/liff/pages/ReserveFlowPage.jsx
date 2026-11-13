@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchVenue, fetchAvailability, createReservation, getSessionToken, fetchShortSessionQuote, fetchDurationPlans, fetchStrategy2Slots } from '../api';
+import { fetchVenue, fetchAvailability, createReservation, getSessionToken, fetchShortSessionQuote, fetchDurationPlans, fetchStrategy2Slots, requestStrategy2Waitlist, cancelStrategy2Waitlist } from '../api';
 
 const SLOTS = [
   { key: 'morning',   label: '早上', range: '07:00–12:00', icon: '🌅' },
@@ -139,8 +139,12 @@ function WalkInShortFlow({ venue: initialVenue, onBack, onDone }) {
         <div style={{ background: '#ffebee', borderRadius: '10px', padding: '14px', color: '#c62828', fontSize: '14px' }}>{quoteErr}</div>
       ) : !quote?.available ? (
         <div style={{ background: '#fff3e0', borderRadius: '12px', padding: '16px', border: '1px solid #ffcc80', marginBottom: '16px' }}>
-          <div style={{ fontWeight: '700', fontSize: '14px', color: '#e65100', marginBottom: '4px' }}>目前暫停計時入場</div>
-          <div style={{ fontSize: '13px', color: '#bf360c' }}>場內剩餘座位不足，請稍後再試或改為預約入場。</div>
+          <div style={{ fontWeight: '700', fontSize: '14px', color: '#e65100', marginBottom: '4px' }}>
+            {quote?.closureReason ? '今日公休' : '目前暫停計時入場'}
+          </div>
+          <div style={{ fontSize: '13px', color: '#bf360c' }}>
+            {quote?.closureReason || '場內剩餘座位不足，請稍後再試或改為預約入場。'}
+          </div>
         </div>
       ) : (
         <>
@@ -194,39 +198,65 @@ function WalkInShortFlow({ venue: initialVenue, onBack, onDone }) {
 }
 
 // Thin router — no hooks here, so conditional return is safe
-export default function ReserveFlowPage({ venue, mode, onBack, onDone }) {
+export default function ReserveFlowPage({ venue, mode, initialDate, onBack, onDone }) {
   if (mode === 'walkin_short') {
     return <WalkInShortFlow venue={venue} onBack={onBack} onDone={onDone} />;
   }
   if (venue?.strategy === 2) {
-    return <Strategy2Flow venue={venue} onBack={onBack} onDone={onDone} />;
+    return <Strategy2Flow venue={venue} initialDate={initialDate} onBack={onBack} onDone={onDone} />;
   }
-  return <RegularReserveFlow venue={venue} mode={mode} onBack={onBack} onDone={onDone} />;
+  return <RegularReserveFlow venue={venue} mode={mode} initialDate={initialDate} onBack={onBack} onDone={onDone} />;
 }
 
 // ── 策略二：自由時段制預約流程 ─────────────────────────────────────────────────
-function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
+function Strategy2Flow({ venue: initialVenue, initialDate, onBack, onDone }) {
   const [step,          setStep]          = useState(0);  // 0=日期 1=時長 2=時段 3=確認
-  const [date,          setDate]          = useState(toDateStr(new Date()));
+  const [date,          setDate]          = useState(initialDate || toDateStr(new Date()));
   const [plans,         setPlans]         = useState([]);
   const [selPlan,       setSelPlan]       = useState(null);
   const [slots,         setSlots]         = useState([]);
   const [selSlot,       setSelSlot]       = useState(null);
   const [slotsLoading,  setSlotsLoading]  = useState(false);
+  const [closureReason, setClosureReason] = useState('');
   const [submitting,    setSubmitting]    = useState(false);
   const [error,         setError]         = useState('');
   const [done,          setDone]          = useState(false);
+  const [waitlistBusyKey, setWaitlistBusyKey] = useState(''); // 正在送出候補的時段 key（startTime）
   const venue = initialVenue;
 
-  const today = toDateStr(new Date());
-  const maxDate = toDateStr(new Date(Date.now() + 6 * 24 * 60 * 60 * 1000));
+  async function handleWaitlist(s) {
+    if (waitlistBusyKey) return;
+    setWaitlistBusyKey(s.startTime);
+    try {
+      if (s.waitlisted) {
+        // 已登記過：再點一次＝取消提醒
+        await cancelStrategy2Waitlist(venue._id, { startTime: s.startTime, endTime: s.endTime });
+        setSlots(prev => prev.map(x => x.startTime === s.startTime ? { ...x, waitlisted: false } : x));
+      } else {
+        await requestStrategy2Waitlist(venue._id, {
+          startTime: s.startTime, endTime: s.endTime, durationPlanId: selPlan?._id
+        });
+        setSlots(prev => prev.map(x => x.startTime === s.startTime ? { ...x, waitlisted: true } : x));
+      }
+    } catch (e) {
+      alert(e.message || (s.waitlisted ? '取消候補失敗，請重試' : '登記候補失敗，請重試'));
+    } finally {
+      setWaitlistBusyKey('');
+    }
+  }
 
-  // Load duration plans
+  const today = toDateStr(new Date());
+  const maxDate = toDateStr(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+
+  // Load duration plans — 帶上目前選的日期，特價是否有效依「預約日期」判斷，
+  // 而不是依瀏覽當下的真實時間（避免兩者脫鉤）。日期變動時方案的特價狀態可能
+  // 跟著變，連帶清掉已選方案，避免用舊日期算出來的價格殘留到確認畫面。
   useEffect(() => {
-    fetchDurationPlans(venue._id).then(ps => {
+    setSelPlan(null);
+    fetchDurationPlans(venue._id, date).then(ps => {
       setPlans(ps.filter(p => p.isActive));
     }).catch(() => {});
-  }, [venue._id]);
+  }, [venue._id, date]);
 
   // Load available slots when date or plan changes
   useEffect(() => {
@@ -234,14 +264,19 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
     setSlotsLoading(true);
     setSlots([]);
     setSelSlot(null);
+    setClosureReason('');
     fetchStrategy2Slots(venue._id, date, selPlan.durationMinutes)
-      .then(r => setSlots(r.slots || []))
+      .then(r => { setSlots(r.slots || []); setClosureReason(r.closed ? r.reason : ''); })
       .catch(() => {})
       .finally(() => setSlotsLoading(false));
   }, [selPlan, date, venue._id]);
 
   async function handleSubmit() {
     if (!selSlot || !selPlan) return;
+    if (selSlot.truncated) {
+      const ok = window.confirm('你的入場時間不會滿這個時段，但還是會收這個時段的費用，請問是否接受');
+      if (!ok) return;
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -296,7 +331,7 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
             min={today}
             max={maxDate}
             value={date}
-            onChange={e => setDate(e.target.value)}
+            onChange={e => setDate(e.target.value < today ? today : e.target.value > maxDate ? maxDate : e.target.value)}
             style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: '10px', border: '1.5px solid #e0e0e0', fontSize: '16px' }}
           />
           <button onClick={() => setStep(1)} disabled={!date} style={{ ...nextBtnStyle, marginTop: '20px', opacity: date ? 1 : 0.4 }}>
@@ -364,7 +399,13 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
 
           {slotsLoading && <div style={{ textAlign: 'center', color: '#aaa', padding: '40px' }}>載入中...</div>}
 
-          {!slotsLoading && slots.length === 0 && (
+          {!slotsLoading && closureReason && (
+            <div style={{ background: '#ffebee', borderRadius: '10px', padding: '14px', color: '#c62828', fontSize: '14px', marginBottom: '16px' }}>
+              <strong>公休：</strong>{closureReason}
+            </div>
+          )}
+
+          {!slotsLoading && !closureReason && slots.length === 0 && (
             <div style={{ textAlign: 'center', color: '#aaa', padding: '40px' }}>當日無可用時段</div>
           )}
 
@@ -373,28 +414,52 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
               {slots.map((s, i) => {
                 const isSel  = selSlot?.startTime === s.startTime;
                 const isAvail = s.available;
+                const showWaitlistBtn = !isAvail && !s.past;
                 return (
-                  <button
-                    key={i}
-                    disabled={!isAvail}
-                    onClick={() => setSelSlot(s)}
-                    style={{
-                      padding: '12px 6px', borderRadius: '10px', border: 'none',
-                      background: isSel ? 'var(--brand-color)' : isAvail ? '#f5f5f5' : '#f0f0f0',
-                      color:  isSel ? 'var(--brand-text)' : isAvail ? '#222' : '#bbb',
-                      cursor: isAvail ? 'pointer' : 'default',
-                      textAlign: 'center', transition: 'all 0.15s'
-                    }}
-                  >
-                    <div style={{ fontSize: '15px', fontWeight: '700' }}>{s.startLabel}</div>
-                    <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>→ {s.endLabel}</div>
-                    {isAvail && (
-                      <div style={{ fontSize: '10px', marginTop: '3px', color: isSel ? 'rgba(255,255,255,0.8)' : s.remaining <= 5 ? '#e53935' : '#777' }}>
-                        剩 {s.remaining} 位
-                      </div>
+                  <div key={i}>
+                    <button
+                      disabled={!isAvail}
+                      onClick={() => setSelSlot(s)}
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        padding: '12px 6px', borderRadius: '10px', border: 'none',
+                        borderBottomLeftRadius: showWaitlistBtn ? 0 : '10px',
+                        borderBottomRightRadius: showWaitlistBtn ? 0 : '10px',
+                        background: isSel ? 'var(--brand-color)' : isAvail ? '#f5f5f5' : '#f0f0f0',
+                        color:  isSel ? 'var(--brand-text)' : isAvail ? '#222' : '#bbb',
+                        cursor: isAvail ? 'pointer' : 'default',
+                        textAlign: 'center', transition: 'all 0.15s'
+                      }}
+                    >
+                      <div style={{ fontSize: '15px', fontWeight: '700' }}>{s.startLabel}</div>
+                      <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>→ {s.endLabel}</div>
+                      {isAvail && (
+                        <div style={{ fontSize: '10px', marginTop: '3px', color: isSel ? 'rgba(255,255,255,0.8)' : s.remaining <= 5 ? '#e53935' : '#777' }}>
+                          剩 {s.remaining} 位
+                        </div>
+                      )}
+                      {!isAvail && <div style={{ fontSize: '10px', marginTop: '3px' }}>已滿</div>}
+                    </button>
+                    {showWaitlistBtn && (
+                      <button
+                        disabled={waitlistBusyKey === s.startTime}
+                        onClick={() => handleWaitlist(s)}
+                        style={{
+                          width: '100%', boxSizing: 'border-box',
+                          padding: '5px 4px', border: 'none',
+                          borderBottomLeftRadius: '10px', borderBottomRightRadius: '10px',
+                          background: s.waitlisted ? '#ffe0b2' : '#fff3e0',
+                          color: s.waitlisted ? '#e65100' : '#f57c00',
+                          fontSize: '10px', fontWeight: '600',
+                          cursor: waitlistBusyKey === s.startTime ? 'default' : 'pointer'
+                        }}
+                      >
+                        {waitlistBusyKey === s.startTime
+                          ? (s.waitlisted ? '取消中...' : '登記中...')
+                          : (s.waitlisted ? '已登記候補（點擊取消）' : '🔔 空位提醒')}
+                      </button>
                     )}
-                    {!isAvail && <div style={{ fontSize: '10px', marginTop: '3px' }}>已滿</div>}
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -431,6 +496,12 @@ function Strategy2Flow({ venue: initialVenue, onBack, onDone }) {
             <div>• 可提前 <strong>15 分鐘</strong>（{toEarlyTime(selSlot.startTime, 15)}）掃碼入場</div>
             <div>• 請於 <strong>{toEarlyTime(selSlot.startTime, -30)}</strong> 前完成報到，逾時自動取消</div>
           </div>
+          {selSlot.truncated && (
+            <div style={{ background: '#ffebee', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px', fontSize: '13px', color: '#c62828' }}>
+              <div style={{ fontWeight: '600', marginBottom: '4px' }}>⚠️ 時段提醒</div>
+              <div>你的入場時間不會滿這個時段，但還是會收這個時段的費用，請問是否接受</div>
+            </div>
+          )}
           {error && <div style={{ color: '#e53935', fontSize: '13px', marginBottom: '10px' }}>{error}</div>}
           <div style={{ display: 'flex', gap: '10px' }}>
             <button onClick={() => setStep(2)} style={backBtnStyle}>返回</button>
@@ -452,13 +523,13 @@ function toEarlyTime(isoStr, offsetMin) {
   return `${h}:${m}`;
 }
 
-function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
+function RegularReserveFlow({ venue: initialVenue, mode, initialDate, onBack, onDone }) {
   const isWalkIn = mode === 'walkin';
   const totalSteps = isWalkIn ? 2 : 3;
 
   const [step, setStep]         = useState(0);
   const [venue, setVenue]       = useState(initialVenue);
-  const [date, setDate]         = useState(toDateStr(new Date()));
+  const [date, setDate]         = useState(isWalkIn ? toDateStr(new Date()) : (initialDate || toDateStr(new Date())));
   const [selectedSlots, setSelectedSlots] = useState(isWalkIn ? [getCurrentSlot()] : []);
   const [selectedPlan, setSelectedPlan]   = useState(null);
   const [avail, setAvail]       = useState(null);
@@ -493,12 +564,13 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [date, venue]);
+  const closureReason = avail?.morning?.closureReason || avail?.afternoon?.closureReason || avail?.evening?.closureReason || '';
   const currentSlotKey = isWalkIn ? getCurrentSlot() : null;
   const walkInPlans = isWalkIn
     ? plans.filter(p => p.isActive !== false && p.slots?.includes(currentSlotKey))
     : [];
   const today = toDateStr(new Date());
-  const maxDate = toDateStr(new Date(Date.now() + 6 * 24 * 60 * 60 * 1000));
+  const maxDate = toDateStr(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
 
   function toggleSlot(key) {
     setSelectedSlots(prev =>
@@ -668,10 +740,15 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
           <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '14px' }}>選擇入場日期</div>
           <input
             type="date" value={date} min={today} max={maxDate}
-            onChange={e => setDate(e.target.value)}
+            onChange={e => setDate(e.target.value < today ? today : e.target.value > maxDate ? maxDate : e.target.value)}
             style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: '10px', border: '1.5px solid #ddd', fontSize: '16px' }}
           />
-          <button onClick={() => setStep(1)} style={nextBtnStyle}>下一步</button>
+          {closureReason && (
+            <div style={{ background: '#ffebee', borderRadius: '10px', padding: '12px 14px', marginTop: '12px', fontSize: '13px', color: '#c62828' }}>
+              <strong>公休：</strong>{closureReason}
+            </div>
+          )}
+          <button onClick={() => setStep(1)} disabled={!!closureReason} style={{ ...nextBtnStyle, opacity: closureReason ? 0.4 : 1 }}>下一步</button>
         </div>
       )}
 
@@ -702,9 +779,11 @@ function RegularReserveFlow({ venue: initialVenue, mode, onBack, onDone }) {
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                       {slotAvail && (
                         <span style={{ fontSize: '12px', color: full ? '#c62828' : '#2e7d32' }}>
-                          {slotAvail.blocked
-                            ? (slotAvail.eventName ? `活動：${slotAvail.eventName}` : '已包場')
-                            : full ? '已額滿' : `剩 ${slotAvail.remaining}`}
+                          {slotAvail.closureReason
+                            ? `公休：${slotAvail.closureReason}`
+                            : slotAvail.blocked
+                              ? (slotAvail.eventName ? `活動：${slotAvail.eventName}` : '已包場')
+                              : full ? '已額滿' : `剩 ${slotAvail.remaining}`}
                         </span>
                       )}
                       <PriceTag plan={plan} style={{}} />

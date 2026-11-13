@@ -1,4 +1,7 @@
-const Reservation = require('../models/Reservation');
+const Reservation      = require('../models/Reservation');
+const Venue            = require('../models/Venue');
+const WaitlistRequest  = require('../models/WaitlistRequest');
+const { pushMessage }  = require('./lineService');
 
 /**
  * 產生策略二的可選起始時間列表
@@ -21,20 +24,33 @@ function generateStartSlots(dateStr, openHour, closeHour, durationMinutes) {
   const closeMs = closeHour * 60 * 60 * 1000; // may exceed 24h for late-night closing
   const closeUTC = midnightUTC + closeMs;
 
+  // 臨時入場寬限：超過「完整時長」但入場時間仍在閉館前「時長的一半」內，
+  // 允許預約，離場時間截斷為閉館時間，費用仍照方案全額計算（由呼叫端處理）。
+  const graceMs = durationMinutes > 0 ? (durationMinutes / 2) * 60 * 1000 : 0;
+
   const slots = [];
   let curUTC = midnightUTC + openMs;
 
   while (curUTC < closeUTC) {
     let endUTC;
+    let truncated = false;
     if (durationMinutes === 0) {
       // 整天方案：任何時間點入場，結束固定為閉館
       endUTC = closeUTC;
     } else {
-      endUTC = curUTC + durationMinutes * 60 * 1000;
-      if (endUTC > closeUTC) break; // 一般時長：超出閉館時間不顯示
+      const fullEndUTC = curUTC + durationMinutes * 60 * 1000;
+      if (fullEndUTC <= closeUTC) {
+        endUTC = fullEndUTC;
+      } else if (curUTC + graceMs <= closeUTC) {
+        // 寬限區間：實際可用時間不足完整時長，離場時間截斷為閉館
+        endUTC = closeUTC;
+        truncated = true;
+      } else {
+        break; // 超出寬限範圍：不顯示
+      }
     }
 
-    slots.push({ startTime: new Date(curUTC), endTime: new Date(endUTC) });
+    slots.push({ startTime: new Date(curUTC), endTime: new Date(endUTC), truncated });
     curUTC += 30 * 60 * 1000; // next 30-min slot
   }
 
@@ -84,7 +100,9 @@ async function getAvailableSlots(venueId, dateStr, openHour, closeHour, duration
       startLabel: toHHMM(s.startTime),
       endLabel:   toHHMM(s.endTime),
       available: !past && avail.available,
-      remaining: past ? 0 : avail.remaining
+      remaining: past ? 0 : avail.remaining,
+      truncated: !!s.truncated,
+      past
     };
   }));
 
@@ -100,4 +118,61 @@ function toHHMM(date) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-module.exports = { generateStartSlots, checkSlotAvailability, getAvailableSlots, toHHMM };
+const WEEKDAY_CN = ['日', '一', '二', '三', '四', '五', '六'];
+
+// 'MM/DD（週X）'，顯示 UTC+8 的日期——通知文字除了時間還要有日期，
+// 避免用戶分不清是哪一天的候補時段有空位
+function toDateLabel(date) {
+  const ms  = date.getTime() + 8 * 60 * 60 * 1000;
+  const tmp = new Date(ms);
+  const mo  = tmp.getUTCMonth() + 1;
+  const d   = tmp.getUTCDate();
+  return `${mo}/${d}（${WEEKDAY_CN[tmp.getUTCDay()]}）`;
+}
+
+// 將任意時間點換算成所屬的台北日期字串 'YYYY-MM-DD'
+function dateStrFromDate(date) {
+  const taipei = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  return taipei.toISOString().slice(0, 10);
+}
+
+/**
+ * 空位候補檢查：某場地某天（台北時間）若有容量釋出，
+ * 逐一比對當天「等待中」的候補紀錄，命中就發 LINE 通知並標記為已通知。
+ * 純通知，不佔位——實際預約仍需用戶自行完成。
+ * 由取消預約（用戶自取消／逾時未報到自動取消／後台取消）的流程呼叫。
+ */
+async function checkAndNotifyWaitlist(venueId, dateStr) {
+  const TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dayStart = new Date(Date.UTC(y, m - 1, d) - TZ_OFFSET_MS);
+  const dayEnd   = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
+  const pendingList = await WaitlistRequest.find({
+    venueId, status: 'pending',
+    startTime: { $gte: dayStart, $lt: dayEnd }
+  });
+  if (!pendingList.length) return;
+
+  const venue = await Venue.findById(venueId).lean();
+  if (!venue) return;
+
+  for (const w of pendingList) {
+    const avail = await checkSlotAvailability(venueId, w.startTime, w.endTime, venue.maxCapacityPerSlot);
+    if (!avail.available) continue;
+
+    await pushMessage(
+      w.lineUserId,
+      `🔔 空位通知\n「${w.venueName}」您候補的時段 ${toDateLabel(w.startTime)} ${toHHMM(w.startTime)}–${toHHMM(w.endTime)} 現在有空位了！\n座位有限、額滿為止，請盡快至預約系統完成預約。`
+    ).catch(() => {});
+
+    w.status     = 'notified';
+    w.notifiedAt = new Date();
+    await w.save();
+  }
+}
+
+module.exports = {
+  generateStartSlots, checkSlotAvailability, getAvailableSlots, toHHMM,
+  dateStrFromDate, checkAndNotifyWaitlist
+};

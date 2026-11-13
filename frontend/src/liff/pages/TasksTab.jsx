@@ -206,6 +206,10 @@ function TaskCard({ task, expanded, onToggle, checkedInReservationId, myUserId, 
   );
 }
 
+function couponLabel(c) {
+  return c.discountType === 'percent' ? `${c.discountPercent}% 折扣` : `折抵 $${c.discountAmount}`;
+}
+
 function MyCoupons({ coupons }) {
   if (!coupons.length) return null;
   return (
@@ -214,11 +218,12 @@ function MyCoupons({ coupons }) {
       {coupons.map(c => (
         <div key={c._id} style={{ background: '#fff', borderRadius: '10px', padding: '12px 14px', marginBottom: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: '14px', fontWeight: '600', color: '#222', marginBottom: '2px' }}>{c.taskTitle || '任務折扣券'}</div>
+            <div style={{ fontSize: '14px', fontWeight: '600', color: '#222', marginBottom: '2px' }}>{c.taskTitle || '讀享招待'}</div>
             <div style={{ fontSize: '12px', color: '#888' }}>
-              折抵 <span style={{ color: '#1976d2', fontWeight: '700' }}>${c.discountAmount}</span>
+              <span style={{ color: '#1976d2', fontWeight: '700' }}>{couponLabel(c)}</span>
               {c.expiresAt && ` · 至 ${new Date(c.expiresAt).toLocaleDateString('zh-TW')}`}
             </div>
+            {c.note && <div style={{ fontSize: '11px', color: '#aaa', marginTop: '2px' }}>{c.note}</div>}
           </div>
           <CouponStatusBadge status={c.status} />
         </div>
@@ -266,7 +271,7 @@ export default function TasksTab() {
     <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
       {!checkedInId && (
         <div style={{ background: '#fff8e1', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px', fontSize: '13px', color: '#f57f17', lineHeight: '1.5' }}>
-          💡 您目前不在場內。進場後即可承接並提交限時任務。
+          您目前不在場內。進場後即可承接並提交限時任務。
         </div>
       )}
 

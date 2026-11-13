@@ -275,6 +275,18 @@ async function pushLineMessage(lineUserId, messageObj) {
 
 // Build LINE Flex Message bubble from a ProductCard document
 function buildFlexBubble(card) {
+  // 純圖片模式：只顯示整張圖片，不裁切、不疊加標題/價格/按鈕
+  // aspectRatio 使用前端依實際圖片偵測出的比例，讓 fit 模式下不會有留白/裁切
+  if (card.imageOnly && card.imageUrl) {
+    return {
+      type: 'bubble',
+      hero: {
+        type: 'image', url: card.imageUrl,
+        size: 'full', aspectRatio: card.imageAspectRatio || '20:13', aspectMode: 'fit'
+      }
+    };
+  }
+
   const headerBgColor    = card.headerBgColor    || '#ffffff';
   const titleColor       = card.titleColor       || '#111111';
   const subtitleColor    = card.subtitleColor    || '#888888';
@@ -347,13 +359,24 @@ function buildFlexBubble(card) {
     bubble.body = { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '14px', contents: bodyContents };
   }
 
-  if (card.buttonUrl && card.buttonText) {
+  // 按鈕動作：keyword=點擊後以 postback 觸發後台指定關鍵字的回覆（文字或另一組卡片）；
+  // url（預設）=外部連結，行為與原本相同
+  let buttonAction = null;
+  if (card.buttonActionType === 'keyword' && card.buttonKeywordId && card.buttonText) {
+    buttonAction = {
+      type: 'postback',
+      label: card.buttonText,
+      data: `action=card_keyword&keywordId=${card.buttonKeywordId}`,
+      displayText: card.buttonText
+    };
+  } else if (card.buttonUrl && card.buttonText) {
+    buttonAction = { type: 'uri', label: card.buttonText, uri: card.buttonUrl };
+  }
+
+  if (buttonAction) {
     bubble.footer = {
       type: 'box', layout: 'vertical', spacing: 'sm',
-      contents: [{
-        type: 'button', style: 'primary', color: buttonColor,
-        action: { type: 'uri', label: card.buttonText, uri: card.buttonUrl }
-      }]
+      contents: [{ type: 'button', style: 'primary', color: buttonColor, action: buttonAction }]
     };
   }
 

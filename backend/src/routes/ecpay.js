@@ -1,6 +1,7 @@
 const express = require('express');
 const Reservation  = require('../models/Reservation');
 const Coupon       = require('../models/Coupon');
+const DiscountCode = require('../models/DiscountCode');
 const HourPurchase = require('../models/HourPurchase');
 const { verifyCheckMac } = require('../services/ecpayService');
 
@@ -37,6 +38,9 @@ router.post('/callback', async (req, res) => {
             await Coupon.findByIdAndUpdate(r.appliedCouponId, {
               status: 'used', usedAt: new Date(), usedForReservationId: r._id
             });
+          }
+          if (r.appliedDiscountCode) {
+            await DiscountCode.updateOne({ code: r.appliedDiscountCode }, { $inc: { usedCount: 1 } });
           }
           console.log(`[ECPay] Payment confirmed for reservation ${r._id}`);
         }

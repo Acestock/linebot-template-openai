@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const cron = require('node-cron');
 const path = require('path');
+const fs = require('fs');
 
 const webhookRouter = require('./routes/webhook');
 const adminRouter = require('./routes/admin');
@@ -34,6 +35,10 @@ app.use(cors({
 
 // LINE Webhook route requires raw body for signature validation
 app.use('/webhook', webhookRouter);
+
+// M350 QR Code Scanner 走純文字協定，不論宣告的 Content-Type 為何都當純文字讀取；
+// 必須搶在下方全域 json/urlencoded 解析器之前註冊，否則對不上 type 時 body 會讀不到。
+app.use('/api/gate/scan', express.text({ type: () => true, limit: '1mb' }));
 
 // JSON body parser for all other routes (10mb for photo base64 uploads)
 app.use(express.json({ limit: '10mb' }));
@@ -78,6 +83,8 @@ app.use('/api/ecpay',    ecpayRouter);     // POST /api/ecpay/callback
 app.use('/ecpay',        ecpayRouter);     // GET  /ecpay/result
 app.use('/api/newebpay', newebpayRouter);  // POST /api/newebpay/notify
 app.use('/newebpay',     newebpayRouter);  // GET  /newebpay/result
+const linepayRouter = require('./routes/linepay');
+app.use('/linepay',      linepayRouter);   // GET|POST /linepay/confirm, /linepay/cancel
 
 // All other /api/* routes require auth
 app.use('/api', authMiddleware);
@@ -88,8 +95,19 @@ const frontendDist = path.join(__dirname, '../../frontend/dist');
 app.use(express.static(frontendDist));
 
 // SPA fallback - all non-API routes serve index.html
+// LIFF 路徑在送出前把 <title> 換成預約系統的名稱，避免瀏覽器先閃一下後台客服系統的標題
+// （純 JS 做法沒辦法蓋掉瀏覽器解析到 index.html 當下就先畫出來的原始 <title>）
 app.get('*', (req, res) => {
-  res.sendFile(path.join(frontendDist, 'index.html'));
+  const indexPath = path.join(frontendDist, 'index.html');
+  if (req.path.startsWith('/liff')) {
+    fs.readFile(indexPath, 'utf8', (err, html) => {
+      if (err) return res.sendFile(indexPath);
+      const liffHtml = html.replace(/<title>.*?<\/title>/, '<title>讀享-預約入場系統</title>');
+      res.set('Content-Type', 'text/html').send(liffHtml);
+    });
+    return;
+  }
+  res.sendFile(indexPath);
 });
 
 // MongoDB connection

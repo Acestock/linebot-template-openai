@@ -10,8 +10,8 @@ const STATUS_MAP = {
   unpaid_exit:{ label: '未付款離場', color: '#e65100', bg: '#fff3e0' }
 };
 
-function getStatusInfo(status, unpaidExit) {
-  if (status === 'completed' && unpaidExit) return STATUS_MAP.unpaid_exit;
+function getStatusInfo(status, unpaidExit, paymentStatus) {
+  if (status === 'completed' && unpaidExit && paymentStatus !== 'paid') return STATUS_MAP.unpaid_exit;
   return STATUS_MAP[status] || STATUS_MAP.confirmed;
 }
 
@@ -110,7 +110,7 @@ function DetailView({ r, onBack, onCancelled, onCompleted }) {
     }
   }
 
-  const st = getStatusInfo(localStatus, r.unpaidExit);
+  const st = getStatusInfo(localStatus, r.unpaidExit, localPayStatus);
   const slotsStr = (r.slots || []).map(s => SLOT_LABELS[s] || s).join(' + ');
 
   return (
@@ -292,7 +292,7 @@ export default function MyBookingsPage({ onBack }) {
       ) : list.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px', color: '#aaa' }}>尚無預約紀錄</div>
       ) : list.map(r => {
-        const st = getStatusInfo(r.status, r.unpaidExit);
+        const st = getStatusInfo(r.status, r.unpaidExit, r.paymentStatus);
         const dateStr = new Date(r.date).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'short' });
         const slotsStr = (r.slots || []).map(s => SLOT_LABELS[s] || s).join(' + ');
         return (
