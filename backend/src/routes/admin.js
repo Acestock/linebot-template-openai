@@ -2059,6 +2059,42 @@ router.get('/hour-purchases/summary', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/hour-purchases?lineUserId=xxx — 列出該用戶已付款成功的每一筆購買紀錄
+// （summary 是跨多筆加總顯示，這裡是給後台點進去管理單筆用的明細）
+router.get('/hour-purchases', async (req, res) => {
+  try {
+    const { lineUserId } = req.query;
+    if (!lineUserId) return res.status(400).json({ error: 'lineUserId 為必填' });
+    const items = await HourPurchase.find({ lineUserId, paymentStatus: 'paid' })
+      .sort({ purchasedAt: -1 }).lean();
+    res.json(items);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/hour-purchases/:id — 後台手動調整單筆購買紀錄的到期時間（方便客服彈性處理）
+router.patch('/hour-purchases/:id', async (req, res) => {
+  try {
+    const { expiresAt } = req.body;
+    if (expiresAt === undefined) return res.status(400).json({ error: 'expiresAt 為必填' });
+    const item = await HourPurchase.findByIdAndUpdate(
+      req.params.id,
+      { $set: { expiresAt: expiresAt ? new Date(expiresAt) : null } },
+      { new: true }
+    );
+    if (!item) return res.status(404).json({ error: '找不到此筆購買紀錄' });
+    res.json(item);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// DELETE /api/hour-purchases/:id — 刪除某筆購買紀錄（整筆移除，等同把這筆時數收回）
+router.delete('/hour-purchases/:id', async (req, res) => {
+  try {
+    const item = await HourPurchase.findByIdAndDelete(req.params.id);
+    if (!item) return res.status(404).json({ error: '找不到此筆購買紀錄' });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── Discount Codes（公開折扣碼，結帳時用戶自行輸入） ───────────────────────────
 const DiscountCode = require('../models/DiscountCode');
 

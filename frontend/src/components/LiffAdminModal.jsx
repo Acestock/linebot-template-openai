@@ -1486,17 +1486,102 @@ function fmtHrMin(mins) {
   return m ? `${h}時${m}分` : `${h}小時`;
 }
 
+function HourPurchaseDetail({ lineUserId, onChanged }) {
+  const [items, setItems]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState(null);
+  const [editDate, setEditDate]   = useState('');
+  const [busyId, setBusyId]       = useState(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    authFetch(`${API_BASE}/api/hour-purchases?lineUserId=${encodeURIComponent(lineUserId)}`)
+      .then(r => r.json())
+      .then(d => setItems(Array.isArray(d) ? d : []))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, [lineUserId]);
+  useEffect(load, [load]);
+
+  function startEdit(item) {
+    setEditingId(item._id);
+    setEditDate(item.expiresAt ? toDateInputValue(item.expiresAt) : '');
+  }
+
+  async function saveExpiry(id) {
+    setBusyId(id);
+    try {
+      await authFetch(`${API_BASE}/api/hour-purchases/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expiresAt: editDate || null })
+      });
+      setEditingId(null);
+      load();
+      onChanged?.();
+    } catch (e) { alert('調整失敗：' + e.message); }
+    finally { setBusyId(null); }
+  }
+
+  async function del(id) {
+    if (!confirm('確定要刪除這筆購買紀錄嗎？刪除後該筆時數會整筆收回，無法復原。')) return;
+    setBusyId(id);
+    try {
+      await authFetch(`${API_BASE}/api/hour-purchases/${id}`, { method: 'DELETE' });
+      load();
+      onChanged?.();
+    } catch (e) { alert('刪除失敗：' + e.message); }
+    finally { setBusyId(null); }
+  }
+
+  if (loading) return <div style={{ color: '#aaa', textAlign: 'center', padding: '10px', fontSize: '12px' }}>載入中...</div>;
+  if (items.length === 0) return <div style={{ color: '#aaa', textAlign: 'center', padding: '10px', fontSize: '12px' }}>沒有購買紀錄</div>;
+
+  return (
+    <div style={{ padding: '10px 14px', background: '#fafafa' }}>
+      {items.map(it => (
+        <div key={it._id} style={{ border: '1px solid #eee', borderRadius: '8px', padding: '8px 10px', marginBottom: '6px', background: '#fff' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+            <div style={{ fontSize: '12px', color: '#333' }}>
+              <strong>{it.packageName || '時數包'}</strong>
+              <span style={{ color: '#888', marginLeft: '6px' }}>
+                已用 {fmtHrMin(it.usedMinutes)} / 共 {fmtHrMin(it.totalMinutes)}（剩 {fmtHrMin(Math.max(0, it.totalMinutes - it.usedMinutes))}）
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+              <button type="button" onClick={() => startEdit(it)} style={btn('#e3f2fd', '#1976d2')}>調整到期</button>
+              <button type="button" onClick={() => del(it._id)} disabled={busyId === it._id} style={btn('#ffebee', '#c62828')}>刪除</button>
+            </div>
+          </div>
+          <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px' }}>
+            購買時間：{fmtDT(it.purchasedAt)}　到期時間：{it.expiresAt ? new Date(it.expiresAt).toLocaleDateString('zh-TW') : '—'}
+          </div>
+          {editingId === it._id && (
+            <div style={{ display: 'flex', gap: '6px', marginTop: '8px', alignItems: 'center' }}>
+              <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+              <button type="button" onClick={() => saveExpiry(it._id)} disabled={busyId === it._id} style={btn('#111', '#fff')}>儲存</button>
+              <button type="button" onClick={() => setEditingId(null)} style={btn('#f5f5f5', '#555')}>取消</button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function HourPurchaseStats() {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
+  const [expandedUserId, setExpandedUserId] = useState(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     authFetch(`${API_BASE}/api/hour-purchases/summary`)
       .then(r => r.json())
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, []);
+  useEffect(load, [load]);
 
   if (loading) return <div style={{ color: '#aaa', textAlign: 'center', padding: '20px' }}>載入中...</div>;
   if (!data || !data.summary) return null;
@@ -1525,25 +1610,34 @@ function HourPurchaseStats() {
               <div key={h} style={{ fontSize: '11px', fontWeight: '700', color: '#888' }}>{h}</div>
             ))}
           </div>
-          {data.rows.map((r, i) => (
-            <div key={r.lineUserId} style={{
-              display: 'grid', gridTemplateColumns: '1.3fr 0.7fr 0.9fr 0.9fr',
-              padding: '9px 14px',
-              borderBottom: i < data.rows.length - 1 ? '1px solid #f5f5f5' : 'none',
-              background: i % 2 === 0 ? '#fff' : '#fafafa'
-            }}>
-              <div style={{ fontSize: '12px', color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {r.displayName || r.lineUserId}
+          {data.rows.map((r, i) => {
+            const isOpen = expandedUserId === r.lineUserId;
+            return (
+              <div key={r.lineUserId}>
+                <div
+                  onClick={() => setExpandedUserId(isOpen ? null : r.lineUserId)}
+                  style={{
+                    display: 'grid', gridTemplateColumns: '1.3fr 0.7fr 0.9fr 0.9fr',
+                    padding: '9px 14px', cursor: 'pointer',
+                    borderBottom: (i < data.rows.length - 1 || isOpen) ? '1px solid #f5f5f5' : 'none',
+                    background: isOpen ? '#eef2ff' : i % 2 === 0 ? '#fff' : '#fafafa'
+                  }}
+                >
+                  <div style={{ fontSize: '12px', color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {r.displayName || r.lineUserId}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#555' }}>{r.purchaseCount} 次</div>
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: r.remainingMinutes > 0 ? '#2e7d32' : '#ccc' }}>
+                    {r.remainingMinutes > 0 ? fmtHrMin(r.remainingMinutes) : '已用完'}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#999' }}>
+                    {r.nearestExpiry ? new Date(r.nearestExpiry).toLocaleDateString('zh-TW') : '—'}
+                  </div>
+                </div>
+                {isOpen && <HourPurchaseDetail lineUserId={r.lineUserId} onChanged={load} />}
               </div>
-              <div style={{ fontSize: '12px', color: '#555' }}>{r.purchaseCount} 次</div>
-              <div style={{ fontSize: '13px', fontWeight: '700', color: r.remainingMinutes > 0 ? '#2e7d32' : '#ccc' }}>
-                {r.remainingMinutes > 0 ? fmtHrMin(r.remainingMinutes) : '已用完'}
-              </div>
-              <div style={{ fontSize: '11px', color: '#999' }}>
-                {r.nearestExpiry ? new Date(r.nearestExpiry).toLocaleDateString('zh-TW') : '—'}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
